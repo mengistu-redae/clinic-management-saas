@@ -1,0 +1,22 @@
+# Test-only overrides for the "test" profile, layered on top of
+# src/main/resources/application.yml. This MUST be a profile-specific file
+# (application-test.yml) activated via @ActiveProfiles("test"), NOT a plain
+# src/test/resources/application.yml - the latter shadows the main
+# application.yml wholesale (Spring Boot loads the first application.yml on
+# the classpath and test-classes wins; it does not merge), which drops every
+# clinicops.* property and fails context startup. A profile overlay merges.
+#
+# jwk-set-uri here is never actually fetched (AbstractIntegrationTest's
+# NoNetworkJwtDecoderConfig replaces the JwtDecoder bean outright), but
+# setting *some* jwk-set-uri is what stops Spring Boot's resource-server
+# autoconfiguration from instead building a decoder off issuer-uri, which -
+# unlike jwk-set-uri - resolves eagerly via a real HTTP call to
+# .well-known/openid-configuration at context-startup time. Without this,
+# tests would try to reach the real KEYCLOAK_ISSUER_URI (localhost:8080) and
+# either hang or fail on a machine/CI runner with no Keycloak running.
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://unused.invalid/protocol/openid-connect/certs

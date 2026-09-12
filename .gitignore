@@ -1,0 +1,11 @@
+node_modules/
+target/
+dist/
+node-bff/public/
+*.iml
+.idea/
+.vscode/
+.env
+*.tmp
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

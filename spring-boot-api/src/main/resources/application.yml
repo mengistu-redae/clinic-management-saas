@@ -1,0 +1,88 @@
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  pattern:
+    level: "%5p [%X{requestId:-}]"
+
+spring:
+  application:
+    name: clinic-management-api
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/clinic_management}
+    username: ${SPRING_DATASOURCE_USERNAME:clinicops}
+    password: ${SPRING_DATASOURCE_PASSWORD:clinicops}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate # schema is owned by Flyway migrations, not Hibernate auto-DDL
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+# Custom app settings.
+clinicops:
+  keycloak:
+    # Used to build the JWKS fetch URL (JwtDecoderConfig) - must be a URL
+    # this container can actually reach. Not the same as public-issuer below
+    # when running in docker-compose - see JwtDecoderConfig's javadoc.
+    internal-issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8080/realms/clinic}
+    # The `iss` value Keycloak actually stamps into tokens for this whole
+    # login flow - the host the browser used to reach the authorize
+    # endpoint, confirmed live to differ from the internal one above when
+    # running in docker-compose. Locally (no docker network split) both
+    # properties resolve to the same http://localhost:8080/... default.
+    public-issuer: ${KEYCLOAK_ISSUER_PUBLIC_URI:http://localhost:8080/realms/clinic}
+  tenant:
+    # Claim in the Keycloak access token that carries the organization id for
+    # staff (clinic_admin/provider/front_desk) tokens. VERIFY THIS against a
+    # real token after logging in through Keycloak - the exact claim name/
+    # shape for the Organizations feature can differ by Keycloak version.
+    # Decode a token at https://jwt.io or use the Admin Console's "Evaluate"
+    # tab to confirm, then adjust this one property rather than any code.
+    org-claim-path: organization
+  slot-lock:
+    ttl-seconds: 300
+  appointment:
+    # Platform-wide defaults; a clinic_admin can override each one for their
+    # own clinic via PATCH /api/clinic/settings (clinic_settings table, phase
+    # 5) - ClinicSettingsService.resolve merges the override over the
+    # default, so consumers read the resolved value, not these keys directly.
+    # These stay the fallback for any clinic that hasn't customized them.
+    tax-rate: 0.0
+    reschedule:
+      min-notice-hours: 4
+      fee-patient-portal: 0.00
+      fee-front-desk: 0.00
+    reminder-lead-hours: 24
+  keycloak-admin:
+    # Used only by PlatformController's "create clinic" endpoint
+    # (platform_admin, phase 6) to provision a new Keycloak Organization via
+    # the Admin REST API - the same two calls
+    # infra/keycloak/create-demo-clinic.sh makes by hand (master-realm
+    # admin-cli login, then POST .../organizations), just from the app.
+    # NOT the same as clinicops.keycloak.internal-issuer-uri above - that one
+    # includes /realms/clinic and is used for JWT validation; this is the
+    # bare server URL, and always talks to the master realm's built-in
+    # admin-cli client regardless of clinic-bff's own client config.
+    base-url: ${KEYCLOAK_ADMIN_BASE_URL:http://localhost:8080}
+    admin-username: ${KEYCLOAK_ADMIN:admin}
+    admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}

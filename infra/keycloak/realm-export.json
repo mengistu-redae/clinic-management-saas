@@ -1,0 +1,61 @@
+{
+  "realm": "clinic",
+  "enabled": true,
+  "organizationsEnabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      { "name": "platform_admin", "description": "Platform staff - onboards clinics" },
+      { "name": "clinic_admin", "description": "Manages one clinic's providers, rooms, fee policies and settings" },
+      { "name": "provider", "description": "Clinician - documents visits, orders labs" },
+      { "name": "front_desk", "description": "Clinic counter staff - books/reschedules/checks in walk-in patients" },
+      { "name": "patient", "description": "Self-service patient, not tied to any single clinic" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "clinic-bff",
+      "name": "Clinic management BFF",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "demo-clinic-admin",
+      "email": "admin@democlinic.example",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "changeme", "temporary": true }
+      ],
+      "realmRoles": ["clinic_admin"]
+    },
+    {
+      "username": "demo-patient",
+      "email": "patient@example.com",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "changeme", "temporary": true }
+      ],
+      "realmRoles": ["patient"]
+    }
+  ]
+}

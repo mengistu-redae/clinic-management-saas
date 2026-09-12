@@ -1,0 +1,178 @@
+package com.clinicops.support;
+
+import com.clinicops.clinic.Clinic;
+import com.clinicops.clinic.ClinicRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+
+/**
+ * Base class for controller-level integration tests: a real Spring context,
+ * MockMvc driven through the actual filter chain (Spring Security,
+ * TenantContextFilter, @PreAuthorize), and real Postgres + Redis via
+ * Testcontainers - the same "ddl-auto: validate against real Flyway
+ * migrations" behavior as production, not a stand-in like H2. Images match
+ * what docker-compose already uses (postgres:16-alpine, redis:7-alpine) so
+ * nothing new needs pulling on a machine that's already run
+ * `docker compose up`.
+ *
+ * Auth is the one thing faked: production authenticates by validating a real
+ * Keycloak-issued JWT against KEYCLOAK_ISSUER_URI. These tests instead build
+ * a Jwt object directly and inject it via Spring Security Test's jwt()
+ * request post-processor - TenantContextFilter, the real
+ * JwtAuthenticationConverter bean (autowired below, not re-implemented) and
+ * every @PreAuthorize check still run for real; only token issuance is
+ * stubbed. See NoNetworkJwtDecoderConfig for why the autoconfigured
+ * JwtDecoder (which would otherwise try to reach a real issuer at context
+ * startup) is replaced.
+ *
+ * The containers use the Testcontainers <b>singleton pattern</b> - started
+ * once in a static initializer and never explicitly stopped (Ryuk reaps them
+ * at JVM exit). This is deliberate: {@code @Testcontainers} + {@code @Container}
+ * stop a static container after each test <i>class</i>, but the Spring
+ * context is cached and shared across classes - so the first class to finish
+ * would kill the container out from under every later test's cached
+ * datasource. One container for the whole JVM fork keeps every cached
+ * context valid. Wired in via {@code @DynamicPropertySource} rather than
+ * {@code @ServiceConnection} so Spring Boot's own container lifecycle
+ * management never enters the picture either.
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Import(AbstractIntegrationTest.NoNetworkJwtDecoderConfig.class)
+public abstract class AbstractIntegrationTest {
+
+    @SuppressWarnings("resource") // singleton - lives for the JVM, reaped by Ryuk at exit
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    @SuppressWarnings("resource")
+    static final GenericContainer<?> REDIS =
+            new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
+
+    static {
+        POSTGRES.start();
+        REDIS.start();
+    }
+
+    @DynamicPropertySource
+    static void containerProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.data.redis.host", REDIS::getHost);
+        registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
+    }
+
+    @Autowired
+    protected MockMvc mockMvc;
+
+    @Autowired
+    protected ObjectMapper objectMapper;
+
+    @Autowired
+    private JwtAuthenticationConverter jwtAuthenticationConverter;
+
+    @Autowired
+    protected ClinicRepository clinicRepository;
+
+    // ---- fixture builders: seed just enough of the tenant-scoped schema
+    // for a test's own scenario, letting Flyway/Postgres enforce the same
+    // FKs and NOT NULLs production does. ----
+
+    protected Clinic createClinic(String keycloakOrgAlias, String name) {
+        Clinic clinic = new Clinic();
+        clinic.setKeycloakOrgId(keycloakOrgAlias);
+        clinic.setName(name);
+        return clinicRepository.save(clinic);
+    }
+
+    // ---- auth builders: hand these straight to MockMvc's .with(...). ----
+
+    protected RequestPostProcessor asPatient(String subject) {
+        return jwtRequest(subject, "patient", null);
+    }
+
+    protected RequestPostProcessor asFrontDesk(String subject, String orgAlias) {
+        return jwtRequest(subject, "front_desk", orgAlias);
+    }
+
+    protected RequestPostProcessor asProvider(String subject, String orgAlias) {
+        return jwtRequest(subject, "provider", orgAlias);
+    }
+
+    protected RequestPostProcessor asClinicAdmin(String subject, String orgAlias) {
+        return jwtRequest(subject, "clinic_admin", orgAlias);
+    }
+
+    protected RequestPostProcessor asPlatformAdmin(String subject) {
+        return jwtRequest(subject, "platform_admin", null);
+    }
+
+    private RequestPostProcessor jwtRequest(String subject, String realmRole, String orgAlias) {
+        Jwt jwt = Jwt.withTokenValue("test-token")
+                .header("alg", "none")
+                .subject(subject)
+                .claim("realm_access", Map.of("roles", List.of(realmRole)))
+                .claim("email", subject + "@example.test")
+                .claim("name", subject)
+                // Present as an empty array rather than omitted when there's
+                // no org - that's the real "no organization" shape
+                // extractOrgId sees (see TenantContextFilter), not a missing
+                // claim.
+                .claim("organization", orgAlias != null ? List.of(orgAlias) : List.of())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .build();
+        // .authorities(jwtAuthenticationConverter) would be the obvious call,
+        // but JwtAuthenticationConverter converts to an
+        // AbstractAuthenticationToken, not a Collection<GrantedAuthority> -
+        // run the real converter and pull the authorities back out instead,
+        // so tests exercise the actual ROLE_-prefix mapping rather than a
+        // hand-rolled copy of it.
+        return jwt().jwt(jwt).authorities(jwtAuthenticationConverter.convert(jwt).getAuthorities());
+    }
+
+    /**
+     * Replaces the autoconfigured JwtDecoder, which is otherwise built by
+     * calling out to KEYCLOAK_ISSUER_URI's OIDC discovery endpoint the
+     * moment the context starts (JwtDecoders.fromIssuerLocation is eager,
+     * unlike a jwk-set-uri-based decoder). Tests never call decode() at all
+     * - the jwt() request post-processor above injects an already-built Jwt
+     * straight into the SecurityContext - so this only needs to exist, not
+     * do anything real.
+     */
+    @TestConfiguration
+    static class NoNetworkJwtDecoderConfig {
+        @Bean
+        JwtDecoder jwtDecoder() {
+            return token -> {
+                throw new UnsupportedOperationException(
+                        "Real JWT decoding should never run in tests - authenticate "
+                                + "with AbstractIntegrationTest's asPatient/asFrontDesk/asProvider/"
+                                + "asClinicAdmin/asPlatformAdmin helpers instead.");
+            };
+        }
+    }
+}

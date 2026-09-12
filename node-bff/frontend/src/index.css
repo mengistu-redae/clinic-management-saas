@@ -1,0 +1,24 @@
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Default brand/accent palette as space-separated RGB channels (see
+ * tailwind.config.js). These are the platform defaults; a future
+ * BrandingProvider (phase 5) overrides --brand / --accent on :root for a
+ * signed-in clinic's staff, and per-card branding scopes them to a single
+ * appointment card via an inline style.
+ */
+:root {
+  --brand: 29 78 216;         /* #1D4ED8 */
+  --brand-dark: 30 58 138;    /* #1E3A8A */
+  --brand-light: 239 244 255; /* #EFF4FF */
+  --accent: 13 148 136;       /* #0D9488 */
+  --accent-dark: 15 118 110;  /* #0F766E */
+  --accent-light: 240 253 250;/* #F0FDFA */
+}
