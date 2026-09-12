@@ -12,12 +12,15 @@ const { TokenSet } = require('openid-client');
 // forwarded exactly as today - this list only ever *adds* anonymous access,
 // it doesn't change authenticated behavior.
 //
-// Empty for now - filled in as public endpoints are built in later phases
-// (the appointment tracking lookup and guest booking in phase 2, the lab
-// order tracking lookup later still). Literal paths must be listed before
-// any parameterized route on the same prefix, since Express's registration-
-// order route matching would otherwise let the param route swallow them.
-const PUBLIC_ROUTES = [];
+// Literal paths must be listed before any parameterized route on the same
+// prefix, since Express's registration-order route matching would
+// otherwise let the param route swallow them.
+const PUBLIC_ROUTES = [
+  ['get', '/clinics'], // patient-portal/guest entry point - see ClinicController.clinics
+  ['get', '/clinics/:clinicId/availability'], // see AvailabilityController
+  ['post', '/appointments/guest'], // guest (no-account) booking - see AppointmentController.createGuestAppointment
+  ['get', '/appointments/track/:appointmentRef'], // public two-factor tracking lookup
+];
 
 /**
  * Everything under /api is forwarded to the Spring Boot API with the

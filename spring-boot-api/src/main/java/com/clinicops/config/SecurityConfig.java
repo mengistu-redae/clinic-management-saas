@@ -3,6 +3,7 @@ package com.clinicops.config;
 import com.clinicops.tenant.TenantContextFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -53,11 +54,17 @@ public class SecurityConfig {
                 // status, not authentication/authorization of the original
                 // request that failed.
                 .requestMatchers("/error").permitAll()
-                // Public endpoints get added here, ahead of the blanket
-                // /api/** rule below, as they're built - e.g. the appointment
-                // tracking lookup (phase 2) and guest booking (phase 2).
-                // authorizeHttpRequests matches in order, so each public
-                // path must be listed before "/api/**".authenticated().
+                // Public endpoints, ahead of the blanket /api/** rule below -
+                // authorizeHttpRequests matches in order, so each of these
+                // must be listed before "/api/**".authenticated().
+                // The patient-portal/guest entry point: browse clinics, then
+                // one clinic's availability, with no login at all.
+                .requestMatchers(HttpMethod.GET, "/api/clinics").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/clinics/*/availability").permitAll()
+                // Guest booking (no account) and the public two-factor
+                // appointment-tracking lookup - see AppointmentController.
+                .requestMatchers(HttpMethod.POST, "/api/appointments/guest").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/appointments/track/*").permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().denyAll()
             )

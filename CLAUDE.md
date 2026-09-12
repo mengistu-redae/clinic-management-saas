@@ -35,8 +35,8 @@ browser --> nginx --> node-bff (session, OIDC, PKCE) --> spring-boot-api (JWT, t
 - **keycloak** - one realm (`clinic`); realm roles `platform_admin`,
   `clinic_admin`, `provider`, `front_desk`, `patient`; the Organizations
   feature groups clinic staff by tenant. Config under `infra/keycloak/`.
-- **postgres / redis** - primary datastore, and (once phase 2 lands)
-  appointment-slot locking + session store.
+- **postgres / redis** - primary datastore, and appointment-slot locking
+  (`SlotLockService`, phase 2) + session store.
 - **nginx** - single entry point on `:80` for local dev, under
   `infra/nginx/`.
 - `docker compose up --build` runs the whole stack. First boot is slow
@@ -60,6 +60,10 @@ infra/keycloak/start-native.ps1
 mvn verify                          # in spring-boot-api/ - Testcontainers-backed integration tests
 npm test                            # in node-bff/ - node's built-in test runner
 npm run build                       # in node-bff/frontend/
+
+# phase-2 test data (provider/room/appointment-type/working-hours have no
+# admin CRUD yet - see "Known gaps")
+docker compose exec -T postgres psql -U clinicops -d clinic_management < infra/postgres/seed-demo-scheduling-data.sql
 ```
 
 Service URLs (via docker compose): app through nginx on `:80`, node-bff
@@ -96,16 +100,26 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
 - A mirror `tenant_id` on the local `app_users` row is written once at
   provision time and **never consulted for authorization** - the per-request
   token is the source of truth.
-- **Marketplace-style exception** (planned, phase 2): the
-  appointment-availability search (a patient browsing open slots across
-  clinics) will be intentionally cross-tenant and have no tenant filter;
-  staff-facing calendar management will use the tenant-scoped finders. Keep
-  the two clearly separated once built.
+- **No cross-tenant marketplace search after all** (revised 2026-09-12,
+  phase 2): phase 1 sketched a "patient browses open slots across clinics"
+  search mirroring the reference project's cross-operator trip search. Built
+  differently once the domain was worked through in plan mode: unlike bus
+  routes (a natural origin/destination dimension shared across every
+  operator), clinics define their own `appointment_types` independently with
+  no shared cross-clinic identity to search by - "New Patient Visit" at one
+  clinic and "New Patient / 30 min" at another have no linkage. So a patient
+  picks a clinic first (`GET /api/clinics`, `permitAll`), then browses that
+  one clinic's availability (`GET /api/clinics/{id}/availability`,
+  `permitAll`) - both endpoints have no tenant filter in the sense that
+  they're reachable pre-auth, but the second is scoped to one clinic by path,
+  not a cross-tenant query.
 - **`TenantIsolationIntegrationTest`** (planned, grows with each phase): for
   every staff-scoped resource, clinic A seeds it and clinic B's staff is
   refused (404/403) on every read/write/action path, plus the deactivation
-  lockout. `ClinicControllerIntegrationTest` is the phase-1 seed of this
-  idea, scoped to the one endpoint that exists so far.
+  lockout. `ClinicControllerIntegrationTest` (phase 1) and
+  `AppointmentControllerIntegrationTest` (phase 2) seed this idea per
+  resource; a consolidated `TenantIsolationIntegrationTest` pulling every
+  path together is still just a plan, not built.
 
 ## Domain decisions pinned so far
 
@@ -129,6 +143,39 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   own multiple-choice questions (real HL7/FHIR ingestion vs. manual staff
   entry; whether result values are ever shown to staff pre-review). Not
   touched in this session.
+- **Single provider per appointment** (decided 2026-09-12, phase 2 plan
+  mode). No multi-provider (joint-consult) appointments in v1 - matches the
+  schema (`appointments.provider_id`, `slots.provider_id`, both singular).
+- **Recurring appointments: in scope, staff-only, bounded** (decided
+  2026-09-12 - a deliberate expansion beyond phase 2's original one-line
+  scope). A series is weekly/biweekly/etc. (`interval_weeks >= 1`) with a
+  fixed `occurrence_count` (2..`clinicops.appointment.series.max-occurrences`,
+  default 26) - no open-ended "until" recurrence. Created only by
+  `front_desk`/`provider`/`clinic_admin` via `POST /api/appointments/series`;
+  a patient still self-books one appointment at a time through the portal.
+  See `AppointmentSeriesService`.
+- **A patient-portal login auto-provisions a `patients` row on first booking
+  at a clinic** (decided 2026-09-12) - no separate "register as a patient
+  here" step. `patients.app_user_id` (added in `V2__appointment_booking.sql`)
+  links the two; `PatientProvisioningService.resolveForPortalUser` does the
+  lookup-or-create, mirroring `CurrentUserService`'s "create on first login"
+  pattern. A second booking at the same clinic by the same portal login
+  reuses the same `Patient` row - confirmed live, see "Verified this session".
+- **Provider/room/appointment-type/working-hours have no admin CRUD yet**
+  (decided 2026-09-12) - phase 1's plan assigned their full CRUD to phase 5
+  (clinic-admin config), but phase 2's booking flow needs to *read* them.
+  Resolved by building the entities/read-repos now and seeding data via SQL
+  (`infra/postgres/seed-demo-scheduling-data.sql`, same spirit as
+  `create-demo-clinic.sh`) rather than building admin CRUD endpoints early.
+  Patients are the one exception - `PatientController` create/list/search/get
+  is real, ongoing operational surface, not one-time admin setup, so it's
+  built now (phase 2), not phase 5.
+- **Invoicing/billing deferred, not assigned to phase 2** (decided
+  2026-09-12) - no domain-list item in the phase plan assigns invoice/
+  payment creation anywhere yet; `appointment_types.price_amount` already
+  makes a price visible without needing an invoice row. Revisit when billing
+  gets its own scoped slice. `invoices`/`payments` tables exist in
+  `V1__init.sql`, unused by any code so far.
 
 ## Phase plan
 
@@ -136,10 +183,13 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
    Keycloak realm, nginx, docker-compose, the Spring Boot tenancy/security
    skeleton, the BFF's OIDC/session/proxy skeleton, a minimal frontend, CI.
    See "Verified this session" below.
-2. **Patient booking flow** - appointment types, provider working hours ->
-   slot generation, `SlotLockService` + a split-bean `AppointmentWriter`,
-   both booking channels (`patient_portal`/`front_desk`), idempotency, the
-   public appointment-tracking endpoint, optional guest booking.
+2. **Patient booking flow** (built 2026-09-12) - appointment types, provider
+   working hours -> lazy slot generation, `SlotLockService` + a split-bean
+   `AppointmentWriter`, all three booking channels (`patient_portal`/
+   `front_desk`/`guest`), idempotency, the public appointment-tracking
+   endpoint, patient auto-provisioning, and (a scope expansion decided in
+   plan mode) bounded recurring-appointment series. See "Phase 2: patient
+   booking flow" below for the full write-up and "Verified this session".
 3. **Front-desk/counter + check-in** - front-desk search/book/
    reschedule/cancel, the check-in state machine
    (`booked -> checked_in -> roomed -> with_provider -> checked_out`,
@@ -231,6 +281,80 @@ running stack.
   `/error` re-dispatch into a misleading `403 insufficient_scope` instead of
   a `400` (already done, see `SecurityConfig`).
 
+## Phase 2: patient booking flow
+
+Mirrors the reference bus-ticketing-saas project's booking/scheduling code
+almost 1:1 (its `SeatLockService`/`BookingService`/`BookingWriter`/
+`SeatLayoutGenerator`/`TripCreationService`/`TicketNumberGenerator`/
+`BookingController` were read in full before writing any of this) - slots
+stand in for seats, appointments for bookings, clinics for operators.
+
+- **`com.clinicops.scheduling`**: `Slot` entity; `SlotGenerator` (pure,
+  static, mirrors `SeatLayoutGenerator`) turns a day's
+  `provider_working_hours` windows into whole-slot `(start, end)` pairs of an
+  appointment type's `durationMinutes` - no partial leftover slot, no
+  past-dated slots. Unlike the reference project's one-shot-at-creation seat
+  generation, `SlotGenerationService` generates **lazily and idempotently**
+  (`ensureSlotsGenerated`/`ensureSlotExists`) since clinic availability is a
+  rolling calendar, not a discrete one-off event like a bus trip. Working
+  hours are interpreted in **UTC** - no per-clinic timezone concept yet (see
+  "Known gaps"). `GET /api/clinics/{id}/availability` (`permitAll`) is the
+  patient/guest entry point, generating on demand (14-day default horizon).
+- **`com.clinicops.appointment`**: `SlotLockService` (line-for-line port of
+  `SeatLockService` - Redis `SETNX`+TTL, Lua-scripted token-checked release,
+  keyed by slot id) fronts `AppointmentService` (orchestrator, no
+  `@Transactional`) -> `AppointmentWriter` (separate `@Transactional` bean -
+  re-fetches the slot via `SlotRepository.findByIdAndProviderId`
+  (`@Lock(PESSIMISTIC_WRITE)`), re-checks `status = 'open'`, flips it,
+  saves the `Appointment`, writes the `notifications` outbox row). Same
+  reasoning as the reference project for the split: calling an
+  `@Transactional` method via `this.method(...)` from inside the same class
+  silently skips Spring's proxy.
+  - **Channels**: `POST /api/appointments` (shared by `patient_portal`/
+    `front_desk`, channel derived from the JWT role server-side, never
+    client-supplied), `POST /api/appointments/guest` (`permitAll`, no JWT at
+    all). `contactEmail` on a guest booking is **never persisted** - it only
+    flows through as the transient notification recipient, matching the
+    kickoff spec.
+  - **Idempotency**: `(tenant_id, idempotency_key)` unique constraint on
+    `appointments`, checked before any Redis lock is acquired.
+  - **`ClinicInactiveException`** (409) is checked explicitly in
+    `AppointmentService`, not left to `TenantContextFilter` alone - a
+    `patient_portal`/`guest` token carries no org claim, so that filter's
+    lockout never runs for them. Same belt-and-suspenders reasoning as the
+    reference project's `BookingService`.
+  - **Public tracking**: `GET /api/appointments/track/{ref}?phone=`
+    (`permitAll`) - ref + phone two-factor match (against the appointment's
+    own contact phone, or its linked patient's phone on file), mismatch and
+    unknown ref both 404. `AppointmentTrackingView` is deliberately narrow -
+    status/timestamps/clinic/provider/time only.
+- **Recurring series** (`AppointmentSeries`, `AppointmentSeriesService`) -
+  bounded (`interval_weeks`, fixed `occurrence_count`, capped by
+  `clinicops.appointment.series.max-occurrences`), staff-only. Reuses the
+  *exact* single-slot `SlotLockService`/`AppointmentWriter` path in a loop -
+  no new locking mechanism. Each occurrence gets a per-occurrence idempotency
+  key (`"<request key>::<index>"`), so retrying the whole series request is
+  itself idempotent - confirmed live (see below). **Partial success by
+  design**: a slot that's unavailable for one occurrence is recorded as a
+  conflict and the loop continues; `POST /api/appointments/series` returns
+  201 if at least one occurrence was created, 409 if the very first one
+  wasn't (nothing created at all).
+- **`com.clinicops.patient`**: `PatientController` (create/list/search/get,
+  `front_desk`/`clinic_admin` write, `+provider` read) for front-desk walk-in
+  registration. `PatientProvisioningService.resolveForPortalUser` handles the
+  portal-login-to-patient-record link (see "Domain decisions" above) - never
+  itself a public endpoint, a side effect of a `patient_portal` booking.
+- **`com.clinicops.user`**: `AppUser`/`CurrentUserService`/`AppUserWriter` -
+  ports the reference project's JWT-subject-to-local-user provisioning, but
+  **fixes a bug found while reading that code**: its `CurrentUserService.
+  provision` is `@Transactional` but called via plain `this.provision(...)`
+  self-invocation from the same class - the proxy never applies no matter the
+  method's visibility, despite the javadoc's claim that public-ness fixes it.
+  Here the write lives in a genuinely separate bean, `AppUserWriter`.
+- **Provider/room/appointment-type/working-hours**: entities + read-only
+  repositories only - no admin CRUD controller yet (phase 5). Seeded for
+  testing via `infra/postgres/seed-demo-scheduling-data.sql`.
+
 ## Frontend
 
 `node-bff/frontend/` - a React + Vite + Tailwind SPA with its own
@@ -274,6 +398,16 @@ server-side (`@PreAuthorize`).
   their own clinic, the clinic-deactivation lockout 403s, a patient token
   (no org claim) and a platform_admin token are both refused on this
   staff-only endpoint.
+- `SlotGeneratorTest` (phase 2, pure unit) - working-hours -> slot boundary
+  slicing, duration division, dropped partial-leftover slots, past-dated
+  exclusion, day-of-week mapping (0=Sunday), multiple same-day windows.
+- `AppointmentControllerIntegrationTest` (phase 2) - both authenticated
+  channels, guest booking, idempotency, slot conflict (409), cross-tenant
+  front_desk 403, missing-patientId 400, clinic-inactive 409, public tracking
+  (match/mismatch/unknown-ref all 404 alike), patient auto-provisioning
+  (reused on a second booking, not duplicated), availability search, and the
+  series flow (full success, partial conflict, idempotent retry of a partial
+  series).
 - CI (`.github/workflows/ci.yml`): three parallel jobs - `mvn verify`
   (spring-boot-api), `npm test` (node-bff), `npm run build` (frontend).
 
@@ -322,18 +456,84 @@ server-side (`@PreAuthorize`).
     admin API and written to `.env`, then `node-bff` was recreated to pick
     it up - both exactly per the README's documented one-time setup.
 
+## Verified this session - phase 2 (2026-09-12)
+
+- `mvn -q -DskipTests compile`/`test-compile` - clean.
+- `mvn test`: `SlotGeneratorTest` 6/6 and `TenantContextFilterTest` 7/7 pass
+  for real. `AppointmentControllerIntegrationTest` (and
+  `ClinicControllerIntegrationTest`) hit the same Testcontainers/Windows
+  Docker Desktop npipe wall as phase 1 - confirmed still the case, not a new
+  issue, still expected to run clean in CI only.
+- **`V2__appointment_booking.sql` applied cleanly** against the live
+  `docker compose up` stack (`spring-boot-api` logs: "Successfully applied 1
+  migration to schema public, now at version v2"), Hibernate validated the
+  new entity mappings against it with no drift.
+- **The whole booking flow was live-verified end to end**, through the real
+  browser session (not just `curl` against spring-boot-api directly) for the
+  authenticated channels, proving the full `browser -> nginx -> node-bff
+  (session) -> spring-boot-api` path, not just the API in isolation:
+  - Seeded a demo provider/room/appointment-type/working-hours via
+    `infra/postgres/seed-demo-scheduling-data.sql`.
+  - `GET /api/clinics/{id}/availability` - generated and returned real open
+    slots on first call (lazy generation confirmed).
+  - Guest booking (`curl`, no auth) - `channel: "guest"`, `contactEmail`
+    correctly came back `null` (never persisted), `appointmentRef`/
+    `clinicRef` generated (`5F299A` / `DC-2026-0001`).
+  - Public tracking - correct ref+phone match returned the narrow view;
+    wrong phone and an unknown ref both 404 identically.
+  - Booking the same slot twice - second attempt 409 (`SlotConflictException`).
+  - Logged in as `demo-patient` in the browser, called `POST /api/appointments`
+    via `fetch()` from the authenticated page (through node-bff's session,
+    not a direct bearer token) - `channel: "patient_portal"`, a `Patient` row
+    was auto-provisioned (name from the ID token's `given_name`/
+    `family_name`), `GET /api/my-appointments` returned exactly that
+    appointment. A second portal booking confirmed the *same* `Patient` row
+    is reused (not duplicated) - checked directly in Postgres too (exactly
+    one `patients` row with `app_user_id` set).
+  - Logged in as `demo-clinic-admin` - `POST /api/patients` (walk-in
+    registration) then `POST /api/appointments` with that `patientId` -
+    `channel: "front_desk"`, correctly `appUserId: null`/`customerUserId:
+    null` on the resulting records.
+  - `POST /api/appointments/series` (3 weekly occurrences, all slots free) -
+    201, `created.length == 3`, `conflicts.length == 0`. Retried the
+    identical request (same idempotency key) - same 201, same 3 appointments
+    returned, **confirmed in Postgres** exactly 3 rows exist for that
+    `series_id` (not 6) - the idempotent-retry design works as intended.
+  - `GET /api/appointments` (tenant-scoped, as `clinic_admin`) - all 6
+    appointments created above showed up with the right channels.
+  - **Not yet live-verified this way** (covered only by the Testcontainers
+    suite, which can't run locally - see above): the cross-tenant `front_desk`
+    403 and the clinic-inactive 409 path. Low risk (both are small, direct
+    conditionals already exercised in the integration test source), but
+    don't claim they're confirmed live until either CI runs or someone
+    checks them through the browser too.
+
 ## Known gaps (don't pretend these are done)
 
-- No patient booking flow yet (appointment types, slots, the booking
-  channels, idempotency, public tracking, guest booking) - phase 2.
 - No front-desk/check-in, provider clinical, clinic-admin config, or
-  platform-admin onboarding flows yet - phases 3-6.
+  platform-admin onboarding flows yet - phases 3-6. Front-desk can register
+  patients and book (phase 2), but not cancel/reschedule or run the
+  check-in state machine yet.
 - No PHI-access audit log in v1 (deferred by decision, 2026-09-12).
 - No lab-orders module yet - scoped as its own later session.
-- `payments`/`invoices` tables exist in `V1__init.sql` but there's no code
-  reading/writing them yet.
-- Email/notifications: the `notifications` outbox table exists in
-  `V1__init.sql`; no `NotificationWorker`/`LoggingEmailSender` yet.
+- No provider/room/appointment-type/working-hours admin CRUD yet (phase 5) -
+  seeded via SQL for now (`infra/postgres/seed-demo-scheduling-data.sql`).
+- No invoicing/payment creation wired to booking yet (not assigned to any
+  phase so far - see "Domain decisions"). `payments`/`invoices` tables exist
+  in `V1__init.sql` but no code reads/writes them.
+- Email/notifications: the `notifications` outbox table is written to
+  (`AppointmentWriter`) but there's no `NotificationWorker`/real sender yet -
+  rows just accumulate with `status = 'pending'`.
+- No per-clinic timezone - `SlotGenerator` interprets `provider_working_hours`
+  in UTC. Fine for a single-timezone deployment, wrong for one spanning
+  multiple.
+- Recurring-series cancellation/editing doesn't exist yet - a series can only
+  be created; cancelling one occurrence (once phase 3's cancel flow exists)
+  will need to decide whether it affects just that occurrence or offers to
+  cancel the rest of the series too. Not decided yet.
+- Cross-tenant `front_desk` 403 and clinic-inactive 409 for the booking flow
+  are covered by the (locally-blocked) integration suite but not yet
+  confirmed live through the browser - see "Verified this session - phase 2".
 - The Testcontainers-backed integration suite (`ClinicControllerIntegrationTest`
   and everything built on `AbstractIntegrationTest` in later phases) cannot
   run on this dev machine at all - a Windows Docker Desktop npipe

@@ -1,7 +1,15 @@
 package com.clinicops.support;
 
+import com.clinicops.appointmenttype.AppointmentType;
+import com.clinicops.appointmenttype.AppointmentTypeRepository;
 import com.clinicops.clinic.Clinic;
 import com.clinicops.clinic.ClinicRepository;
+import com.clinicops.patient.Patient;
+import com.clinicops.patient.PatientRepository;
+import com.clinicops.provider.Provider;
+import com.clinicops.provider.ProviderRepository;
+import com.clinicops.provider.ProviderWorkingHours;
+import com.clinicops.provider.ProviderWorkingHoursRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -21,9 +29,12 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
@@ -97,6 +108,18 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected ClinicRepository clinicRepository;
 
+    @Autowired
+    protected ProviderRepository providerRepository;
+
+    @Autowired
+    protected ProviderWorkingHoursRepository providerWorkingHoursRepository;
+
+    @Autowired
+    protected AppointmentTypeRepository appointmentTypeRepository;
+
+    @Autowired
+    protected PatientRepository patientRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -106,6 +129,42 @@ public abstract class AbstractIntegrationTest {
         clinic.setKeycloakOrgId(keycloakOrgAlias);
         clinic.setName(name);
         return clinicRepository.save(clinic);
+    }
+
+    protected Provider createProvider(UUID tenantId, String fullName) {
+        Provider provider = new Provider();
+        provider.setTenantId(tenantId);
+        provider.setFullName(fullName);
+        return providerRepository.save(provider);
+    }
+
+    /** dayOfWeek: 0=Sunday..6=Saturday - see ProviderWorkingHours/SlotGenerator. */
+    protected ProviderWorkingHours createWorkingHours(UUID tenantId, UUID providerId, int dayOfWeek, LocalTime start, LocalTime end) {
+        ProviderWorkingHours hours = new ProviderWorkingHours();
+        hours.setTenantId(tenantId);
+        hours.setProviderId(providerId);
+        hours.setDayOfWeek((short) dayOfWeek);
+        hours.setStartTime(start);
+        hours.setEndTime(end);
+        return providerWorkingHoursRepository.save(hours);
+    }
+
+    protected AppointmentType createAppointmentType(UUID tenantId, String name, int durationMinutes, String price) {
+        AppointmentType type = new AppointmentType();
+        type.setTenantId(tenantId);
+        type.setName(name);
+        type.setDurationMinutes(durationMinutes);
+        type.setPriceAmount(new BigDecimal(price));
+        return appointmentTypeRepository.save(type);
+    }
+
+    protected Patient createPatient(UUID tenantId, String firstName, String lastName, String phone) {
+        Patient patient = new Patient();
+        patient.setTenantId(tenantId);
+        patient.setFirstName(firstName);
+        patient.setLastName(lastName);
+        patient.setPhone(phone);
+        return patientRepository.save(patient);
     }
 
     // ---- auth builders: hand these straight to MockMvc's .with(...). ----

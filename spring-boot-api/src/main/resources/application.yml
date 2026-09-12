@@ -73,6 +73,10 @@ clinicops:
       fee-patient-portal: 0.00
       fee-front-desk: 0.00
     reminder-lead-hours: 24
+    series:
+      # Bounds a recurring-appointment series (phase 2) to prevent abuse -
+      # half a year weekly, or a year biweekly. See AppointmentSeriesService.
+      max-occurrences: 26
   keycloak-admin:
     # Used only by PlatformController's "create clinic" endpoint
     # (platform_admin, phase 6) to provision a new Keycloak Organization via

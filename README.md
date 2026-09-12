@@ -53,9 +53,11 @@ There is deliberately **no** blanket Hibernate multi-tenant filter. Instead:
   `TenantContext.require()`, which throws a clear error instead of silently
   proceeding with `null`.
 
-See `CLAUDE.md`'s "Tenancy model" section for the full write-up, including
-the planned marketplace-style exception (cross-tenant appointment-
-availability search) once that's built.
+See `CLAUDE.md`'s "Tenancy model" section for the full write-up. (Phase 1
+sketched a cross-tenant "marketplace" availability search here; phase 2
+dropped that in favor of picking a clinic first, then browsing its own
+availability - clinics define their own appointment types independently,
+with no shared cross-clinic identity to search by.)
 
 ## Running it
 
@@ -85,6 +87,12 @@ Then log in at `http://localhost:3000/auth/login` as `demo-clinic-admin` or
 `demo-patient` (both `changeme`, both forced to reset on first login - see
 `infra/keycloak/realm-export.json`).
 
+To try the booking flow (phase 2), seed a demo provider/room/appointment
+type/working-hours first (no admin CRUD for these yet - see "Known gaps"):
+```bash
+docker compose exec -T postgres psql -U clinicops -d clinic_management < infra/postgres/seed-demo-scheduling-data.sql
+```
+
 Service URLs:
 
 | Service | URL |
@@ -107,21 +115,30 @@ already in use" / "ports are not available".
 
 ## What's built so far
 
-Phase 1 only: the infra/auth skeleton (this scaffolding). Live-verified
-2026-09-12 against a real `docker compose up` stack and a real browser
-login as both `demo-clinic-admin` (lands on a page showing their role and
-`GET /api/clinic/me`'s resolved clinic name) and `demo-patient` (lands on
-the same page with no clinic panel, since a patient token carries no org
-claim). See `CLAUDE.md` for the phase plan, two real infra bugs found and
-fixed while getting that login working, and a running log of what's
-verified and how.
+- **Phase 1** - the infra/auth skeleton. Live-verified against a real
+  `docker compose up` stack and a real browser login as both
+  `demo-clinic-admin` and `demo-patient`.
+- **Phase 2** - the patient booking flow: appointment types, provider
+  working hours, lazy slot generation, the Redis-lock + DB-write booking
+  flow with idempotency, all three channels (`patient_portal`/`front_desk`/
+  `guest`), patient auto-provisioning, the public appointment-tracking
+  endpoint, and bounded recurring-appointment series. Live-verified end to
+  end through a real browser session for every channel plus a full and a
+  partial-conflict recurring series (confirmed idempotent on retry).
+  Backend only so far - no booking UI yet.
+
+See `CLAUDE.md` for the full phase plan, every design decision and why, and
+a running log of what's verified and how.
 
 ## Known gaps
 
-- No patient booking flow yet (appointment types, slots, the booking
-  channels) - phase 2.
+- No front-desk/check-in, provider clinical, clinic-admin config, or
+  platform-admin flows yet - phases 3-6.
 - No PHI-access audit log in v1 (deferred by decision - see `CLAUDE.md`).
 - No lab-orders module yet - scoped as its own later session per the
   original kickoff spec (`clinic-management-kickoff-prompt.md`).
-- Email is a stub (`LoggingEmailSender`, once the notification outbox is
-  built in a later phase).
+- No provider/room/appointment-type/working-hours admin CRUD yet (phase 5) -
+  seeded via SQL for now.
+- No invoicing/payment creation wired to booking yet; email is a stub
+  (outbox rows are written, nothing sends them yet).
+- No patient-portal/front-desk booking **UI** yet - phase 2 is backend only.
