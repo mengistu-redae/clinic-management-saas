@@ -31,6 +31,13 @@ BEGIN
     INSERT INTO provider_working_hours (tenant_id, provider_id, day_of_week, start_time, end_time)
     SELECT v_clinic_id, v_provider_id, dow, '09:00', '17:00' FROM generate_series(0, 6) AS dow;
 
+    -- Clinic-wide no-show/late-cancel fee tiers (phase 3 verification) -
+    -- 24h+ notice: no fee; 2-24h: 50%; under 2h: 100%.
+    INSERT INTO fee_policies (tenant_id, provider_id, cutoff_hours, fee_percent) VALUES
+        (v_clinic_id, NULL, 24, 0),
+        (v_clinic_id, NULL, 2, 50),
+        (v_clinic_id, NULL, 0, 100);
+
     RAISE NOTICE 'clinic_id=%, room_id=%, provider_id=%, appointment_type_id=%',
         v_clinic_id, v_room_id, v_provider_id, v_type_id;
 END $$;

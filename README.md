@@ -125,20 +125,34 @@ already in use" / "ports are not available".
   endpoint, and bounded recurring-appointment series. Live-verified end to
   end through a real browser session for every channel plus a full and a
   partial-conflict recurring series (confirmed idempotent on retry).
-  Backend only so far - no booking UI yet.
+- **Phase 3** - reschedule/cancel with fee-tier calculation, and the full
+  check-in state machine (`booked -> checked_in -> roomed -> with_provider
+  -> checked_out`, plus `no_show`). Live-verified end to end: a tiered
+  cancellation fee, a reschedule moving an appointment to a new slot, the
+  full five-state check-in sequence (idempotent re-calls, out-of-order
+  409s), the identity check (mismatch, match, and "no ID on file" all
+  behaving as decided), and manual no-show.
+
+Backend only so far - no booking/front-desk UI yet.
 
 See `CLAUDE.md` for the full phase plan, every design decision and why, and
 a running log of what's verified and how.
 
 ## Known gaps
 
-- No front-desk/check-in, provider clinical, clinic-admin config, or
-  platform-admin flows yet - phases 3-6.
+- No provider clinical, clinic-admin config, or platform-admin flows yet -
+  phases 4-6.
 - No PHI-access audit log in v1 (deferred by decision - see `CLAUDE.md`).
 - No lab-orders module yet - scoped as its own later session per the
   original kickoff spec (`clinic-management-kickoff-prompt.md`).
-- No provider/room/appointment-type/working-hours admin CRUD yet (phase 5) -
-  seeded via SQL for now.
-- No invoicing/payment creation wired to booking yet; email is a stub
-  (outbox rows are written, nothing sends them yet).
-- No patient-portal/front-desk booking **UI** yet - phase 2 is backend only.
+- No provider/room/appointment-type/working-hours/fee-policy admin CRUD yet
+  (phase 5) - seeded via SQL for now.
+- No invoicing/payment creation wired to booking yet; cancellation/
+  reschedule fees are computed and recorded but nothing charges them yet.
+  Email is a stub (outbox rows are written, nothing sends them yet).
+- No patient-portal/front-desk booking **UI** yet - backend only so far.
+- **If you edit `node-bff/src/routes/api.js`'s `PUBLIC_ROUTES`, rebuild the
+  container** (`docker compose up -d --build --force-recreate node-bff`) -
+  a running container keeps serving its old code, which silently breaks
+  anonymous access to those routes until it's rebuilt (found the hard way
+  in phase 3 - see `CLAUDE.md`).

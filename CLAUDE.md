@@ -61,8 +61,8 @@ mvn verify                          # in spring-boot-api/ - Testcontainers-backe
 npm test                            # in node-bff/ - node's built-in test runner
 npm run build                       # in node-bff/frontend/
 
-# phase-2 test data (provider/room/appointment-type/working-hours have no
-# admin CRUD yet - see "Known gaps")
+# test data (provider/room/appointment-type/working-hours/fee-policies have
+# no admin CRUD yet - see "Known gaps")
 docker compose exec -T postgres psql -U clinicops -d clinic_management < infra/postgres/seed-demo-scheduling-data.sql
 ```
 
@@ -176,6 +176,18 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   makes a price visible without needing an invoice row. Revisit when billing
   gets its own scoped slice. `invoices`/`payments` tables exist in
   `V1__init.sql`, unused by any code so far.
+- **Check-in identity check: no ID on file is allowed through, not a
+  mismatch** (decided 2026-09-13, phase 3 plan mode). Only an actual
+  value-vs-value mismatch between a presented ID and `patients.national_id`
+  raises `IdentityMismatchException`. Deliberately the opposite of both the
+  reference project's own boarding check *and* the kickoff spec's lab-module
+  check (both treat "nothing on file" as a mismatch too) - confirmed live,
+  see "Verified this session - phase 3".
+- **Reschedule/cancel guards stay minimal** (decided 2026-09-13) - only what
+  the reference project and kickoff spec actually specify (already
+  -cancelled guard, notice gate, cross-tenant/cross-owner 404). No extra
+  unspecified state guards - e.g. cancelling an already-`checked_in`
+  appointment is allowed, matching the reference project's own scope.
 
 ## Phase plan
 
@@ -190,11 +202,12 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
    endpoint, patient auto-provisioning, and (a scope expansion decided in
    plan mode) bounded recurring-appointment series. See "Phase 2: patient
    booking flow" below for the full write-up and "Verified this session".
-3. **Front-desk/counter + check-in** - front-desk search/book/
-   reschedule/cancel, the check-in state machine
+3. **Front-desk/counter + check-in** (built 2026-09-13) - reschedule/cancel
+   with fee-tier calculation, and the check-in state machine
    (`booked -> checked_in -> roomed -> with_provider -> checked_out`,
-   `no_show`/`cancelled`), fee-tier calculation on cancel, cross-tenant 403
-   coverage.
+   `no_show`/`cancelled`). Front-desk's own search/book/patient-registration
+   was already built in phase 2. See "Phase 3: front-desk/counter +
+   check-in" below and "Verified this session - phase 3".
 4. **Provider clinical flow** - today's schedule, encounter documentation,
    prescriptions.
 5. **Clinic-admin config** - providers/rooms/appointment-types/fee-policy
@@ -355,6 +368,67 @@ stand in for seats, appointments for bookings, clinics for operators.
   repositories only - no admin CRUD controller yet (phase 5). Seeded for
   testing via `infra/postgres/seed-demo-scheduling-data.sql`.
 
+## Phase 3: front-desk/counter + check-in
+
+Mirrors the reference project's `RefundPolicy`/`RefundCalculator`,
+`CancellationService`/`CancellationController`, and
+`BookingRescheduleService`/`BookingRescheduleController` (read in full).
+**One thing does NOT carry over**: the reference project's "boarding" is a
+flat two-value flag (`not_boarded`/`boarded`), not a multi-step state
+machine - the check-in state machine below is a fresh design, following the
+same conventions used elsewhere (idempotent re-call, a dedicated exception
+on an out-of-order call, a live time gate that never trusts the scheduler).
+
+- **`com.clinicops.feepolicy`**: `FeePolicy` (one row per tier - unlike the
+  reference project's `refund_policies`, which stores a whole JSON tier
+  array in one row per route/policy) + `FeeCalculator.calculate(tenantId,
+  providerId, totalCost, dueAt)`, kept generic exactly as the kickoff spec
+  asks so a future lab-order cancellation can reuse it unchanged. A specific
+  provider's tiers **replace** the clinic-wide default entirely (never
+  merged); tiers sort highest-cutoff-first defensively; no tiers configured
+  at all -> fee is zero, never blocks the action.
+- **Cancellation** (`CancellationService`/`CancellationController`) - same
+  two-public-methods-one-private-helper split as the reference project:
+  `cancel` (tenant-scoped, `front_desk`/`clinic_admin`) and `cancelAsCustomer`
+  (ownership-scoped via `customerUserId`, `patient`) both delegate to
+  `applyCancellation` - already-cancelled guard -> fee via `FeeCalculator`
+  -> flip `status = "cancelled"` -> free the slot -> write the
+  `appointment_cancellations` audit row -> outbox notification if a
+  recipient's on file. The fee is **computed and recorded only** - no
+  billing integration exists yet to actually charge it (see "Known gaps").
+- **Reschedule** (`RescheduleService`/`RescheduleController`) - same split.
+  Order: already-cancelled guard -> minimum-notice gate against the
+  *current* slot (`clinicops.appointment.reschedule.min-notice-hours`) ->
+  new slot's clinic must match (`TenantMismatchException`) -> new slot's
+  appointment type must match the original (400) -> lock + re-check the new
+  slot (`SlotConflictException`) -> **update the appointment row in place**
+  (reassign `slotId`/`providerId`) rather than the reference project's
+  insert-new-then-delete-old dance - this schema has no child table keyed by
+  `slot_id` the way its `booking_infants` forced that ordering, so the
+  simpler in-place update is safe here; revisit if a future migration adds
+  one -> free the old slot -> flat fee from
+  `clinicops.appointment.reschedule.fee-patient-portal`/`fee-front-desk` ->
+  write the `appointment_reschedules` row -> outbox notification.
+- **Check-in state machine** (`CheckInService`/`CheckInController`) -
+  `booked -> checked_in -> roomed -> with_provider -> checked_out`, plus
+  `no_show` (only reachable from `booked`). Re-calling a transition already
+  reached is idempotent (200, returns current state, no re-validation);
+  calling one out of order throws `InvalidAppointmentStatusException` (409).
+  `check-in` alone carries two extra checks: `CheckInWindowClosedException`
+  (409) if `Instant.now()` is past the slot's own **end** time - read as the
+  whole slot window, not just the start instant, since the kickoff spec
+  doesn't pin an exact grace period and inventing one felt worse than using
+  a boundary the domain already has - and `IdentityMismatchException` (409)
+  for a genuine presented-ID-vs-`patients.national_id` mismatch (see the
+  "no ID on file" decision above).
+- **`NoShowScheduler`** (`@Scheduled(fixedDelay = 300_000)`, needs
+  `@EnableScheduling` on the application class - same "silently inert
+  without it" gotcha as `@EnableMethodSecurity`) - a single native bulk
+  `UPDATE ... FROM slots` flipping stale `booked` appointments to `no_show`.
+  Purely worklist hygiene, same principle as the reference project's
+  `TripLifecycleScheduler`: `CheckInService.checkIn`'s live gate check never
+  depends on this having already run for a given appointment.
+
 ## Frontend
 
 `node-bff/frontend/` - a React + Vite + Tailwind SPA with its own
@@ -408,6 +482,19 @@ server-side (`@PreAuthorize`).
   (reused on a second booking, not duplicated), availability search, and the
   series flow (full success, partial conflict, idempotent retry of a partial
   series).
+- `FeeCalculatorTest` (phase 3, pure unit) - no tiers -> zero; each tier
+  boundary; tiers sort correctly regardless of storage order; a provider
+  -specific tier set replaces the clinic-wide default entirely (verified via
+  `verify(..., never())` that the default is never even queried).
+- `CancellationIntegrationTest`/`RescheduleIntegrationTest`/
+  `CheckInIntegrationTest` (phase 3) - fee-tier calculation on cancel,
+  double-cancel 409, cross-tenant/cross-owner 404, patient self-service
+  (both ownership-scoped and staff-endpoint-403-for-a-patient-token);
+  notice-gate 409 on reschedule, cross-clinic 403, slot-conflict 409; the
+  full five-state check-in happy path, idempotent re-call, out-of-order 409,
+  window-closed 409, identity mismatch/match/no-id-on-file, manual no-show,
+  and the scheduler's bulk flip (called directly, not by waiting out the
+  real 5-minute timer).
 - CI (`.github/workflows/ci.yml`): three parallel jobs - `mvn verify`
   (spring-boot-api), `npm test` (node-bff), `npm run build` (frontend).
 
@@ -508,32 +595,125 @@ server-side (`@PreAuthorize`).
     don't claim they're confirmed live until either CI runs or someone
     checks them through the browser too.
 
+## Verified this session - phase 3 (2026-09-13)
+
+- `mvn -q clean compile test-compile` - clean. `mvn test`: 20/20 unit tests
+  pass for real (`SlotGeneratorTest` 6, `TenantContextFilterTest` 7,
+  `FeeCalculatorTest` 7 - new this phase). All integration test classes
+  (including the three new phase-3 ones) hit the same Testcontainers/
+  Windows Docker Desktop npipe wall as phases 1-2 - still the known,
+  documented limitation, not a new issue.
+- **A real bug found while writing `AppointmentCancellation`**: it initially
+  extended `BaseTenantEntity` (which mandates a `created_at` column), but
+  `V3__cancellation_and_checkin.sql` only has `cancelled_at` - Hibernate's
+  schema validation caught this immediately at context startup
+  (`SchemaManagementException: missing column [created_at]`). Fixed by not
+  extending `BaseTenantEntity` (same shape as `AppointmentSeries` from phase
+  2) - `cancelledAt` already captures "when this row was created", a
+  separate `created_at` would be redundant. `AppointmentReschedule`/
+  `FeePolicy` both correctly extend it - their tables do have `created_at`.
+- **V3 migration applied cleanly** against the live stack once fixed
+  (`spring-boot-api` logs: "Successfully applied 1 migration ... now at
+  version v3").
+- **A second, more consequential real bug, found live**: `node-bff`'s
+  container had been running continuously since phase 1 and was never
+  rebuilt after `PUBLIC_ROUTES` was populated in phase 2 - every
+  "permitAll" endpoint (`/api/clinics`, `/api/clinics/*/availability`,
+  `/api/appointments/guest`, `/api/appointments/track/*`) was silently
+  falling through to `requireSession` and 401ing for any genuinely
+  anonymous caller, the whole time. Never caught in phase 2 because that
+  phase's guest-booking verification went straight to `spring-boot-api:8081`
+  directly, bypassing the BFF entirely. Caught this phase only because the
+  live check-in verification routed everything through node-bff's real
+  session/proxy path on principle. Fixed by rebuilding/recreating the
+  `node-bff` container - **lesson for future phases: after editing
+  `node-bff/src/routes/api.js`'s `PUBLIC_ROUTES`, always
+  `docker compose up -d --build --force-recreate node-bff`, and verify
+  anonymous access through node-bff's own port (`:3000` or via nginx),
+  never only via a direct `curl` to spring-boot-api, which will pass even
+  when the BFF layer is silently broken.**
+- **The whole cancel/reschedule/check-in flow was live-verified end to end**
+  through the real browser session and, for the anonymous paths, through
+  node-bff directly with no cookies at all (confirming the fix above):
+  - Seeded three clinic-wide fee tiers via
+    `infra/postgres/seed-demo-scheduling-data.sql` (extended this phase):
+    24h+ = 0%, 2-24h = 50%, <2h = 100%.
+  - Staff-cancelled a guest booking with ~4.6h notice - fee recorded as
+    `$25.00` (50% of the $50 appointment type), matching the middle tier;
+    slot freed to `open`. Cancelling the same appointment again -> 409.
+  - Staff rescheduled an appointment to a different slot (same provider) -
+    old slot freed, new slot booked, `appointment_reschedules` row recorded
+    with the correct `previous_slot_id` and the flat fee (`$0.00`, the
+    platform default).
+  - Full check-in sequence on a real appointment: `check-in` ->
+    `checked_in`, `room` -> `roomed`, `start` -> `with_provider`,
+    `check-out` -> `checked_out` - all 200. Re-calling `check-out` again
+    -> 200 unchanged (idempotent). Calling `check-in` again on a
+    `checked_out` appointment -> 409 `"Cannot check in an appointment with
+    status 'checked_out'"`.
+  - Identity check: a patient with `national_id = 'ID-ON-FILE-999'` -
+    presenting `WRONG-ID` -> 409; presenting the matching id -> 200. A
+    *different* patient with no `national_id` at all - presenting any
+    string at check-in -> 200 (confirmed `patientNationalId: null` in the
+    response before check-in), exactly the pinned decision.
+  - Manual `no-show` from `booked` -> 200, idempotent on repeat.
+  - The scheduler's bulk-update SQL (the exact statement
+    `AppointmentRepository.flipStaleBookedToNoShow` issues) run directly
+    against a seeded stale `booked` appointment (slot ended 2.5h ago) -
+    flipped to `no_show` correctly. The live 5-minute `@Scheduled` firing
+    itself wasn't observed by waiting out the real timer in this session
+    (impractical mid-verification) - only the SQL logic was confirmed this
+    way; a future session should confirm the actual timer fires too.
+  - Patient self-service: booked as `demo-patient`, confirmed the
+    staff-only `/api/appointments/{id}/cancel` 403s for a patient token,
+    then successfully self-cancelled via `/api/my-appointments/{id}/cancel`.
+  - **Not yet live-verified this way**: patient self-reschedule through the
+    browser specifically (covered by `RescheduleIntegrationTest` only, which
+    can't run locally) - the mechanism is identical to self-cancel's, which
+    *was* verified live, so risk is low but not zero.
+
 ## Known gaps (don't pretend these are done)
 
-- No front-desk/check-in, provider clinical, clinic-admin config, or
-  platform-admin onboarding flows yet - phases 3-6. Front-desk can register
-  patients and book (phase 2), but not cancel/reschedule or run the
-  check-in state machine yet.
+- No provider clinical, clinic-admin config, or platform-admin onboarding
+  flows yet - phases 4-6.
 - No PHI-access audit log in v1 (deferred by decision, 2026-09-12).
 - No lab-orders module yet - scoped as its own later session.
-- No provider/room/appointment-type/working-hours admin CRUD yet (phase 5) -
-  seeded via SQL for now (`infra/postgres/seed-demo-scheduling-data.sql`).
+- No provider/room/appointment-type/working-hours/fee-policy admin CRUD yet
+  (phase 5) - seeded via SQL for now
+  (`infra/postgres/seed-demo-scheduling-data.sql`).
 - No invoicing/payment creation wired to booking yet (not assigned to any
-  phase so far - see "Domain decisions"). `payments`/`invoices` tables exist
-  in `V1__init.sql` but no code reads/writes them.
+  phase so far - see "Domain decisions"). Cancellation/reschedule fees are
+  **computed and recorded** (`appointment_cancellations.fee_amount`,
+  `appointment_reschedules.fee_amount`) but nothing actually charges or
+  collects them - `payments`/`invoices` tables exist in `V1__init.sql` but no
+  code reads/writes them.
 - Email/notifications: the `notifications` outbox table is written to
-  (`AppointmentWriter`) but there's no `NotificationWorker`/real sender yet -
-  rows just accumulate with `status = 'pending'`.
+  (`AppointmentWriter`/`CancellationService`/`RescheduleService`) but there's
+  no `NotificationWorker`/real sender yet - rows just accumulate with
+  `status = 'pending'`.
 - No per-clinic timezone - `SlotGenerator` interprets `provider_working_hours`
   in UTC. Fine for a single-timezone deployment, wrong for one spanning
   multiple.
-- Recurring-series cancellation/editing doesn't exist yet - a series can only
-  be created; cancelling one occurrence (once phase 3's cancel flow exists)
-  will need to decide whether it affects just that occurrence or offers to
-  cancel the rest of the series too. Not decided yet.
+- Recurring-series cancellation isn't its own concept - cancelling one
+  occurrence just cancels that one `Appointment` row via the normal cancel
+  endpoint; there's no "cancel the rest of the series too" option. Not
+  decided whether one should exist.
 - Cross-tenant `front_desk` 403 and clinic-inactive 409 for the booking flow
-  are covered by the (locally-blocked) integration suite but not yet
-  confirmed live through the browser - see "Verified this session - phase 2".
+  (phase 2), and patient self-reschedule through the browser specifically
+  (phase 3), are covered by the (locally-blocked) integration suite but not
+  yet confirmed live - see the phase 2/3 "Verified this session" sections.
+- The `NoShowScheduler`'s actual 5-minute `@Scheduled` firing has only been
+  confirmed by running its underlying SQL directly, not by observing the
+  real timer fire - low risk (the query itself is verified, `@Scheduled`/
+  `@EnableScheduling` are standard, unremarkable wiring) but not literally
+  watched happen.
+- **Lesson from a real bug this phase**: after editing `node-bff/src/routes/
+  api.js`'s `PUBLIC_ROUTES`, the `node-bff` container must be rebuilt/
+  recreated (`docker compose up -d --build --force-recreate node-bff`)
+  before those routes take effect - a long-running container silently keeps
+  serving its old code. Verify anonymous/public endpoints through node-bff's
+  own port, never only via a direct curl to spring-boot-api - that will pass
+  even when the BFF's public-route bypass is broken or stale.
 - The Testcontainers-backed integration suite (`ClinicControllerIntegrationTest`
   and everything built on `AbstractIntegrationTest` in later phases) cannot
   run on this dev machine at all - a Windows Docker Desktop npipe

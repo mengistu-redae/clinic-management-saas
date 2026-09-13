@@ -1,15 +1,21 @@
 package com.clinicops.support;
 
+import com.clinicops.appointment.Appointment;
+import com.clinicops.appointment.AppointmentRepository;
 import com.clinicops.appointmenttype.AppointmentType;
 import com.clinicops.appointmenttype.AppointmentTypeRepository;
 import com.clinicops.clinic.Clinic;
 import com.clinicops.clinic.ClinicRepository;
+import com.clinicops.feepolicy.FeePolicy;
+import com.clinicops.feepolicy.FeePolicyRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
 import com.clinicops.provider.Provider;
 import com.clinicops.provider.ProviderRepository;
 import com.clinicops.provider.ProviderWorkingHours;
 import com.clinicops.provider.ProviderWorkingHoursRepository;
+import com.clinicops.scheduling.Slot;
+import com.clinicops.scheduling.SlotRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -120,6 +126,15 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected PatientRepository patientRepository;
 
+    @Autowired
+    protected SlotRepository slotRepository;
+
+    @Autowired
+    protected FeePolicyRepository feePolicyRepository;
+
+    @Autowired
+    protected AppointmentRepository appointmentRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -165,6 +180,51 @@ public abstract class AbstractIntegrationTest {
         patient.setLastName(lastName);
         patient.setPhone(phone);
         return patientRepository.save(patient);
+    }
+
+    protected Slot createSlot(UUID tenantId, UUID providerId, UUID appointmentTypeId, Instant start, Instant end) {
+        Slot slot = new Slot();
+        slot.setTenantId(tenantId);
+        slot.setProviderId(providerId);
+        slot.setAppointmentTypeId(appointmentTypeId);
+        slot.setStartTime(start);
+        slot.setEndTime(end);
+        return slotRepository.save(slot);
+    }
+
+    /** providerId null = a clinic-wide default tier. */
+    protected FeePolicy createFeePolicy(UUID tenantId, UUID providerId, int cutoffHours, int feePercent) {
+        FeePolicy policy = new FeePolicy();
+        policy.setTenantId(tenantId);
+        policy.setProviderId(providerId);
+        policy.setCutoffHours(cutoffHours);
+        policy.setFeePercent(feePercent);
+        return feePolicyRepository.save(policy);
+    }
+
+    /**
+     * Books a slot directly (bypassing the HTTP booking flow) for tests
+     * that only care about what happens *after* a booking already exists -
+     * cancellation/reschedule/check-in. Mirrors what AppointmentWriter would
+     * have produced.
+     */
+    protected Appointment createBookedAppointment(
+            UUID tenantId, UUID slotId, UUID patientId, UUID providerId, UUID appointmentTypeId, UUID customerUserId) {
+        Slot slot = slotRepository.findById(slotId).orElseThrow();
+        slot.setStatus("booked");
+        slotRepository.save(slot);
+
+        Appointment appointment = new Appointment();
+        appointment.setTenantId(tenantId);
+        appointment.setSlotId(slotId);
+        appointment.setPatientId(patientId);
+        appointment.setProviderId(providerId);
+        appointment.setAppointmentTypeId(appointmentTypeId);
+        appointment.setChannel(customerUserId != null ? "patient_portal" : "front_desk");
+        appointment.setCustomerUserId(customerUserId);
+        appointment.setIdempotencyKey("fixture-" + UUID.randomUUID());
+        appointment.setAppointmentRef(UUID.randomUUID().toString().substring(0, 6).toUpperCase(java.util.Locale.ROOT));
+        return appointmentRepository.save(appointment);
     }
 
     // ---- auth builders: hand these straight to MockMvc's .with(...). ----
