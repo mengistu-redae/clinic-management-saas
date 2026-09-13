@@ -1,16 +1,34 @@
+import { Routes, Route, Link } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext.jsx';
+import RequireRole from './auth/RequireRole.jsx';
 import AppShell from './layout/AppShell.jsx';
 import PublicShell from './layout/PublicShell.jsx';
+import PatientDashboard from './pages/patient/Dashboard.jsx';
+import FrontDeskDashboard from './pages/front-desk/Dashboard.jsx';
+import ProviderDashboard from './pages/provider/Dashboard.jsx';
+import ClinicAdminDashboard from './pages/clinic-admin/Dashboard.jsx';
+import PlatformAdminDashboard from './pages/platform-admin/Dashboard.jsx';
 
 /**
- * Phase-1 placeholder: a single root route that renders the signed-in shell
- * or the public landing page depending on auth state. Real per-role routing
- * (patient portal, front-desk, provider, clinic-admin, platform-admin) is
- * built out phase by phase starting in phase 2 - see CLAUDE.md.
+ * "/" is role-aware: each signed-in role lands on its own dashboard; a
+ * logged-out visitor gets PublicShell (via RootLayout below). Real
+ * authorization stays entirely server-side (@PreAuthorize on every
+ * endpoint these dashboards call) - this and RequireRole are UX routing
+ * only. Mirrors the reference bus-ticketing-saas project's own App.jsx
+ * RootLayout/RoleHome shape, adapted to this app's five roles.
  */
-export default function App() {
-  const { isLoading, authenticated } = useAuth();
+function RoleHome() {
+  const { hasRole } = useAuth();
+  if (hasRole('patient')) return <PatientDashboard />;
+  if (hasRole('front_desk')) return <FrontDeskDashboard />;
+  if (hasRole('provider')) return <ProviderDashboard />;
+  if (hasRole('clinic_admin')) return <ClinicAdminDashboard />;
+  if (hasRole('platform_admin')) return <PlatformAdminDashboard />;
+  return null;
+}
 
+function RootLayout() {
+  const { isLoading, authenticated } = useAuth();
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -18,6 +36,70 @@ export default function App() {
       </div>
     );
   }
-
   return authenticated ? <AppShell /> : <PublicShell />;
+}
+
+function NotFound() {
+  return (
+    <div className="py-16 text-center">
+      <p className="text-xl font-semibold text-ink">Page not found</p>
+      <Link to="/" className="mt-2 inline-block text-sm text-brand hover:underline">
+        Back home
+      </Link>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<RootLayout />}>
+        <Route path="/" element={<RoleHome />} />
+        {/* Stable deep-links per role, matching the nav's own targets -
+            RoleHome renders these at "/" too, but a bookmarkable path is
+            clearer and is where future per-role pages will nest under. */}
+        <Route
+          path="/patient"
+          element={
+            <RequireRole role="patient">
+              <PatientDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/front-desk"
+          element={
+            <RequireRole role="front_desk">
+              <FrontDeskDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/provider"
+          element={
+            <RequireRole role="provider">
+              <ProviderDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/clinic-admin"
+          element={
+            <RequireRole role="clinic_admin">
+              <ClinicAdminDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/platform-admin"
+          element={
+            <RequireRole role="platform_admin">
+              <PlatformAdminDashboard />
+            </RequireRole>
+          }
+        />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
+  );
 }

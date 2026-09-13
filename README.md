@@ -202,8 +202,21 @@ connection is unaffected.
   through node-bff with zero cookies (status/timestamps only, never result
   values), a recorded lab-order payment, and the full patient
   request -> confirm-and-order -> `GET /api/my-lab-orders` round trip.
+- **Frontend phase A** - the backend's 7 phases are all built, so this
+  session also built the first real frontend: an actual `react-router-dom`
+  routing shell, a role-aware nav bar, per-clinic branding (fetched live,
+  applied as CSS custom properties), and one real, live-data dashboard per
+  role (patient/front_desk/provider/clinic_admin/platform_admin). No
+  booking/CRUD/check-in UI yet - see "Known gaps". Live-verified end to
+  end as all five demo roles: each dashboard showed genuinely real counts
+  and lists (not placeholders), a clinic's actual branding colour rendered
+  for staff and correctly did not for `patient`/`platform_admin`,
+  wrong-role redirects and the 404 page both worked, and switching roles
+  via the app's own "Log out" button cleanly ended the Keycloak session
+  each time.
 
-Backend only so far - no booking/front-desk/provider/admin/lab UI yet.
+Backend is fully built (all 7 kickoff-spec phases); the frontend has a
+real shell and one dashboard per role, but no booking/CRUD/check-in UI yet.
 
 See `CLAUDE.md` for the full phase plan, every design decision and why, and
 a running log of what's verified and how.
@@ -219,7 +232,13 @@ a running log of what's verified and how.
   record - no payment gateway, no refund flow, and cancellation/reschedule
   fees are still only computed and recorded, never auto-charged. Email is
   a stub (outbox rows are written, nothing sends them yet).
-- No patient-portal/front-desk booking **UI** yet - backend only so far.
+- The frontend has a real shell + one dashboard per role (frontend phase
+  A) but no booking, check-in, encounter-documentation, clinic-admin
+  settings/CRUD, lab-order, payment-recording, or platform-admin
+  clinic-creation UI yet - every one of those endpoints is built and
+  live-verified server-side, just not called from `node-bff/frontend/`
+  yet. No automated frontend test suite either - `npm run build` plus a
+  manual browser walkthrough only.
 - **If you edit `node-bff/src/routes/api.js`'s `PUBLIC_ROUTES`, rebuild the
   container** (`docker compose up -d --build --force-recreate node-bff`) -
   a running container keeps serving its old code, which silently breaks

@@ -1,0 +1,37 @@
+/**
+ * Style map covers every status vocabulary this app has: the check-in state
+ * machine (booked -> checked_in -> roomed -> with_provider -> checked_out,
+ * plus no_show/cancelled - com.clinicops.appointment), the lab-order
+ * lifecycle (requested -> ordered -> specimen_collected -> in_transit ->
+ * resulted -> reviewed, plus cancelled - com.clinicops.laborder), and the
+ * generic active/inactive used by providers/rooms/appointment-types/clinics.
+ */
+const STYLES = {
+  // appointments
+  booked: 'bg-brand-light text-brand',
+  checked_in: 'bg-warning-light text-warning',
+  roomed: 'bg-warning-light text-warning',
+  with_provider: 'bg-warning-light text-warning',
+  checked_out: 'bg-success-light text-success',
+  no_show: 'bg-danger-light text-danger',
+  cancelled: 'bg-slate-100 text-ink-muted',
+  // lab orders
+  requested: 'bg-slate-100 text-ink-muted',
+  ordered: 'bg-brand-light text-brand',
+  specimen_collected: 'bg-warning-light text-warning',
+  in_transit: 'bg-warning-light text-warning',
+  resulted: 'bg-accent-light text-accent',
+  reviewed: 'bg-success-light text-success',
+  // generic active/inactive
+  active: 'bg-success-light text-success',
+  inactive: 'bg-slate-100 text-ink-muted',
+};
+
+export default function StatusPill({ status }) {
+  const style = STYLES[status] || 'bg-slate-100 text-ink-muted';
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${style}`}>
+      {String(status).replace(/_/g, ' ')}
+    </span>
+  );
+}

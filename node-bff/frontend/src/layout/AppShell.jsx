@@ -1,42 +1,80 @@
+import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { useMyClinic } from '../api/queries.js';
+import { useBranding } from '../theme/BrandingProvider.jsx';
+
+const navLinkClass = ({ isActive }) =>
+  `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+    isActive ? 'bg-brand-light text-brand' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
+  }`;
 
 /**
- * Signed-in landing - just enough to confirm the whole chain end to end
- * (session -> /auth/me role, and for staff, GET /api/clinic/me through
- * TenantContextFilter) until each role gets its own dashboard in later
- * phases.
+ * Role-aware nav shell (real routing/layout, replacing the phase-1 stub) -
+ * ported from the reference bus-ticketing-saas project's own
+ * layout/AppShell.jsx. Each role's nav is deliberately just its one
+ * "Dashboard" link this phase (already where "/" lands it) - more links
+ * arrive as each role's deeper pages get built in later frontend phases.
  */
 export default function AppShell() {
-  const { user, roles, hasRole } = useAuth();
-  const isStaff = hasRole('clinic_admin') || hasRole('provider') || hasRole('front_desk');
-  const { data: clinic, isLoading: clinicLoading, error: clinicError } = useMyClinic(isStaff);
+  const { user, hasRole } = useAuth();
+  const branding = useBranding();
 
   return (
-    <div className="min-h-screen">
-      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
-        <span className="font-semibold text-ink">Clinic Management</span>
-        <form action="/auth/logout" method="post">
-          <button type="submit" className="text-sm text-ink-muted hover:text-ink">
-            Log out
-          </button>
-        </form>
-      </header>
-      <main className="mx-auto max-w-2xl px-6 py-10">
-        <p className="text-sm text-ink-muted">Signed in as</p>
-        <p className="text-lg font-medium text-ink">{user?.preferred_username ?? user?.email}</p>
-        <p className="mt-1 text-sm text-ink-muted">Roles: {roles.length ? roles.join(', ') : 'none'}</p>
-
-        {isStaff && (
-          <div className="mt-6 rounded-md border border-slate-200 bg-white p-4">
-            <p className="text-sm font-medium text-ink">Clinic</p>
-            {clinicLoading && <p className="text-sm text-ink-muted">Loading...</p>}
-            {clinicError && (
-              <p className="text-sm text-danger">{clinicError.message || 'Could not load clinic.'}</p>
-            )}
-            {clinic && <p className="text-sm text-ink-muted">{clinic.name}</p>}
+    <div className="min-h-screen bg-slate-50">
+      <header className="border-b border-slate-200 bg-surface">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:gap-x-8">
+            <NavLink to="/" className="flex items-center gap-2 text-lg font-bold text-brand">
+              {branding?.logoUrl && (
+                <img src={branding.logoUrl} alt="" className="h-7 w-auto max-w-[8rem] object-contain" />
+              )}
+              <span>{branding?.displayName || 'Clinic Management'}</span>
+            </NavLink>
+            <nav className="flex flex-wrap items-center gap-1">
+              {hasRole('patient') && (
+                <NavLink to="/patient" className={navLinkClass}>
+                  Dashboard
+                </NavLink>
+              )}
+              {hasRole('front_desk') && (
+                <NavLink to="/front-desk" className={navLinkClass}>
+                  Dashboard
+                </NavLink>
+              )}
+              {hasRole('provider') && (
+                <NavLink to="/provider" className={navLinkClass}>
+                  Dashboard
+                </NavLink>
+              )}
+              {hasRole('clinic_admin') && (
+                <NavLink to="/clinic-admin" className={navLinkClass}>
+                  Dashboard
+                </NavLink>
+              )}
+              {hasRole('platform_admin') && (
+                <NavLink to="/platform-admin" className={navLinkClass}>
+                  Dashboard
+                </NavLink>
+              )}
+            </nav>
           </div>
-        )}
+          <div className="flex items-center gap-3">
+            <div className="text-right leading-tight">
+              <p className="text-sm font-medium text-ink">{user?.preferred_username}</p>
+              {user?.email && <p className="text-xs text-ink-muted">{user.email}</p>}
+            </div>
+            <form method="post" action="/auth/logout">
+              <button
+                type="submit"
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-ink-muted hover:bg-slate-100"
+              >
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        <Outlet />
       </main>
     </div>
   );

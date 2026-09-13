@@ -838,12 +838,75 @@ Dockerfile is multi-stage: a `frontend-build` stage runs
 stage as `./public`; `src/index.js` serves `public/` and falls back to
 `public/index.html` for any GET that isn't `/health`, `/auth/*`, or `/api/*`.
 
-Phase 1 only built a placeholder: `App.jsx` renders `PublicShell` (a login
-link) or `AppShell` (shows the signed-in user, their roles, and - for staff -
-the resolved clinic name via `GET /api/clinic/me`) depending on `GET
-/auth/me`. Real per-role routing, `RequireRole` usage beyond the stub
-already in place, and the design system (semantic Tailwind tokens for
-branding) get built out starting in phase 2.
+Phase 1 built only a placeholder (`App.jsx` if/else between `PublicShell`
+and a "signed in as X" `AppShell` stub, `GET /api/clinic/me` smoke test) -
+phase 1 through 7 sessions all built backend only. **Frontend phase A**
+(built 2026-09-13, same session as phase 7) is the first real frontend
+work: a real navigational shell (actual `react-router-dom` routes, a
+role-aware nav bar, per-tenant branding) plus one real, working dashboard
+per role. No deep CRUD/booking/search screens yet - those are separate
+follow-on frontend phases (B, C, ...) that slot into the shell this phase
+built. Ported directly from the reference bus-ticketing-saas project's own
+frontend (`customer`/`agent`/`operator_admin`/`platform_admin` + a `cargo`
+module - read in full before building this), adapted to this app's role
+names/domain, **except** its dashboards, which call dedicated backend
+aggregation endpoints (`GET /api/agent/dashboard`, etc.) - deliberately not
+added here (see "Deliberate scope boundary" below); this app's dashboards
+compose the same kind of summary from **existing** endpoints instead.
+
+- **`theme/BrandingProvider.jsx`** + **`lib/color.js`** (new) - ported
+  near-verbatim from the reference. Fetches `GET /api/clinic/branding` only
+  for `clinic_admin`/`front_desk`/`provider` (matches that endpoint's own
+  `@PreAuthorize` - `platform_admin` isn't tied to a clinic, `patient`
+  stays on the platform default) and writes `--brand`/`--accent`/etc. onto
+  `document.documentElement`. Closes a loose end flagged in comments
+  already sitting in `tailwind.config.js`/`index.css` since phase 1 ("a
+  future BrandingProvider overrides them... for a signed-in clinic's
+  staff") - confirmed live: a clinic with `brandColor` set (from earlier
+  phase-5 verification) rendered its own orange header the moment
+  `demo-clinic-admin` logged in, and reverted to the platform default blue
+  for `demo-patient`/`demo-platform-admin`.
+- **`layout/AppShell.jsx`** (rewritten) - a real layout route: branded
+  header, a role-conditional `<nav>` (one "Dashboard" `NavLink` per role
+  this phase - more links arrive with each future page), user info, the
+  `POST /auth/logout` button, `<Outlet/>`. **`App.jsx`** (rewritten) - real
+  `react-router-dom` routes mirroring the reference's `RootLayout`/
+  `RoleHome`/`NotFound` shape: `/` renders the signed-in role's dashboard
+  (or `PublicShell` logged out), plus a `RequireRole`-gated stable deep
+  -link per role (`/patient`, `/front-desk`, `/provider`, `/clinic-admin`,
+  `/platform-admin`) - confirmed live that a wrong-role visit (e.g. a
+  `clinic_admin` token hitting `/patient`) redirects cleanly back to `/`,
+  and an unknown path renders `NotFound` via the SPA's own client-side
+  routing (not a server 404 - `src/index.js`'s static-fallback already
+  handles this).
+- **`components/`** (new) - small generic pieces ported/adapted from the
+  reference: `StatCard` (simplified - no delta/sparkline, since there's no
+  aggregation endpoint behind it here), `EmptyState`, `ErrorBanner`,
+  `Skeleton`, `StatusPill` (style map rebuilt for this app's actual status
+  vocabularies - appointment `booked/checked_in/roomed/with_provider/
+  checked_out/no_show/cancelled`, lab order `requested/ordered/
+  specimen_collected/in_transit/resulted/reviewed`, and the generic
+  `active/inactive`).
+- **`pages/<role>/Dashboard.jsx`** (new, one per role) - `patient`
+  (`GET /api/my-appointments` + `GET /api/my-lab-orders`; "Book an
+  appointment"/"Request a lab test" shown as visibly-disabled
+  "coming soon" buttons, not dead links - the real flows are a later
+  phase), `front-desk`/`clinic-admin` (`GET /api/appointments`, the
+  tenant-wide list - **"active" counts** (`booked`/`checked_in`/`roomed`/
+  `with_provider`), not "today", stand in for a real date-scoped worklist;
+  see "Deliberate scope boundary"), `provider` (`GET /api/my-schedule`,
+  already day-scoped server-side since phase 4 - a genuine "today"),
+  `platform-admin` (`GET /api/platform/clinics`).
+
+**Deliberate scope boundary for this phase: zero backend changes.**
+`Appointment` carries no slot start-time in its response shape (time lives
+on `Slot`, joined only inside `findProviderSchedule`'s query, never
+returned in the JSON) - so no dashboard this phase shows exact
+appointment time-of-day, only status/ref/count. Adding a `startTime` field
+to these responses, and a tenant-wide "today" endpoint for front_desk/
+clinic_admin (only the provider-scoped one exists), are natural, small
+pieces of the *next* frontend phase (the one that builds real time-sorted
+schedule/booking views), not this one.
 
 Role info for UX-only nav/route gating comes from `GET /auth/me`. The OIDC
 **ID** token is expected to carry no `realm_access.roles` on this realm
@@ -1379,6 +1442,70 @@ server-side (`@PreAuthorize`).
     `GET /api/my-lab-orders` showed it with `status: "ordered"` and the
     now-set `totalCost`, confirming the full round trip end to end.
 
+## Verified this session - frontend phase A (2026-09-13)
+
+- `npm run build` in `node-bff/frontend/` - clean, no new npm dependencies
+  needed (`react-router-dom`/`@tanstack/react-query` were already
+  installed but unused since phase 1). `npm test` in `node-bff/` - still
+  20/20 (this phase touched no server-side `node-bff` code, only
+  `node-bff/frontend/`).
+- `docker compose up -d --build --force-recreate node-bff` (frontend is
+  baked into this image) - rebuilt clean.
+- **A `demo-front-desk` login didn't exist yet** (only `demo-clinic-admin`/
+  `demo-patient`/`demo-provider`/`demo-platform-admin` did) - created live
+  via the Keycloak admin REST API (realm role `front_desk`, joined to the
+  `demo-clinic` Organization as a member via `POST .../organizations/
+  {orgId}/members` with the user id as a bare JSON string body - the same
+  call `create-demo-clinic.sh` already makes), same one-time-manual-step
+  precedent as phase 4/6's first `demo-provider`/`demo-platform-admin`.
+  Not yet added to `infra/keycloak/realm-export.json` for a from-scratch
+  environment - a real gap, see "Known gaps".
+- **All five dashboards were live-verified end to end** through real
+  browser logins (`demo-clinic-admin`/`demo-provider`/`demo-front-desk`/
+  `demo-platform-admin`/`demo-patient`, password `DemoPass123!`), each
+  showing genuinely real data, not placeholders:
+  - `demo-clinic-admin` - "Clinic Overview" showed 3 active providers, 2
+    active rooms, 2 appointment types, 10 active appointments, 0 pending
+    lab requests - all matching the clinic's actual live state. The header
+    rendered **"Browser Verified Clinic" in orange** - the clinic's real
+    `brandColor` (set during phase-5 verification) - confirming
+    `BrandingProvider` is genuinely fetching and applying live branding,
+    not a static default.
+  - `demo-provider` - "Today's Schedule" showed 9 patients today, 2 seen
+    so far, a real per-appointment list with correctly-coloured
+    `StatusPill`s (No Show/Cancelled/With Provider).
+  - `demo-front-desk` - "Front Desk" showed 10 active / 20 total
+    appointments broken down by status (6 booked, 2 checked-in/roomed, 2
+    with provider), a real recent-appointments list with channel labels.
+  - `demo-platform-admin` - "Platform Overview" showed 2 total clinics, 2
+    active/0 deactivated, both listed with `StatusPill`s - and correctly
+    **stayed on the default (unbranded) theme**, confirming
+    `BrandingProvider`'s `platform_admin`-exclusion is real, not just
+    written in a comment.
+  - `demo-patient` - "My Dashboard" showed 0 active / 2 total appointments,
+    1 open / 1 total lab order (the real `042751` order from the phase-7
+    session, `status: Ordered`), both "Book an appointment"/"Request a lab
+    test" rendered visibly disabled rather than dead links, and correctly
+    stayed on the default theme too.
+  - `RequireRole` redirects confirmed live both directions: a `patient`
+    token visiting `/platform-admin` and a `clinic_admin` token visiting
+    `/patient` each redirected cleanly back to `/` (that role's own
+    dashboard), never a raw 403/blank page. An unknown path
+    (`/nonexistent-page`) rendered the SPA's own `NotFound` component via
+    client-side routing, confirming `src/index.js`'s static-file fallback
+    correctly hands unknown paths to the SPA rather than 404ing at the
+    server.
+  - **A real login-flow finding this phase**: node-bff's own "Log out"
+    button (`POST /auth/logout`, already wired since phase 1) genuinely
+    ends the Keycloak SSO session in one step (it passes `id_token_hint`) -
+    confirmed live, immediately switching roles worked cleanly every time.
+    This corrects a phase-6/7-session finding that switching users needed
+    a manual visit to Keycloak's own `/protocol/openid-connect/logout`
+    with a confirmation click - that workaround was only ever needed
+    because those earlier sessions weren't using the app's own logout
+    button in the first place; **always use the real "Log out" button**
+    for any future multi-role live verification.
+
 ## Known gaps (don't pretend these are done)
 
 - No initial `clinic_admin` user provisioning as part of clinic onboarding
@@ -1386,15 +1513,31 @@ server-side (`@PreAuthorize`).
   someone must still create/assign a `clinic_admin` user in Keycloak by
   hand and add them as an org member before the new clinic is actually
   usable.
-- No clinic-admin/settings/branding **frontend UI** yet (phase 5 stayed
-  backend-only, same as every phase so far) - the CRUD/settings/branding
-  endpoints exist but nothing in `node-bff/frontend/` calls them yet.
-- No provider clinical **frontend UI** yet (phase 4 is backend-only, same
-  as every phase so far) - `GET /api/my-schedule`/encounter endpoints exist
-  but nothing in `node-bff/frontend/` calls them yet.
-- No lab-orders **frontend UI** yet (phase 7 is backend-only, same as every
-  phase so far) - the lab-rate/lab-order/payment/patient-request endpoints
-  exist but nothing in `node-bff/frontend/` calls them yet.
+- **Frontend is shell + one dashboard per role only** (frontend phase A,
+  2026-09-13) - real routing/nav/branding exist and every role lands on a
+  genuinely live-data dashboard, but there is still no booking UI (patient
+  or front-desk), no check-in/reschedule/cancel UI, no encounter
+  -documentation UI, no clinic-admin settings/CRUD UI (providers/rooms/
+  appointment-types/fee-policies/working-hours/lab-rates/branding), no
+  lab-order creation/status-transition/result-entry UI, no payment
+  -recording UI, and no platform-admin clinic-creation UI. Every one of
+  these endpoints is built and live-verified server-side; none has a page
+  yet. See "Frontend" above for what does exist and its own deliberate
+  scope boundary (no backend changes this phase - dashboards show
+  status/counts, not exact appointment time-of-day).
+- `demo-front-desk` (created live this session for frontend-phase-A
+  verification - see "Verified this session") isn't yet in
+  `infra/keycloak/realm-export.json`, so a from-scratch environment won't
+  have it pre-seeded - same gap phase 4/6 already left for
+  `demo-provider`/`demo-platform-admin`, now applies to this fourth role
+  too. Create it live the same way (admin REST API: realm role + demo
+  -clinic Organization membership + a password reset) until someone adds
+  all of these to the realm export properly.
+- No automated frontend test suite (no Jest/Vitest/React Testing Library
+  set up in `node-bff/frontend/`) - every frontend claim above is `npm run
+  build` succeeding plus a real, manual browser walkthrough, not a repeatable
+  automated check. `node-bff`'s own server-side `npm test` (20 tests) is
+  unaffected/unrelated - it never touches `node-bff/frontend/`.
 - No PHI-access audit log in v1 (deferred by decision, 2026-09-12).
 - Payments are now recordable (`com.clinicops.payment`, phase 7) but purely
   as a manual staff-entered record - no real payment processor/gateway
