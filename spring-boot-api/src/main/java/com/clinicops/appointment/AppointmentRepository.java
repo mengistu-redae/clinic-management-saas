@@ -39,6 +39,37 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
 
     Optional<Appointment> findByIdAndCustomerUserId(UUID id, UUID customerUserId);
 
+    /**
+     * Same ownership scope as findAllByCustomerUserId, but joined with
+     * slots for a real startTime/endTime - see AppointmentWithSlotView's
+     * javadoc for why the plain entity isn't enough here. Column aliases
+     * match the projection's getter names exactly (Spring Data's native
+     * -query projection binding).
+     */
+    @Query(value = """
+            SELECT a.id as id, a.tenant_id as tenantId, a.patient_id as patientId,
+                   a.provider_id as providerId, a.appointment_type_id as appointmentTypeId,
+                   a.channel as channel, a.status as status, a.appointment_ref as appointmentRef,
+                   a.clinic_ref as clinicRef, s.start_time as startTime, s.end_time as endTime,
+                   a.booked_at as bookedAt, a.cancelled_at as cancelledAt, a.cancellation_reason as cancellationReason
+            FROM appointments a JOIN slots s ON a.slot_id = s.id
+            WHERE a.customer_user_id = :customerUserId
+            ORDER BY s.start_time DESC
+            """, nativeQuery = true)
+    List<AppointmentWithSlotView> findAllByCustomerUserIdWithSlot(@Param("customerUserId") UUID customerUserId);
+
+    /** Single-appointment counterpart of findAllByCustomerUserIdWithSlot - see GET /api/my-appointments/{id}. */
+    @Query(value = """
+            SELECT a.id as id, a.tenant_id as tenantId, a.patient_id as patientId,
+                   a.provider_id as providerId, a.appointment_type_id as appointmentTypeId,
+                   a.channel as channel, a.status as status, a.appointment_ref as appointmentRef,
+                   a.clinic_ref as clinicRef, s.start_time as startTime, s.end_time as endTime,
+                   a.booked_at as bookedAt, a.cancelled_at as cancelledAt, a.cancellation_reason as cancellationReason
+            FROM appointments a JOIN slots s ON a.slot_id = s.id
+            WHERE a.id = :id AND a.customer_user_id = :customerUserId
+            """, nativeQuery = true)
+    Optional<AppointmentWithSlotView> findByIdAndCustomerUserIdWithSlot(@Param("id") UUID id, @Param("customerUserId") UUID customerUserId);
+
     List<Appointment> findAllBySeriesId(UUID seriesId);
 
     /**

@@ -63,6 +63,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/clinics/*/availability").permitAll()
                 // Discoverable before booking - see AppointmentTypeController.
                 .requestMatchers(HttpMethod.GET, "/api/clinics/*/appointment-types").permitAll()
+                // Discoverable before booking - see ProviderController.
+                .requestMatchers(HttpMethod.GET, "/api/clinics/*/providers").permitAll()
                 // Guest booking (no account) and the public two-factor
                 // appointment-tracking lookup - see AppointmentController.
                 .requestMatchers(HttpMethod.POST, "/api/appointments/guest").permitAll()

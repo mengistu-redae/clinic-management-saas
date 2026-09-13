@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { apiGet } from './client.js';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiGet, apiPost } from './client.js';
 
 // ---- auth ----
 
@@ -52,6 +52,15 @@ export function useMyAppointments(enabled) {
     queryKey: ['my-appointments'],
     queryFn: () => apiGet('/api/my-appointments'),
     enabled,
+  });
+}
+
+/** Single-appointment ownership-scoped read - see AppointmentController.myAppointment. */
+export function useMyAppointment(id) {
+  return useQuery({
+    queryKey: ['my-appointment', id],
+    queryFn: () => apiGet(`/api/my-appointments/${id}`),
+    enabled: Boolean(id),
   });
 }
 
@@ -125,5 +134,92 @@ export function usePlatformClinics(enabled) {
     queryKey: ['platform', 'clinics'],
     queryFn: () => apiGet('/api/platform/clinics'),
     enabled,
+  });
+}
+
+// ---- booking flow (public - reachable logged-out too, see ClinicController/
+// AppointmentTypeController/ProviderController/AvailabilityController) ----
+
+export function useClinicsDirectory() {
+  return useQuery({
+    queryKey: ['clinics'],
+    queryFn: () => apiGet('/api/clinics'),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useClinicAppointmentTypes(clinicId) {
+  return useQuery({
+    queryKey: ['clinics', clinicId, 'appointment-types'],
+    queryFn: () => apiGet(`/api/clinics/${clinicId}/appointment-types`),
+    enabled: Boolean(clinicId),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useClinicProviders(clinicId) {
+  return useQuery({
+    queryKey: ['clinics', clinicId, 'providers'],
+    queryFn: () => apiGet(`/api/clinics/${clinicId}/providers`),
+    enabled: Boolean(clinicId),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Open slots for one provider+appointment-type combo - see AvailabilityController (providerId/appointmentTypeId both required server-side). */
+export function useAvailability(clinicId, providerId, appointmentTypeId) {
+  return useQuery({
+    queryKey: ['clinics', clinicId, 'availability', providerId, appointmentTypeId],
+    queryFn: () => apiGet(`/api/clinics/${clinicId}/availability?providerId=${providerId}&appointmentTypeId=${appointmentTypeId}`),
+    enabled: Boolean(clinicId && providerId && appointmentTypeId),
+  });
+}
+
+/** Two-factor public tracking, driven by a submitted {ref, phone} rather than fetching on every keystroke - see pages/TrackAppointment.jsx. */
+export function useTrackAppointment(ref, phone) {
+  return useQuery({
+    queryKey: ['track-appointment', ref, phone],
+    queryFn: () => apiGet(`/api/appointments/track/${encodeURIComponent(ref)}?phone=${encodeURIComponent(phone)}`),
+    enabled: Boolean(ref && phone),
+    retry: false,
+  });
+}
+
+function invalidateMyAppointments(queryClient, id) {
+  queryClient.invalidateQueries({ queryKey: ['my-appointments'] });
+  if (id) {
+    queryClient.invalidateQueries({ queryKey: ['my-appointment', id] });
+  }
+}
+
+/** patient_portal channel - patientId is never sent, the caller's own patient record is resolved server-side. */
+export function useCreateAppointment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/appointments', body),
+    onSuccess: () => invalidateMyAppointments(queryClient),
+  });
+}
+
+/** guest channel - no session, no JWT; contactName/contactPhone identify the booking instead of an account. */
+export function useCreateGuestAppointment() {
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/appointments/guest', body),
+  });
+}
+
+export function useCancelMyAppointment(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (reason) => apiPost(`/api/my-appointments/${id}/cancel`, reason ? { reason } : undefined),
+    onSuccess: () => invalidateMyAppointments(queryClient, id),
+  });
+}
+
+export function useRescheduleMyAppointment(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/my-appointments/${id}/reschedule`, body),
+    onSuccess: () => invalidateMyAppointments(queryClient, id),
   });
 }

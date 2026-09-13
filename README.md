@@ -214,9 +214,25 @@ connection is unaffected.
   wrong-role redirects and the 404 page both worked, and switching roles
   via the app's own "Log out" button cleanly ended the Keycloak session
   each time.
+- **Frontend phase B** - the patient/guest booking flow, full lifecycle:
+  browse clinics/providers/appointment types (all newly public - added a
+  small `GET /api/clinics/{id}/providers` endpoint, the one thing missing
+  to make this possible at all), pick a slot, book (patient or guest),
+  view/cancel/reschedule (patient), and public ref+phone tracking for a
+  guest with no account. Also added the `startTime`/`endTime` a patient's
+  own appointments were missing entirely until now (`GET /api/
+  my-appointments`, `/{id}` only - staff endpoints untouched). Live
+  -verified end to end as `demo-patient` and as a genuinely anonymous
+  guest: real booking, reschedule, cancel, and a real 409-slot-conflict
+  race (deliberately reproduced via a raw API call between selecting a
+  slot and confirming) - which caught and fixed a real bug live (an error
+  banner that a 409 handler was accidentally unmounting before it could
+  ever be seen).
 
-Backend is fully built (all 7 kickoff-spec phases); the frontend has a
-real shell and one dashboard per role, but no booking/CRUD/check-in UI yet.
+Backend is fully built (all 7 kickoff-spec phases); the frontend has a real
+shell, one dashboard per role, and the full patient/guest booking lifecycle
+- everything else (front-desk/provider/clinic-admin/platform-admin/lab
+-order UI) is still unbuilt.
 
 See `CLAUDE.md` for the full phase plan, every design decision and why, and
 a running log of what's verified and how.
@@ -232,13 +248,13 @@ a running log of what's verified and how.
   record - no payment gateway, no refund flow, and cancellation/reschedule
   fees are still only computed and recorded, never auto-charged. Email is
   a stub (outbox rows are written, nothing sends them yet).
-- The frontend has a real shell + one dashboard per role (frontend phase
-  A) but no booking, check-in, encounter-documentation, clinic-admin
-  settings/CRUD, lab-order, payment-recording, or platform-admin
-  clinic-creation UI yet - every one of those endpoints is built and
-  live-verified server-side, just not called from `node-bff/frontend/`
-  yet. No automated frontend test suite either - `npm run build` plus a
-  manual browser walkthrough only.
+- The frontend has a real shell, one dashboard per role, and the patient/
+  guest booking lifecycle (phases A/B), but still no front-desk booking,
+  check-in, encounter-documentation, clinic-admin settings/CRUD, lab-order,
+  payment-recording, or platform-admin clinic-creation UI - every one of
+  those endpoints is built and live-verified server-side, just not called
+  from `node-bff/frontend/` yet. No automated frontend test suite either -
+  `npm run build` plus a manual browser walkthrough only.
 - **If you edit `node-bff/src/routes/api.js`'s `PUBLIC_ROUTES`, rebuild the
   container** (`docker compose up -d --build --force-recreate node-bff`) -
   a running container keeps serving its old code, which silently breaks

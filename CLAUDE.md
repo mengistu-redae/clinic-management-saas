@@ -908,6 +908,72 @@ clinic_admin (only the provider-scoped one exists), are natural, small
 pieces of the *next* frontend phase (the one that builds real time-sorted
 schedule/booking views), not this one.
 
+**Frontend phase B** (built 2026-09-13, same session) is that next phase for
+the patient side specifically: the booking flow (patient + guest, full
+lifecycle - create/view/cancel/reschedule, plus public tracking). Unlike
+phase A, this one **couldn't** stay backend-free - two real gaps blocked a
+working booking flow outright, not just a nicety, so both were fixed as
+small, narrowly-scoped additions:
+
+- **`GET /api/clinics/{clinicId}/providers`** (new, `ProviderController`) -
+  a public `List<ProviderDirectoryView(id, fullName)>`, active only. Without
+  it, a patient/guest had no way to discover which providers exist at all -
+  `GET /api/clinics/{id}/availability` already requires a `providerId` the
+  caller must already know, and `GET /api/providers` is staff-only. Exact
+  same "narrow public directory view" pattern as `ClinicDirectoryView`/
+  `AppointmentTypeDirectoryView`; one more `permitAll()` matcher in
+  `SecurityConfig`, one more `PUBLIC_ROUTES` entry in `node-bff`.
+- **`AppointmentWithSlotView`** (new interface projection,
+  `com.clinicops.appointment`) - the phase-A-deferred `startTime`/`endTime`
+  gap, fixed exactly where it was predicted to land: `GET /api/
+  my-appointments` and `GET /api/my-appointments/{id}` only (the tenant-wide
+  staff list/cancel/reschedule endpoints are untouched). A native query
+  joined with `slots` (`SELECT a.*, s.start_time, s.end_time ... JOIN slots
+  s ON a.slot_id = s.id`, column aliases matching the projection interface's
+  getter names) - the first use of a Spring Data native-query interface
+  projection in this app, otherwise the same join shape as
+  `findProviderSchedule`. Cancel/reschedule mutations still return bare
+  `Appointment`; the frontend re-fetches the enhanced GET afterward rather
+  than trusting the mutation's own response shape.
+
+Frontend: `pages/booking/ClinicPicker.jsx` (`/book`, public) -> `pages/
+booking/BookingForm.jsx` (`/book/:clinicId`, public) - pick an appointment
+type + provider, `components/booking/SlotPicker.jsx` (shared, also used by
+`Reschedule`) shows open slots grouped by day, picking one reveals a
+confirm panel (guest contact fields only when `!authenticated`, mirroring
+the reference project's `SeatSelection.jsx`) -> submits via
+`useCreateAppointment`/`useCreateGuestAppointment` (branched on
+`authenticated`), an idempotency key minted once per attempt
+(`useRef(crypto.randomUUID())`) and re-minted on a 409
+(`SlotConflictException`) -> `pages/AppointmentDetail.jsx` (`/appointments/
+:id`, reachable logged-in or as a guest, mirrors `BookingDetail.jsx`'s
+state-vs-fetch fallback - a guest revisiting/refreshing has no session to
+fetch by, dead-ends to `/track-appointment` instead; clinic/provider/type
+**names** are resolved by cross-referencing the appointment's `tenantId`/
+`providerId`/`appointmentTypeId` against the three public directory
+endpoints, no per-appointment name-lookup endpoint needed). `pages/
+Reschedule.jsx` (`/appointments/:id/reschedule`, patient-only) reuses
+`SlotPicker` scoped to the appointment's own fixed `appointmentTypeId`
+(the backend 400s a type change) with `providerId` re-pickable. `pages/
+MyAppointments.jsx` (`/my-appointments`, patient-only) is the full list the
+dashboard's own top-5 preview links out to. `pages/TrackAppointment.jsx`
+(`/track-appointment`, public) ports the reference's `TrackBooking.jsx`.
+`layout/PublicShell.jsx` gained a real header/nav/`<Outlet/>` (it was a
+dead-end static page before this phase - `App.jsx`'s new `PublicHome` is
+what actually renders at `/` for a logged-out visitor now).
+
+**A real bug found live during this phase's own verification**: `Booking
+Form.jsx`'s error banner was nested inside the `{selectedSlot && (...)}`
+confirm panel - the 409 handler clears `selectedSlot` (so the taken slot's
+button stops looking selected) in the same state update that sets the error
+message, which unmounted the message in the same instant it would have
+appeared. Never visibly wrong in casual testing (a slot conflict is rare to
+trigger by hand); only caught because this session deliberately raced a
+real second booking against the same slot via a raw `curl` call between
+selecting it in the browser and confirming. Fixed by moving the error
+banner outside that conditional block - `Reschedule.jsx`'s equivalent error
+banner was already correctly placed outside its own analogous block.
+
 Role info for UX-only nav/route gating comes from `GET /auth/me`. The OIDC
 **ID** token is expected to carry no `realm_access.roles` on this realm
 (matching the reference project's own finding) - only the **access** token
@@ -1506,6 +1572,62 @@ server-side (`@PreAuthorize`).
     button in the first place; **always use the real "Log out" button**
     for any future multi-role live verification.
 
+## Verified this session - frontend phase B (2026-09-13)
+
+- `mvn -q -o compile test-compile` in `spring-boot-api/` - clean for the
+  new `ProviderDirectoryView`/`AppointmentWithSlotView` + repository/
+  controller changes. `mvn -o test -Dtest='*Test,!*IntegrationTest'` -
+  still 23/23. `mvn -o clean test` (full suite) - same 131 tests/108
+  errors/0 failures as every prior phase's run, all at the identical
+  Testcontainers/npipe wall - not a regression.
+- `npm run build` in `node-bff/frontend/` - clean, no new npm deps.
+  `docker compose up -d --build --force-recreate spring-boot-api node-bff`
+  (both changed this phase) - both healthy.
+- **The public directory endpoints confirmed live through nginx with zero
+  cookies**: `GET /api/clinics`, `GET /api/clinics/{id}/providers`,
+  `GET /api/clinics/{id}/appointment-types`, and `GET /api/clinics/{id}/
+  availability?providerId=&appointmentTypeId=` all returned real data
+  anonymously.
+- **The full patient booking lifecycle, live, as `demo-patient`**: booked a
+  real appointment (clinic -> type -> provider -> slot -> confirm), landed
+  on the detail page showing a genuinely real time (not a placeholder);
+  rescheduled it to a different slot on the same page flow (confirmed the
+  new time replaced the old one); cancelled it (status flipped to
+  `cancelled`, the Reschedule/Cancel actions disappeared). `GET
+  /my-appointments`'s full list showed real times for every row, not just
+  the one just-created appointment - confirming `AppointmentWithSlotView`
+  works for historical rows too, not only fresh ones.
+- **The full guest booking lifecycle, live, from a genuinely anonymous
+  browser session (no cookies)**: `PublicShell`'s new nav (`Book an
+  appointment`/`Track an appointment`) reachable from the logged-out
+  landing; booked as a guest (no session at all); landed on the same detail
+  page, correctly showing the "no account - save your ref" note and no
+  cancel/reschedule actions (no guest self-service endpoint exists
+  server-side); looked the same appointment up again via `/track-appointment`
+  with the saved ref+phone - matched, showing only the narrow
+  `AppointmentTrackingView` fields; retried with a wrong phone - 404'd with
+  the same "no appointment found" message the reference project's own
+  tracking page uses for both a mismatch and an unknown ref alike.
+- **A real 409-slot-conflict race, genuinely reproduced, not simulated**:
+  selected a slot in the browser, then - before clicking confirm - booked
+  that exact same `slotId` via a raw `curl` call to `POST /api/appointments/
+  guest` (confirmed via direct Postgres query that the slot's `status`
+  flipped to `booked` and belonged to a different appointment row).
+  Clicking "Confirm booking" in the browser then correctly surfaced "That
+  slot was just taken by someone else. Pick another." - **this is exactly
+  the real bug described above being caught**: the first attempt at this
+  race showed nothing at all (silently no error, no navigation) because the
+  error banner was nested inside the panel the 409 handler had just
+  unmounted; fixed live during this same verification pass, rebuilt, and
+  reran the identical race to confirm the fix.
+- Note on this environment: the Docker host's system timezone is **UTC+3**,
+  not UTC - `formatTime`/`formatDateTime`'s `Intl.DateTimeFormat(undefined,
+  ...)` renders in whatever timezone the browser/OS reports, so a slot's
+  `startTime` (always UTC on the wire) shows 3 hours ahead of its raw UTC
+  value in any screenshot from this machine. Not a bug, just worth knowing
+  when cross-checking a displayed time against a raw API response during
+  live verification here.
+
 ## Known gaps (don't pretend these are done)
 
 - No initial `clinic_admin` user provisioning as part of clinic onboarding
@@ -1513,18 +1635,20 @@ server-side (`@PreAuthorize`).
   someone must still create/assign a `clinic_admin` user in Keycloak by
   hand and add them as an org member before the new clinic is actually
   usable.
-- **Frontend is shell + one dashboard per role only** (frontend phase A,
-  2026-09-13) - real routing/nav/branding exist and every role lands on a
-  genuinely live-data dashboard, but there is still no booking UI (patient
-  or front-desk), no check-in/reschedule/cancel UI, no encounter
-  -documentation UI, no clinic-admin settings/CRUD UI (providers/rooms/
-  appointment-types/fee-policies/working-hours/lab-rates/branding), no
-  lab-order creation/status-transition/result-entry UI, no payment
-  -recording UI, and no platform-admin clinic-creation UI. Every one of
+- **Frontend covers the shell/dashboards (phase A) and the patient/guest
+  booking lifecycle (phase B) only** - real routing/nav/branding, every
+  role's dashboard, and patient/guest book/view/cancel/reschedule/track are
+  all real and live-data. Still missing: front-desk's own walk-in
+  search/book/patient-registration UI (a different first step - patient
+  search/registration instead of a guest-contact form - reusing most of the
+  same `SlotPicker`/confirm-panel components once built), check-in-action
+  UI, encounter-documentation UI, clinic-admin settings/CRUD UI (providers/
+  rooms/appointment-types/fee-policies/working-hours/lab-rates/branding),
+  lab-order creation/status-transition/result-entry/patient-lab-request UI,
+  payment-recording UI, and platform-admin clinic-creation UI. Every one of
   these endpoints is built and live-verified server-side; none has a page
-  yet. See "Frontend" above for what does exist and its own deliberate
-  scope boundary (no backend changes this phase - dashboards show
-  status/counts, not exact appointment time-of-day).
+  yet. See "Frontend" above for phase A/B's own write-ups and deliberate
+  scope boundaries.
 - `demo-front-desk` (created live this session for frontend-phase-A
   verification - see "Verified this session") isn't yet in
   `infra/keycloak/realm-export.json`, so a from-scratch environment won't

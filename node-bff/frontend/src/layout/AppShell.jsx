@@ -31,9 +31,17 @@ export default function AppShell() {
             </NavLink>
             <nav className="flex flex-wrap items-center gap-1">
               {hasRole('patient') && (
-                <NavLink to="/patient" className={navLinkClass}>
-                  Dashboard
-                </NavLink>
+                <>
+                  <NavLink to="/patient" end className={navLinkClass}>
+                    Dashboard
+                  </NavLink>
+                  <NavLink to="/book" className={navLinkClass}>
+                    Book an appointment
+                  </NavLink>
+                  <NavLink to="/my-appointments" className={navLinkClass}>
+                    My Appointments
+                  </NavLink>
+                </>
               )}
               {hasRole('front_desk') && (
                 <NavLink to="/front-desk" className={navLinkClass}>

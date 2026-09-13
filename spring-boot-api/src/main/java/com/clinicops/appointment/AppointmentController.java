@@ -115,18 +115,19 @@ public class AppointmentController {
         return appointmentService.trackByRefAndPhone(appointmentRef, phone);
     }
 
+    /** Returns AppointmentWithSlotView (not bare Appointment) so the caller actually gets a real appointment time - see its javadoc. */
     @GetMapping("/api/my-appointments")
     @PreAuthorize("hasRole('PATIENT')")
-    public List<Appointment> myAppointments(@AuthenticationPrincipal Jwt jwt) {
+    public List<AppointmentWithSlotView> myAppointments(@AuthenticationPrincipal Jwt jwt) {
         UUID customerUserId = currentUserService.resolveInternalUserId(jwt);
-        return appointmentRepository.findAllByCustomerUserId(customerUserId);
+        return appointmentRepository.findAllByCustomerUserIdWithSlot(customerUserId);
     }
 
     @GetMapping("/api/my-appointments/{id}")
     @PreAuthorize("hasRole('PATIENT')")
-    public Appointment myAppointment(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+    public AppointmentWithSlotView myAppointment(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         UUID customerUserId = currentUserService.resolveInternalUserId(jwt);
-        return appointmentRepository.findByIdAndCustomerUserId(id, customerUserId)
+        return appointmentRepository.findByIdAndCustomerUserIdWithSlot(id, customerUserId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + id));
     }
 

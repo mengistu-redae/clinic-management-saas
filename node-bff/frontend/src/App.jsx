@@ -8,17 +8,37 @@ import FrontDeskDashboard from './pages/front-desk/Dashboard.jsx';
 import ProviderDashboard from './pages/provider/Dashboard.jsx';
 import ClinicAdminDashboard from './pages/clinic-admin/Dashboard.jsx';
 import PlatformAdminDashboard from './pages/platform-admin/Dashboard.jsx';
+import ClinicPicker from './pages/booking/ClinicPicker.jsx';
+import BookingForm from './pages/booking/BookingForm.jsx';
+import AppointmentDetail from './pages/AppointmentDetail.jsx';
+import Reschedule from './pages/Reschedule.jsx';
+import MyAppointments from './pages/MyAppointments.jsx';
+import TrackAppointment from './pages/TrackAppointment.jsx';
+
+/** Logged-out landing at "/" - PublicShell's own header/nav carries the wayfinding (Book/Track/Log in). */
+function PublicHome() {
+  return (
+    <div className="flex flex-col items-center gap-4 py-16 text-center">
+      <h1 className="text-2xl font-semibold text-ink">Clinic Management</h1>
+      <p className="max-w-sm text-sm text-ink-muted">
+        Book an appointment as a guest, or sign in as clinic staff or a patient to continue.
+      </p>
+    </div>
+  );
+}
 
 /**
  * "/" is role-aware: each signed-in role lands on its own dashboard; a
- * logged-out visitor gets PublicShell (via RootLayout below). Real
- * authorization stays entirely server-side (@PreAuthorize on every
- * endpoint these dashboards call) - this and RequireRole are UX routing
- * only. Mirrors the reference bus-ticketing-saas project's own App.jsx
- * RootLayout/RoleHome shape, adapted to this app's five roles.
+ * logged-out visitor gets PublicHome (via RootLayout below, inside
+ * PublicShell). Real authorization stays entirely server-side
+ * (@PreAuthorize on every endpoint these dashboards call) - this and
+ * RequireRole are UX routing only. Mirrors the reference bus-ticketing
+ * -saas project's own App.jsx RootLayout/RoleHome shape, adapted to this
+ * app's five roles.
  */
 function RoleHome() {
-  const { hasRole } = useAuth();
+  const { authenticated, hasRole } = useAuth();
+  if (!authenticated) return <PublicHome />;
   if (hasRole('patient')) return <PatientDashboard />;
   if (hasRole('front_desk')) return <FrontDeskDashboard />;
   if (hasRole('provider')) return <ProviderDashboard />;
@@ -95,6 +115,28 @@ export default function App() {
           element={
             <RequireRole role="platform_admin">
               <PlatformAdminDashboard />
+            </RequireRole>
+          }
+        />
+        {/* Booking flow - public (guest) and patient alike, same as the
+            reference's /search, /trips/:id, /bookings/:id, /track-booking. */}
+        <Route path="/book" element={<ClinicPicker />} />
+        <Route path="/book/:clinicId" element={<BookingForm />} />
+        <Route path="/appointments/:id" element={<AppointmentDetail />} />
+        <Route path="/track-appointment" element={<TrackAppointment />} />
+        <Route
+          path="/appointments/:id/reschedule"
+          element={
+            <RequireRole role="patient">
+              <Reschedule />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/my-appointments"
+          element={
+            <RequireRole role="patient">
+              <MyAppointments />
             </RequireRole>
           }
         />

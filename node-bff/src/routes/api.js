@@ -19,6 +19,7 @@ const PUBLIC_ROUTES = [
   ['get', '/clinics'], // patient-portal/guest entry point - see ClinicController.clinics
   ['get', '/clinics/:clinicId/availability'], // see AvailabilityController
   ['get', '/clinics/:clinicId/appointment-types'], // discoverable before booking - see AppointmentTypeController (phase 5)
+  ['get', '/clinics/:clinicId/providers'], // discoverable before booking - see ProviderController (booking flow UI phase)
   ['post', '/appointments/guest'], // guest (no-account) booking - see AppointmentController.createGuestAppointment
   ['get', '/appointments/track/:appointmentRef'], // public two-factor tracking lookup
   ['get', '/lab-orders/track/:orderRef'], // public two-factor lab-order tracking - see LabOrderController (phase 7)

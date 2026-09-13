@@ -121,6 +121,21 @@ public class ProviderController {
         return providerRepository.save(provider);
     }
 
+    /**
+     * Public - a patient/guest needs some way to discover a clinic's
+     * providers before booking one, since GET /api/clinics/{id}/
+     * availability already requires a providerId. Mirrors
+     * AppointmentTypeController's own publicAppointmentTypes shape
+     * exactly. Active only - inactive providers aren't offered for new
+     * bookings.
+     */
+    @GetMapping("/api/clinics/{clinicId}/providers")
+    public List<ProviderDirectoryView> publicProviders(@PathVariable UUID clinicId) {
+        return providerRepository.findAllByTenantIdAndStatus(clinicId, "active").stream()
+                .map(ProviderDirectoryView::from)
+                .toList();
+    }
+
     private void requireOwnedRoomOrNull(UUID roomId, UUID tenantId) {
         if (roomId != null && roomRepository.findByIdAndTenantId(roomId, tenantId).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "roomId does not belong to this clinic: " + roomId);
