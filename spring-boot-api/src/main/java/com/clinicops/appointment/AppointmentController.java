@@ -1,11 +1,13 @@
 package com.clinicops.appointment;
 
 import com.clinicops.patient.PatientProvisioningService;
+import com.clinicops.provider.CurrentProviderService;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
 import com.clinicops.tenant.TenantContext;
 import com.clinicops.user.CurrentUserService;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,6 +23,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -43,6 +48,7 @@ public class AppointmentController {
     private final AppointmentRepository appointmentRepository;
     private final SlotRepository slotRepository;
     private final AppointmentSeriesService appointmentSeriesService;
+    private final CurrentProviderService currentProviderService;
 
     public AppointmentController(
             AppointmentService appointmentService,
@@ -50,13 +56,15 @@ public class AppointmentController {
             PatientProvisioningService patientProvisioningService,
             AppointmentRepository appointmentRepository,
             SlotRepository slotRepository,
-            AppointmentSeriesService appointmentSeriesService) {
+            AppointmentSeriesService appointmentSeriesService,
+            CurrentProviderService currentProviderService) {
         this.appointmentService = appointmentService;
         this.currentUserService = currentUserService;
         this.patientProvisioningService = patientProvisioningService;
         this.appointmentRepository = appointmentRepository;
         this.slotRepository = slotRepository;
         this.appointmentSeriesService = appointmentSeriesService;
+        this.currentProviderService = currentProviderService;
     }
 
     @PostMapping("/api/appointments")
@@ -133,6 +141,26 @@ public class AppointmentController {
     public Appointment appointment(@PathVariable UUID id) {
         return appointmentRepository.findByIdAndTenantId(id, TenantContext.require())
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + id));
+    }
+
+    /**
+     * A provider's own worklist - scoped to the caller's own resolved
+     * Provider.id (via CurrentProviderService), not the tenant-wide
+     * GET /api/appointments front_desk/clinic_admin use. Day boundaries use
+     * ZoneOffset.UTC, matching AvailabilityController/SlotGenerationService's
+     * existing day-math convention - no new timezone concept introduced.
+     */
+    @GetMapping("/api/my-schedule")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public List<Appointment> mySchedule(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @AuthenticationPrincipal Jwt jwt) {
+        UUID tenantId = TenantContext.require();
+        UUID providerId = currentProviderService.resolveProviderId(jwt, tenantId);
+        LocalDate scheduleDate = date != null ? date : LocalDate.now(ZoneOffset.UTC);
+        Instant dayStart = scheduleDate.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant dayEnd = scheduleDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        return appointmentRepository.findProviderSchedule(tenantId, providerId, dayStart, dayEnd);
     }
 
     /**

@@ -56,4 +56,22 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
             WHERE a.slot_id = s.id AND a.status = 'booked' AND s.end_time < :now
             """, nativeQuery = true)
     int flipStaleBookedToNoShow(@Param("now") Instant now);
+
+    /**
+     * A provider's own worklist for one day - see GET /api/my-schedule.
+     * Native/joined the same way as flipStaleBookedToNoShow, since
+     * Appointment has no mapped relation to Slot.
+     */
+    @Query(value = """
+            SELECT a.* FROM appointments a
+            JOIN slots s ON a.slot_id = s.id
+            WHERE a.tenant_id = :tenantId AND a.provider_id = :providerId
+              AND s.start_time >= :dayStart AND s.start_time < :dayEnd
+            ORDER BY s.start_time
+            """, nativeQuery = true)
+    List<Appointment> findProviderSchedule(
+            @Param("tenantId") UUID tenantId,
+            @Param("providerId") UUID providerId,
+            @Param("dayStart") Instant dayStart,
+            @Param("dayEnd") Instant dayEnd);
 }

@@ -16,6 +16,8 @@ import com.clinicops.provider.ProviderWorkingHours;
 import com.clinicops.provider.ProviderWorkingHoursRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
+import com.clinicops.user.AppUser;
+import com.clinicops.user.AppUserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -135,6 +137,9 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected AppointmentRepository appointmentRepository;
 
+    @Autowired
+    protected AppUserRepository appUserRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -150,6 +155,28 @@ public abstract class AbstractIntegrationTest {
         Provider provider = new Provider();
         provider.setTenantId(tenantId);
         provider.setFullName(fullName);
+        return providerRepository.save(provider);
+    }
+
+    /**
+     * A Provider row linked to a login - keycloakSubject must match the
+     * "subject" passed to asProvider(...) for the same test, so
+     * CurrentProviderService resolves back to this exact provider. Provisions
+     * the AppUser row directly rather than going through a real login, same
+     * end state CurrentUserService.resolveAppUser would produce on first call.
+     */
+    protected Provider createProviderLinkedToAppUser(UUID tenantId, String fullName, String keycloakSubject) {
+        AppUser appUser = appUserRepository.findByKeycloakUserId(keycloakSubject).orElseGet(() -> {
+            AppUser fresh = new AppUser();
+            fresh.setKeycloakUserId(keycloakSubject);
+            fresh.setEmail(keycloakSubject + "@example.test");
+            fresh.setDisplayName(keycloakSubject);
+            return appUserRepository.save(fresh);
+        });
+        Provider provider = new Provider();
+        provider.setTenantId(tenantId);
+        provider.setFullName(fullName);
+        provider.setAppUserId(appUser.getId());
         return providerRepository.save(provider);
     }
 

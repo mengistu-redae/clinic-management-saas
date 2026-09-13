@@ -93,6 +93,20 @@ type/working-hours first (no admin CRUD for these yet - see "Known gaps"):
 docker compose exec -T postgres psql -U clinicops -d clinic_management < infra/postgres/seed-demo-scheduling-data.sql
 ```
 
+To try the provider clinical flow (phase 4), you also need a demo provider
+login, since `demo-clinic-admin`/`demo-patient` are the only users in
+`realm-export.json`. On a fresh environment, add a third user there
+(`realmRoles: ["provider"]`) before first boot - `start-dev --import-realm`
+only imports a realm that doesn't already exist yet, so this only works
+before the realm has ever been created. Against an already-running
+instance, create it live instead (same shape as
+`create-demo-clinic.sh`'s own admin-API calls): create the user via
+Keycloak's admin REST API, assign the `provider` realm role, add it as a
+member of the `demo-clinic` Organization, log in once (to auto-provision
+its `app_users` row, same as any other role), then
+`UPDATE providers SET app_user_id = '<that id>' WHERE ...` to link it to
+the seeded "Dr. Demo Provider" row from the script above.
+
 Service URLs:
 
 | Service | URL |
@@ -132,16 +146,23 @@ already in use" / "ports are not available".
   full five-state check-in sequence (idempotent re-calls, out-of-order
   409s), the identity check (mismatch, match, and "no ID on file" all
   behaving as decided), and manual no-show.
+- **Phase 4** - the provider clinical flow: a provider-scoped
+  `GET /api/my-schedule` worklist, encounter documentation (chief
+  complaint/assessment/plan, upsert semantics), and a full-replace
+  prescription list. Live-verified end to end: the encounter status gate
+  (only `with_provider`/`checked_out`), a create-then-update on the same
+  appointment confirmed as one row (not duplicated), prescriptions fully
+  replacing rather than merging, the provider-ownership 403 against a
+  second real provider account, and the `clinic_admin` override.
 
-Backend only so far - no booking/front-desk UI yet.
+Backend only so far - no booking/front-desk/provider UI yet.
 
 See `CLAUDE.md` for the full phase plan, every design decision and why, and
 a running log of what's verified and how.
 
 ## Known gaps
 
-- No provider clinical, clinic-admin config, or platform-admin flows yet -
-  phases 4-6.
+- No clinic-admin config or platform-admin flows yet - phases 5-6.
 - No PHI-access audit log in v1 (deferred by decision - see `CLAUDE.md`).
 - No lab-orders module yet - scoped as its own later session per the
   original kickoff spec (`clinic-management-kickoff-prompt.md`).

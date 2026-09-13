@@ -188,6 +188,28 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   -cancelled guard, notice gate, cross-tenant/cross-owner 404). No extra
   unspecified state guards - e.g. cancelling an already-`checked_in`
   appointment is allowed, matching the reference project's own scope.
+- **Encounter documentation requires `with_provider` or `checked_out`**
+  (decided 2026-09-13, phase 4 plan mode) - matches the check-in state
+  machine's own ordering: a provider can only chart a visit once they've
+  actually started (or finished) seeing the patient, not merely `booked`/
+  `checked_in`/`roomed`. Reuses `InvalidAppointmentStatusException` (409)
+  from `com.clinicops.appointment` rather than inventing a parallel
+  exception type for the same "wrong status for this action" shape.
+- **Encounters/prescriptions stay editable indefinitely** (decided
+  2026-09-13) - no freeze/lock concept once `checked_out`, since nothing in
+  the schema or kickoff spec asks for one and providers commonly need to
+  amend a note after the fact.
+- **Encounter authorship: assigned provider (by their own resolved
+  `Provider.id`) or `clinic_admin` only** (decided 2026-09-13) -
+  `front_desk` gets no access to encounter endpoints at all (clinical
+  content, not a front-desk concern); `clinic_admin` can document on a
+  provider's behalf with no ownership check, matching its override role
+  elsewhere in the app.
+- **"Today's schedule" is a new dedicated endpoint, not a filter on the
+  existing tenant-wide one** (decided 2026-09-13) - `GET /api/my-schedule`
+  mirrors `GET /api/my-appointments`'s ownership-scoped-by-JWT pattern
+  rather than adding `?date=&providerId=` params to `GET /api/appointments`,
+  which front_desk/clinic_admin keep using unchanged to see everyone.
 
 ## Phase plan
 
@@ -208,8 +230,11 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
    `no_show`/`cancelled`). Front-desk's own search/book/patient-registration
    was already built in phase 2. See "Phase 3: front-desk/counter +
    check-in" below and "Verified this session - phase 3".
-4. **Provider clinical flow** - today's schedule, encounter documentation,
-   prescriptions.
+4. **Provider clinical flow** (built 2026-09-13) - a provider-scoped
+   `GET /api/my-schedule` worklist, encounter documentation (chief
+   complaint/assessment/plan), and a full-replace prescription list. See
+   "Phase 4: provider clinical flow" below and "Verified this session -
+   phase 4".
 5. **Clinic-admin config** - providers/rooms/appointment-types/fee-policy
    CRUD, `ClinicSettingsService.resolve`, the branding endpoint, the
    settings/branding frontend hub.
@@ -429,6 +454,61 @@ on an out-of-order call, a live time gate that never trusts the scheduler).
   `TripLifecycleScheduler`: `CheckInService.checkIn`'s live gate check never
   depends on this having already run for a given appointment.
 
+## Phase 4: provider clinical flow
+
+The `encounters`/`prescriptions` tables have existed since `V1__init.sql`
+(phase 1's initial migration) but had **zero Java code** until this phase -
+no entity, repository, service, or controller. Built entirely fresh; no new
+migration needed, the existing columns were already sufficient for the
+kickoff spec's "keep minimal in v1" scope (chief complaint/assessment/plan
++ a simple medication/dosage/instructions list - no vitals, ICD codes,
+attachments, or e-prescribing anywhere in the spec). The reference project
+has no analog at all (no per-instance staff login, no clinical-documentation
+concept) - confirmed via a broad grep before writing anything.
+
+- **`com.clinicops.encounter`** (new package): `Encounter` extends
+  `BaseTenantEntity` (`appointmentId` unique - exactly one encounter per
+  appointment, enforced at the DB level; `providerId` always copied from the
+  appointment at creation, never client-supplied; its own `updatedAt` field,
+  set to `Instant.now()` on every save). `Prescription` extends
+  `BaseTenantEntity` too (`encounterId`, `medicationName` required,
+  `dosage`/`instructions` optional). `EncounterWithPrescriptions` is the GET
+  read-shape, bundling the two (no JPA relation between them, same plain-FK
+  convention as everywhere else) - same "wrapper record" idea as
+  `AppointmentSeriesResult`.
+- **`EncounterService`** - a single bean, plain `@Transactional` methods (no
+  Redis-lock split-bean pattern; an encounter isn't a contended resource the
+  way slot booking is - last-write-wins is fine given the "editable
+  indefinitely" decision). `upsert(...)` finds-or-creates by
+  `appointmentId` (so a second call updates, never duplicates - the DB's own
+  unique constraint would reject a duplicate anyway); `replacePrescriptions(...)`
+  deletes-all-then-reinserts the given list (full replace, never merged);
+  both share the same status-gate + ownership checks.
+- **`EncounterController`** - `POST /api/appointments/{id}/encounter`
+  (upsert), `GET /api/appointments/{id}/encounter` (read, 404 if none
+  written yet), `POST /api/appointments/{id}/encounter/prescriptions`
+  (replace). All `@PreAuthorize("hasAnyRole('PROVIDER','CLINIC_ADMIN')")` -
+  no `front_desk`. Kept POST for every mutation (confirmed zero
+  `@PutMapping`/`@PatchMapping` anywhere in `spring-boot-api` before adding
+  these) rather than introducing PUT/PATCH into the codebase's conventions.
+- **`com.clinicops.provider.CurrentProviderService`** (new) - resolves the
+  calling `provider`-role user's own `Provider.id` from their JWT
+  (`CurrentUserService.resolveInternalUserId` -> new
+  `ProviderRepository.findByAppUserIdAndTenantId`), mirroring
+  `CurrentUserService`/`PatientProvisioningService`'s "one service per
+  resolution concern" shape. Unlike patients, a `Provider` row is **never
+  auto-provisioned** - linking one to a login is still SQL/admin-API-only
+  (no provider admin CRUD until phase 5), so an unlinked provider account
+  gets a clear, deliberate 404, never a silent auto-create. Used by both
+  `EncounterController` (ownership check) and `GET /api/my-schedule` (below).
+- **"Today's schedule"** - `AppointmentRepository.findProviderSchedule`
+  (new native query, same join-since-no-JPA-relation pattern as
+  `flipStaleBookedToNoShow`) + `GET /api/my-schedule` on the existing
+  `AppointmentController`, `@PreAuthorize("hasRole('PROVIDER')")`. Day
+  boundaries use `ZoneOffset.UTC` (matching `AvailabilityController`/
+  `SlotGenerationService`'s existing day-math convention exactly - no new
+  timezone concept introduced), optional `?date=` param defaults to today.
+
 ## Frontend
 
 `node-bff/frontend/` - a React + Vite + Tailwind SPA with its own
@@ -495,6 +575,17 @@ server-side (`@PreAuthorize`).
   window-closed 409, identity mismatch/match/no-id-on-file, manual no-show,
   and the scheduler's bulk flip (called directly, not by waiting out the
   real 5-minute timer).
+- `EncounterIntegrationTest`/`ProviderScheduleIntegrationTest` (phase 4) -
+  upsert creates then updates the same row (not a duplicate); the
+  `with_provider`/`checked_out` status gate (409 below it, 200 at/after);
+  editing after `checked_out` still succeeds; a different provider's 403;
+  `clinic_admin`'s override (no ownership check); `GET` before any encounter
+  written -> 404; prescriptions fully replace, never merge; prescriptions
+  before any encounter exists -> 400; cross-tenant -> 404; `my-schedule`
+  returns only the calling provider's own same-day appointments, and 404s
+  clearly for a `provider` token with no linked `Provider` row. No new pure
+  -unit tests this phase (no calculation logic like `FeeCalculator`'s to
+  isolate) - still 20/20 unit tests total, unchanged from phase 3.
 - CI (`.github/workflows/ci.yml`): three parallel jobs - `mvn verify`
   (spring-boot-api), `npm test` (node-bff), `npm run build` (frontend).
 
@@ -672,15 +763,90 @@ server-side (`@PreAuthorize`).
     can't run locally) - the mechanism is identical to self-cancel's, which
     *was* verified live, so risk is low but not zero.
 
+## Verified this session - phase 4 (2026-09-13)
+
+- `mvn -q clean compile test-compile` - clean. `mvn test`: still 20/20 unit
+  tests pass for real (no new pure-unit tests this phase). All integration
+  test classes, including the two new phase-4 ones
+  (`EncounterIntegrationTest`, `ProviderScheduleIntegrationTest`), hit the
+  same Testcontainers/Windows Docker Desktop npipe wall as phases 1-3 -
+  confirmed still the same known limitation, not a new issue (checked the
+  actual surefire report: `ExceptionInInitializerError: ... Could not find a
+  valid Docker environment`, identical root cause every phase).
+- **No new migration needed** - Flyway confirmed "up to date" at `v3` on
+  container restart; Hibernate validated the new `Encounter`/`Prescription`
+  entities against `V1__init.sql`'s existing columns with no drift.
+- **A new `demo-provider` login had to be created for the first time this
+  phase** - added to `infra/keycloak/realm-export.json` for a from-scratch
+  environment, but since `start-dev --import-realm` only imports a realm
+  that doesn't already exist yet (confirmed: the already-running `clinic`
+  realm did **not** pick up the new user from a `keycloak` container
+  restart alone), the already-running instance needed the user created live
+  via the Keycloak admin REST API instead (same pattern
+  `create-demo-clinic.sh` already uses for org membership) - realm role
+  `provider` assigned, added as a member of the `demo-clinic` Organization.
+  Logging in once auto-provisioned its `app_users` row (same lazy
+  `CurrentUserService` provisioning every other role already gets); then
+  `UPDATE providers SET app_user_id = ...` linked it to the phase-2-seeded
+  "Dr. Demo Provider" row - documented here as a one-time manual step, same
+  spirit as `create-demo-clinic.sh`'s own copy-paste convention, since
+  provider admin CRUD doesn't exist until phase 5.
+- **The whole flow was live-verified end to end** through real browser
+  sessions (not just direct `curl`), covering both the happy path and every
+  guard:
+  - `GET /api/my-schedule` as `demo-provider` - returned real appointments
+    scoped to that provider for today (confirmed count changes correctly as
+    appointments were added), and correctly excluded a different provider's
+    and a different day's appointments once a second test provider was
+    created for comparison.
+  - A provider account with no linked `Provider` row - confirmed the exact
+    404 message (`"No provider profile linked to this account..."`) live,
+    both on `/api/my-schedule` and (implicitly, before linking) proved the
+    `AppUser` auto-provisioning still runs before that check fails.
+  - Booked a real appointment (guest channel) on the demo provider, drove it
+    through `check-in -> room -> start` as `demo-clinic-admin` to reach
+    `with_provider`, then confirmed the encounter status gate 409s a
+    still-`booked` appointment with the exact message
+    (`"Cannot document an encounter for an appointment with status
+    'booked'"`).
+  - `POST .../encounter` (create) then a second call (update) on the
+    `with_provider` appointment - confirmed via direct Postgres query
+    exactly **one** `encounters` row exists for that appointment (same id
+    both times, updated chief complaint), not a duplicate.
+  - Flipped the appointment to `checked_out` and called `POST .../encounter`
+    again - 200, succeeded, confirming the "editable indefinitely" decision
+    live, not just as an untested assumption.
+  - `POST .../encounter/prescriptions` with 2 items, then again with a
+    different single item - confirmed via Postgres exactly 1 row remains
+    (the second, `Azithromycin`/`Amoxicillin` swap), proving full-replace
+    -not-merge semantics.
+  - `POST .../encounter/prescriptions` against an appointment with no
+    encounter yet - 400 with the clear message, live.
+  - Created a second demo provider account, linked to a different
+    `Provider` row in the same clinic, and confirmed `POST .../encounter`
+    against the first provider's appointment 403s for the second provider -
+    the ownership check works against real distinct provider identities,
+    not just the single-provider happy path. (This second account was
+    temporary, used only for this check, and removed afterward - not part
+    of the documented demo setup.)
+  - `clinic_admin` successfully created an encounter on a provider's
+    appointment with no ownership check, confirmed live (the override path).
+
 ## Known gaps (don't pretend these are done)
 
-- No provider clinical, clinic-admin config, or platform-admin onboarding
-  flows yet - phases 4-6.
+- No clinic-admin config or platform-admin onboarding flows yet - phases
+  5-6.
+- No provider clinical **frontend UI** yet (phase 4 is backend-only, same
+  as every phase so far) - `GET /api/my-schedule`/encounter endpoints exist
+  but nothing in `node-bff/frontend/` calls them yet.
 - No PHI-access audit log in v1 (deferred by decision, 2026-09-12).
 - No lab-orders module yet - scoped as its own later session.
 - No provider/room/appointment-type/working-hours/fee-policy admin CRUD yet
   (phase 5) - seeded via SQL for now
-  (`infra/postgres/seed-demo-scheduling-data.sql`).
+  (`infra/postgres/seed-demo-scheduling-data.sql`). Same story for linking a
+  `Provider` row to a login (`Provider.appUserId`) - manual, via the
+  Keycloak admin API + a direct `UPDATE providers SET app_user_id = ...`
+  (see "Verified this session - phase 4"), until phase 5 exists.
 - No invoicing/payment creation wired to booking yet (not assigned to any
   phase so far - see "Domain decisions"). Cancellation/reschedule fees are
   **computed and recorded** (`appointment_cancellations.fee_amount`,

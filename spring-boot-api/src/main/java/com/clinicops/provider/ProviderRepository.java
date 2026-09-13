@@ -11,4 +11,7 @@ public interface ProviderRepository extends JpaRepository<Provider, UUID> {
     Optional<Provider> findByIdAndTenantId(UUID id, UUID tenantId);
 
     List<Provider> findAllByTenantId(UUID tenantId);
+
+    /** Resolves the provider row linked to a staff login - see CurrentProviderService. */
+    Optional<Provider> findByAppUserIdAndTenantId(UUID appUserId, UUID tenantId);
 }
