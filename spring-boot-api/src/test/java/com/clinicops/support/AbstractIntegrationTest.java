@@ -7,8 +7,12 @@ import com.clinicops.appointmenttype.AppointmentTypeRepository;
 import com.clinicops.clinic.Clinic;
 import com.clinicops.clinic.ClinicRepository;
 import com.clinicops.clinicsettings.ClinicSettingsRepository;
+import com.clinicops.encounter.Encounter;
+import com.clinicops.encounter.EncounterRepository;
 import com.clinicops.feepolicy.FeePolicy;
 import com.clinicops.feepolicy.FeePolicyRepository;
+import com.clinicops.labrate.LabTestRate;
+import com.clinicops.labrate.LabTestRateRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
 import com.clinicops.provider.Provider;
@@ -149,6 +153,12 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected ClinicSettingsRepository clinicSettingsRepository;
 
+    @Autowired
+    protected EncounterRepository encounterRepository;
+
+    @Autowired
+    protected LabTestRateRepository labTestRateRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -233,6 +243,23 @@ public abstract class AbstractIntegrationTest {
         slot.setStartTime(start);
         slot.setEndTime(end);
         return slotRepository.save(slot);
+    }
+
+    protected Encounter createEncounter(UUID tenantId, UUID appointmentId, UUID providerId) {
+        Encounter encounter = new Encounter();
+        encounter.setTenantId(tenantId);
+        encounter.setAppointmentId(appointmentId);
+        encounter.setProviderId(providerId);
+        return encounterRepository.save(encounter);
+    }
+
+    protected LabTestRate createLabTestRate(UUID tenantId, String testCode, String baseCharge, String collectionFee) {
+        LabTestRate rate = new LabTestRate();
+        rate.setTenantId(tenantId);
+        rate.setTestCode(testCode);
+        rate.setBaseCharge(new BigDecimal(baseCharge));
+        rate.setCollectionFee(new BigDecimal(collectionFee));
+        return labTestRateRepository.save(rate);
     }
 
     /** providerId null = a clinic-wide default tier. */

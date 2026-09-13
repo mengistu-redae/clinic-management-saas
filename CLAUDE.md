@@ -313,8 +313,15 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
    Deactivation enforcement itself needed no new work - `TenantContextFilter`/
    `ClinicInactiveException` have blocked it since phase 1. See "Phase 6:
    platform-admin onboarding" below and "Verified this session - phase 6".
-7. **Lab orders module** (separate future session, scoped via its own
-   multiple-choice questions - not part of this plan).
+7. **Lab orders module** (built 2026-09-13) - lab test rate configuration,
+   the full lab-order lifecycle (`requested`/`ordered ->
+   specimen_collected -> in_transit -> resulted -> reviewed`, or
+   `cancelled`), a patient-initiated request -> staff confirm-and-order
+   flow, public two-factor order tracking, and a shared `Payment` entity
+   covering both appointments and lab orders (closing a gap left open since
+   phase 1). This is the last phase named in the kickoff spec's own phase
+   plan. See "Phase 7: lab orders module" below and "Verified this session
+   - phase 7".
 
 Each phase gets its own `TenantIsolationIntegrationTest` coverage extension
 and a `CLAUDE.md` update recording what was verified live against the
@@ -698,6 +705,128 @@ everything needed (`keycloak_org_id`/`name`/`status`/`created_at`) since
   API access are blocked), matching the reference project's own documented
   choice for its marketplace search. Not solved differently here.
 
+## Phase 7: lab orders module
+
+Drafted from, and read against in full before writing any code, the
+reference bus-ticketing-saas project's `com.bustix.cargo` module (waybills)
+- the direct structural template: order+line-items split, manual
+staff-driven status machine, snapshot pricing with a missing-rate 400
+(the deliberate opposite of `fee_policies`' "missing = zero" fallback), a
+`@ConfigurationProperties`-bound restricted-list, generic `FeeCalculator`
+reuse for cancellation, two-factor public tracking, and a request->confirm
+two-phase customer flow.
+
+Four decisions pinned in plan mode (the kickoff spec's own explicit
+"scope this via multiple-choice questions" items, plus two more forced by
+gaps the investigation surfaced), all confirmed live this session:
+
+- **Manual staff result entry only** - no HL7/FHIR ingestion. `result`
+  takes a typed-in per-test value/unit/reference-range/abnormal-flag
+  payload.
+- **Resulted-but-unreviewed values are visible to any `provider`/
+  `clinic_admin`** who reads the order - `review` is a workflow/audit stamp
+  (`reviewedAt`/`reviewedBy`), not an access gate. Matches the existing
+  no-staff-side-hiding-by-workflow-stage convention (encounters are visible
+  immediately once written).
+- **Cancellation fee always resolves at the clinic's zero-notice tier** -
+  `FeeCalculator.calculate(tenantId, providerId, totalCost, dueAt)` reused
+  completely unchanged, with `dueAt = Instant.now()` at cancel time (a lab
+  order has no future "due" instant the way an appointment has a slot
+  start time) - lands on whichever `fee_policies` row has `cutoffHours = 0`
+  (zero fee if none configured, matching `FeeCalculator`'s existing
+  fallback).
+- **A shared `com.clinicops.payment` package built this phase**, not just
+  for lab orders - closes "no invoicing/payment wired to booking," a
+  standing known gap since phase 1. One `Payment` entity, two thin
+  controllers (`AppointmentPaymentController`, `LabOrderPaymentController`),
+  no delete on either.
+
+**Also decided, not asked, because the kickoff spec already answers it**:
+the `collect-specimen` identity check treats **no ID on file as a mismatch**
+(`IdentityMismatchException`, 409) - the literal opposite of phase 3's
+check-in convention (which lets "nothing on file" through). Kept as two
+separate exception classes on purpose (`com.clinicops.laborder.
+IdentityMismatchException` is not a reuse of `com.clinicops.appointment.
+IdentityMismatchException`) so a future change to one convention never
+silently changes the other.
+
+- **`V5__lab_orders.sql`**: `lab_test_rates` (`UNIQUE(tenant_id,
+  test_code)`), `lab_orders` (patient/encounter/ordering-provider/
+  customer-user ids, `status`, `order_ref`/`clinic_ref`, snapshotted
+  `total_cost`, per-transition timestamps), `lab_order_tests` (line items,
+  own table - `test_code` nullable until a patient-initiated request is
+  confirmed-and-ordered), `lab_order_cancellations` (mirrors
+  `appointment_cancellations` exactly - no `created_at` column, so the
+  entity doesn't extend `BaseTenantEntity`, same fix as phase 3's
+  `AppointmentCancellation`). `payments.appointment_id` dropped `NOT NULL`,
+  gained `lab_order_id` + `chk_payments_exactly_one_owner` (`(appointment_id
+  IS NOT NULL) <> (lab_order_id IS NOT NULL)`).
+- **`com.clinicops.labrate`**: same CRUD shape as phase 5's
+  `FeePolicyController` (`/api/clinic/lab-rates`, `clinic_admin` only, real
+  `POST /{id}/delete`). `NoLabRateConfiguredException` (400) - a lab order
+  can't be created or priced without a configured rate for every requested
+  `testCode`. No fixed "test catalog" table; a test becomes orderable the
+  moment a rate exists for its code (same "config implies availability"
+  shape `fee_policies` already uses).
+- **`com.clinicops.laborder`**: `LabOrder`/`LabOrderTest` (line items, own
+  table, no JPA relation - plain UUID FK + explicit repository queries,
+  same convention as everywhere else); every endpoint returns
+  `LabOrderWithTests { order, tests }` (same wrapper-record shape as
+  `AppointmentSeriesResult`/`EncounterWithPrescriptions`).
+  - `LabOrderService` - the consolidated core (create/get/listForTenant/
+    update/createRequest/confirmAndOrder/myLabOrders/trackByRefAndPhone).
+    Deliberately not split into a separate request-flow service since both
+    share essentially all pricing/validation/encounter-match logic.
+    Pricing is **snapshotted** at order-creation (or confirm-and-order)
+    time onto each `LabOrderTest.price` and summed onto `LabOrder.
+    totalCost` - a later `lab_test_rates` change never re-prices an
+    already-issued order.
+  - `LabOrderStatusService` - mirrors `CheckInService`'s idempotent
+    -transition convention (`InvalidLabOrderStatusException` on an
+    out-of-order call, no-op on a repeat of the current state) but with
+    each of `collectSpecimen`/`send`/`result`/`review` as its own explicit
+    method rather than one generic transition helper, since each carries
+    unique extra validation/payload/side-effects.
+  - `LabOrderCancellationService` - mirrors `CancellationService` exactly;
+    pre-collection only.
+  - `RestrictedTestsProperties` (`@ConfigurationProperties(prefix =
+    "clinic.lab")`, `List<String> restrictedTests`) - the first
+    `@ConfigurationProperties` class in this app (a YAML sequence has no
+    single bare-key property the way `@Value` expects - Boot stores it
+    indexed), so `ClinicManagementApplication` gained
+    `@ConfigurationPropertiesScan` - same "silently inert without the
+    enabling annotation" gotcha as `@EnableMethodSecurity`/
+    `@EnableScheduling` before it. Each entry compiles as a case
+    -insensitive regex, falling back to a literal-substring match if it
+    isn't valid regex.
+  - **Patient-initiated requests** (`PatientLabRequestController`) -
+    `POST/GET /api/my-lab-orders` (`patient`), `GET /api/lab-orders/
+    requests` (staff review queue, `findAllByTenantIdAndStatus(tenantId,
+    "requested")`), `POST /api/lab-orders/{id}/confirm-and-order` (staff -
+    assigns `orderingProviderId`/optionally `encounterId`/tests,
+    `requested -> ordered`, `RequestNotIssuableException` 409 once past
+    `requested`). `GET /api/my-lab-orders` unions two ownership paths: a
+    directly-requested order (`customerUserId`) and an order on an
+    encounter behind one of the patient's own appointments (join through
+    `appointments.customer_user_id -> encounters.appointment_id`) - needed
+    a new non-tenant-scoped `EncounterRepository.findByAppointmentId`,
+    mirroring `AppointmentRepository.findByAppointmentRef`'s precedent.
+  - **Public tracking**: `GET /api/lab-orders/track/{orderRef}?phone=`
+    (`permitAll`) - two-factor match against `patients.phone`, mismatch and
+    unknown ref both 404 alike. `LabOrderTrackingView` is deliberately
+    narrow - status and timestamps only, never result values/reference
+    ranges/abnormal flags/ID numbers/provider names.
+  - **Roles**: create/update/status-transitions/cancel = `provider` +
+    `clinic_admin`; lab-rate CRUD = `clinic_admin` only; patient request =
+    `patient` only. No `front_desk` access anywhere in this package -
+    clinical content, same reasoning phase 4 already applied to encounters.
+- **`com.clinicops.payment`**: `Payment` (extends `BaseTenantEntity`,
+  `appointmentId`/`labOrderId` both nullable, exactly one set per the DB
+  CHECK). `AppointmentPaymentController`/`LabOrderPaymentController` - both
+  `front_desk`/`clinic_admin`/`provider` read, `front_desk`/`clinic_admin`
+  record; `POST` (create) + `GET` (list) only, no delete - a payment is a
+  financial record, not config.
+
 ## Frontend
 
 `node-bff/frontend/` - a React + Vite + Tailwind SPA with its own
@@ -807,6 +936,24 @@ server-side (`@PreAuthorize`).
   -`platform_admin` role (including `patient`) 403s the whole controller.
 - CI (`.github/workflows/ci.yml`): three parallel jobs - `mvn verify`
   (spring-boot-api), `npm test` (node-bff), `npm run build` (frontend).
+- `LabRateControllerIntegrationTest`/`LabOrderIntegrationTest`/
+  `LabOrderPaymentIntegrationTest`/`PatientLabRequestIntegrationTest`
+  (phase 7) - lab-rate CRUD + duplicate-testCode 409; multi-test create
+  with snapshotted pricing; missing-rate 400; empty-tests 400;
+  restricted-test 400 (and `consentAcknowledged` bypass); encounter
+  -patient-mismatch 409; the full `ordered -> specimen_collected ->
+  in_transit -> resulted -> reviewed` happy path (idempotent re-calls,
+  out-of-order 409s); `collect-specimen`'s identity check (mismatch 409,
+  no-ID-on-file 409 too - the deliberate divergence from check-in);
+  resulted-but-unreviewed values readable by a second provider; test-list
+  replace pre/post-collection; cancellation fee at the zero-cutoff tier;
+  the `chk_payments_exactly_one_owner` CHECK violation via raw JDBC;
+  payments scoped correctly per owner; the patient request ->
+  confirm-and-order round trip (incl. re-pricing), role checks, idempotent
+  -past-`requested` 409, cross-patient isolation, and `GET /api/
+  my-lab-orders` unioning both ownership paths. Same Testcontainers/
+  Windows-npipe wall as every prior phase - confirmed via the surefire
+  report, not a regression from this phase's code.
 
 ## Verified this session (2026-09-12)
 
@@ -1160,6 +1307,78 @@ server-side (`@PreAuthorize`).
     it's cost real time twice now (this phase and phase 4) - worth
     remembering for any future multi-role live verification.
 
+## Verified this session - phase 7 (2026-09-13)
+
+- `mvn -q -o compile`/`test-compile` - clean, first try, for the entire
+  new main-source surface (migration, `labrate`/`laborder`/`payment`
+  packages, `EncounterRepository` additions, `@ConfigurationPropertiesScan`,
+  `SecurityConfig`/`node-bff` public-route wiring) and all four new test
+  classes. `mvn -o test -Dtest='*Test,!*IntegrationTest'` - the existing
+  23 pure-unit tests still pass. `mvn -o clean test` (full suite) -
+  every integration test class, old and new, fails identically at
+  container startup with `IllegalStateException: Could not find a valid
+  Docker environment` (checked the surefire report directly) - the same
+  pre-existing Windows Docker Desktop npipe limitation as every prior
+  phase, not a regression from this phase's code.
+- **Environment note**: this dev machine also runs a native Windows
+  `postgresql-x64-17` service and, this session, a native Keycloak process
+  (`C:\keycloak\keycloak-26.7.1`), both occupying `:5432`/`:8080` ahead of
+  `docker compose up`. The native Keycloak process was stopped directly
+  (same "stop what's occupying the port" precedent as phases 1/3); the
+  Postgres Windows service needs admin rights this session doesn't have,
+  so `docker-compose.yml`'s postgres service now maps its host port to
+  `5433` instead of `5432` (`5433:5432`) - purely a host-side remap, every
+  container-to-container connection still uses `postgres:5432` internally,
+  unaffected. Use `localhost:5433` for any host tool (psql, a GUI client)
+  connecting from outside docker on this machine.
+- **`docker compose up -d --build` - full stack live-tested end to end**,
+  `V5` applied cleanly including the `payments` `ALTER`/CHECK (spring-boot
+  -api logs: "Successfully applied 1 migration ... now at version v5"). The
+  demo Keycloak users' passwords (unknown - set by whichever session first
+  triggered their forced reset) were reset via the admin REST API to a
+  known value for this session's live testing.
+- Real browser login as `demo-clinic-admin`, `demo-provider`, and
+  `demo-patient` in turn (Keycloak's SSO session had to be explicitly
+  ended via its own `/protocol/openid-connect/logout` confirm step between
+  identities - `node-bff`'s own `/auth/logout` alone only clears the BFF
+  session, not the Keycloak browser SSO session, so a bare `/auth/login`
+  right after silently re-authenticates as whoever was still SSO'd in):
+  - As `demo-clinic-admin`: created `lab_test_rates` for `CBC`/`LFT`/
+    `LIPID`; registered a walk-in patient with a `nationalId` on file;
+    booked+checked-in+roomed+started a real appointment and opened a real
+    encounter (phase 4's endpoint) to order against.
+  - As `demo-clinic-admin`/`demo-provider`: created a multi-test lab order
+    - confirmed snapshotted pricing (`$55.00` = `$20+$5` CBC +
+    `$30` LFT); a prior attempt with an unconfigured test code 400'd
+    (`NoLabRateConfiguredException`) and succeeded once the rate was
+    added. Drove it through `collect-specimen` (wrong ID 409, matching ID
+    200) -> `send` -> `result` -> `review`, then confirmed both `send` and
+    `collect-specimen` 409 when called again out of order, and `review`
+    is idempotent (identical `reviewedAt` on a repeat call).
+  - **Confirmed live, a genuinely different logged-in `demo-provider`
+    identity can read a resulted-but-unreviewed test's result value**
+    (`9.9`, `reviewedAt: null`) - the pinned visibility decision, not just
+    exercised via the mocked-JWT integration test.
+  - Test-list `PATCH`-equivalent replace while `ordered` (CBC -> LFT)
+    confirmed live; cancelling a fresh order pre-collection recorded a fee
+    of `$30.00` against a `$30.00` total (the clinic's `cutoffHours=0`/
+    100% tier - `dueAt = Instant.now()` always lands there, exactly as
+    designed).
+  - Public tracking (`GET /api/lab-orders/track/{ref}?phone=`) through
+    both `node-bff:3000` directly and through `nginx:80` with zero
+    cookies - returned only `status`/timestamps, no result values/ids;
+    wrong phone and an unknown ref both 404'd identically.
+  - Payments: `demo-provider` could read but not record
+    (`403`) a lab-order payment; `demo-clinic-admin` recorded one
+    (`$55.00`, `cash`) and it round-tripped through the list endpoint.
+  - Patient request flow: as `demo-patient`, `POST /api/my-lab-orders`
+    (a freeform "Lipid Panel" request, no pricing) - as
+    `demo-clinic-admin`, it appeared in `GET /api/lab-orders/requests`,
+    was `confirm-and-order`'d (assigning a provider + a real `LIPID` test
+    code, pricing at `$35.00`) - back as `demo-patient`,
+    `GET /api/my-lab-orders` showed it with `status: "ordered"` and the
+    now-set `totalCost`, confirming the full round trip end to end.
+
 ## Known gaps (don't pretend these are done)
 
 - No initial `clinic_admin` user provisioning as part of clinic onboarding
@@ -1173,14 +1392,20 @@ server-side (`@PreAuthorize`).
 - No provider clinical **frontend UI** yet (phase 4 is backend-only, same
   as every phase so far) - `GET /api/my-schedule`/encounter endpoints exist
   but nothing in `node-bff/frontend/` calls them yet.
+- No lab-orders **frontend UI** yet (phase 7 is backend-only, same as every
+  phase so far) - the lab-rate/lab-order/payment/patient-request endpoints
+  exist but nothing in `node-bff/frontend/` calls them yet.
 - No PHI-access audit log in v1 (deferred by decision, 2026-09-12).
-- No lab-orders module yet - scoped as its own later session.
-- No invoicing/payment creation wired to booking yet (not assigned to any
-  phase so far - see "Domain decisions"). Cancellation/reschedule fees are
-  **computed and recorded** (`appointment_cancellations.fee_amount`,
-  `appointment_reschedules.fee_amount`) but nothing actually charges or
-  collects them - `payments`/`invoices` tables exist in `V1__init.sql` but no
-  code reads/writes them.
+- Payments are now recordable (`com.clinicops.payment`, phase 7) but purely
+  as a manual staff-entered record - no real payment processor/gateway
+  integration, no refund flow, and nothing auto-creates a payment from a
+  cancellation/reschedule fee (those still just get computed and recorded
+  in `appointment_cancellations.fee_amount`/`appointment_reschedules.
+  fee_amount`/`lab_order_cancellations.fee_amount` - a human still has to
+  separately record the actual payment/refund, staff never wired to
+  auto-charge it).
+- `invoices` (as opposed to `payments`) still exists in `V1__init.sql`,
+  unused by any code - no invoice-generation concept anywhere yet.
 - Email/notifications: the `notifications` outbox table is written to
   (`AppointmentWriter`/`CancellationService`/`RescheduleService`) but there's
   no `NotificationWorker`/real sender yet - rows just accumulate with
@@ -1221,3 +1446,21 @@ server-side (`@PreAuthorize`).
   two stacks - docker-compose or natively-run (`start-local.ps1`) - can be up
   at a time on this box; check for port conflicts (`netstat -ano`) before
   assuming a failed `docker compose up` is this project's own bug.
+- **This machine also has a native Windows `postgresql-x64-17` service that
+  auto-starts and permanently holds `:5432`** (found phase 7) - unlike the
+  bus-ticketing-saas port conflict above, this isn't one of this project's
+  own two run modes, so `docker-compose.yml`'s postgres service now maps to
+  host port **`5433`** instead (`"5433:5432"`) rather than fighting the
+  service on every session. Every container-to-container connection
+  (spring-boot-api, keycloak) still uses `postgres:5432` internally,
+  unaffected - only a host tool (psql, a GUI client) connecting from
+  outside docker needs `localhost:5433` on this machine. A native Keycloak
+  process on `:8080` can also turn up from a `start-native.ps1` run left
+  running in a previous session - stop it directly (`Stop-Process`), same
+  as any other stray dev process.
+- No git remote is configured for this repo yet, and `gh` is not
+  authenticated in this environment - device-code `gh auth login` cannot
+  complete when relayed through the tool execution context (it times out
+  waiting on the browser-approval step). CI has therefore never run on this
+  repo - "should run clean in CI" claims above remain unconfirmed by an
+  actual CI run.

@@ -67,6 +67,8 @@ public class SecurityConfig {
                 // appointment-tracking lookup - see AppointmentController.
                 .requestMatchers(HttpMethod.POST, "/api/appointments/guest").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/appointments/track/*").permitAll()
+                // Public two-factor lab-order tracking - see LabOrderController.
+                .requestMatchers(HttpMethod.GET, "/api/lab-orders/track/*").permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().denyAll()
             )

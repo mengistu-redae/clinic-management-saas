@@ -90,3 +90,15 @@ clinicops:
     base-url: ${KEYCLOAK_ADMIN_BASE_URL:http://localhost:8080}
     admin-username: ${KEYCLOAK_ADMIN:admin}
     admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
+
+clinic:
+  lab:
+    # Platform-wide, phase 7 - tests needing explicit consent or genetic
+    # -counseling gating before a clinician can order them.
+    # RestrictedTestsProperties (@ConfigurationProperties, not @Value - a
+    # YAML sequence has no single bare-key property). Each entry is a
+    # case-insensitive regex, falling back to a literal-substring match if
+    # it isn't valid regex - so a plain code/word works too.
+    restricted-tests:
+      - "^HIV.*"
+      - "genetic"

@@ -3,8 +3,8 @@
 A multi-tenant clinic management platform: clinics (tenants) manage their own
 providers, rooms and appointment calendar; patients book through a patient
 portal; front-desk staff book/reschedule/check-in walk-in patients at the
-counter; providers document visits. A lab-orders module is planned as a
-later, separately-scoped addition.
+counter; providers document visits and order labs; a lab-orders module
+covers rate configuration, the full order lifecycle, and payments.
 
 Modeled on the architecture and conventions of a prior bus-ticketing SaaS -
 see `CLAUDE.md` for the full rationale behind each convention.
@@ -131,6 +131,13 @@ of the two stacks can be up at a time as-is; stop the other one first
 `start-local.ps1` processes) if `docker compose up` fails with "address
 already in use" / "ports are not available".
 
+**Also note:** this machine has a native Windows `postgresql-x64-17`
+service permanently holding `:5432` (unrelated to either project's own run
+modes) - `docker-compose.yml`'s postgres service maps to host port `5433`
+instead (`5433:5432`). This only affects a host tool connecting from
+outside docker (use `localhost:5433`); every container-to-container
+connection is unaffected.
+
 ## What's built so far
 
 - **Phase 1** - the infra/auth skeleton. Live-verified against a real
@@ -179,8 +186,24 @@ already in use" / "ports are not available".
   staff calls and 409'd a guest booking against it (both pre-existing
   enforcement, reached for the first time via a real toggle), and
   reactivating restored both.
+- **Phase 7** - the lab orders module: lab test rate configuration, the
+  full order lifecycle (`requested`/`ordered -> specimen_collected ->
+  in_transit -> resulted -> reviewed`, or `cancelled`), a patient-initiated
+  request -> staff confirm-and-order flow, public two-factor order
+  tracking, and a shared `Payment` entity/controllers for both
+  appointments and lab orders (closing a gap open since phase 1). This is
+  the last phase in the original kickoff spec's phase plan. Live-verified
+  end to end: snapshotted multi-test pricing, a missing-rate 400, the full
+  status happy path with idempotent re-calls and out-of-order 409s, the
+  `collect-specimen` identity check (both a mismatch and no-ID-on-file
+  reject it, the deliberate opposite of check-in's own convention), a
+  second real provider account reading a resulted-but-unreviewed value, a
+  cancellation fee at the clinic's zero-notice tier, public tracking
+  through node-bff with zero cookies (status/timestamps only, never result
+  values), a recorded lab-order payment, and the full patient
+  request -> confirm-and-order -> `GET /api/my-lab-orders` round trip.
 
-Backend only so far - no booking/front-desk/provider/admin UI yet.
+Backend only so far - no booking/front-desk/provider/admin/lab UI yet.
 
 See `CLAUDE.md` for the full phase plan, every design decision and why, and
 a running log of what's verified and how.
@@ -192,11 +215,10 @@ a running log of what's verified and how.
   manually create/assign its first `clinic_admin` in Keycloak before it's
   actually usable.
 - No PHI-access audit log in v1 (deferred by decision - see `CLAUDE.md`).
-- No lab-orders module yet - scoped as its own later session per the
-  original kickoff spec (`clinic-management-kickoff-prompt.md`).
-- No invoicing/payment creation wired to booking yet; cancellation/
-  reschedule fees are computed and recorded but nothing charges them yet.
-  Email is a stub (outbox rows are written, nothing sends them yet).
+- Payments are recordable (phase 7) but purely as a manual staff-entered
+  record - no payment gateway, no refund flow, and cancellation/reschedule
+  fees are still only computed and recorded, never auto-charged. Email is
+  a stub (outbox rows are written, nothing sends them yet).
 - No patient-portal/front-desk booking **UI** yet - backend only so far.
 - **If you edit `node-bff/src/routes/api.js`'s `PUBLIC_ROUTES`, rebuild the
   container** (`docker compose up -d --build --force-recreate node-bff`) -
