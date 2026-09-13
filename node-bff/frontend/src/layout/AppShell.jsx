@@ -44,9 +44,17 @@ export default function AppShell() {
                 </>
               )}
               {hasRole('front_desk') && (
-                <NavLink to="/front-desk" className={navLinkClass}>
-                  Dashboard
-                </NavLink>
+                <>
+                  <NavLink to="/front-desk" end className={navLinkClass}>
+                    Dashboard
+                  </NavLink>
+                  <NavLink to="/front-desk/patients" className={navLinkClass}>
+                    Book for a walk-in
+                  </NavLink>
+                  <NavLink to="/front-desk/appointments" className={navLinkClass}>
+                    Appointments
+                  </NavLink>
+                </>
               )}
               {hasRole('provider') && (
                 <NavLink to="/provider" className={navLinkClass}>

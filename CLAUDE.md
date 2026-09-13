@@ -983,6 +983,67 @@ OAuth exchange already established authenticity) and merges
 is tested against the actual realm. Real authorization stays entirely
 server-side (`@PreAuthorize`).
 
+**Frontend phase C** (built 2026-09-13, later session) is front-desk's own
+walk-in UI - the first "Known gaps" item phase B's own write-up predicted.
+Zero backend changes needed this time: every endpoint it drives
+(`PatientController`, the check-in transitions, `RescheduleController`,
+`CancellationController`, `AppointmentPaymentController`) already existed
+and was already live-verified server-side in phases 2/3/7 - this phase is
+pure frontend wiring against them.
+
+- **`api/queries.js`** gained the front-desk hook group: `usePatients`/
+  `usePatient`/`useCreatePatient`, a tenant-scoped `useAppointment(id)`
+  (distinct from the patient-owned `useMyAppointment` - reads the bare
+  `GET /api/appointments/{id}`, which does **not** carry `AppointmentWithSlotView`'s
+  `startTime`/`endTime` the way `GET /api/my-appointments/{id}` does, per
+  phase B's own documented scope boundary - `AppointmentDetail.jsx` shows
+  `—` rather than a fabricated time, confirmed live below), one
+  `useCheckInAction(path)` factory instantiated five times
+  (`useCheckIn`/`useRoom`/`useStart`/`useCheckOut`/`useMarkNoShow`) rather
+  than five near-identical hooks, and `useCancelAppointment`/
+  `useRescheduleAppointment`/`useAppointmentPayments`/
+  `useCreateAppointmentPayment`.
+- **`pages/front-desk/PatientSearch.jsx`** (`/front-desk/patients`) - a
+  live-search box over `GET /api/patients?query=` (empty query browses all),
+  each result linking to `BookForPatient`; an inline "register new patient"
+  form (`POST /api/patients`) shown on no-match or on request, submitting
+  straight into the booking flow for the newly-registered patient.
+- **`pages/front-desk/BookForPatient.jsx`** (`/front-desk/book/:patientId`)
+  - reuses the same `SlotPicker`/confirm-panel shape as the patient/guest
+  `BookingForm.jsx` from phase B, but reads the **staff** appointment-type/
+  provider lists (`useAppointmentTypes`/`useProviders`, tenant-scoped) rather
+  than the public per-clinic directories, since front-desk's own clinic is
+  already resolved from their JWT - no clinic-picker step. Same error-banner
+  -outside-the-conditional placement as phase B's fixed `BookingForm.jsx`,
+  applied correctly from the start this time (not a repeat of that bug).
+- **`pages/front-desk/AppointmentDetail.jsx`** - the front-desk counterpart
+  to the patient-facing `AppointmentDetail.jsx`, plus what a patient's own
+  view has no business doing: a single "Next step" button that swaps by
+  current `status` (`Check in` -> `Room` -> `Start visit` -> `Check out`,
+  plus a `Mark no-show` alongside `Check in`) driving `CheckInController`'s
+  exact linear sequence, a payments list + record-payment form
+  (`AppointmentPaymentController`), and reschedule/cancel actions - all
+  three hidden once the appointment reaches a terminal status
+  (`cancelled`/`checked_out`/`no_show`; payments stays visible/editable
+  through every non-`cancelled` status, matching `AppointmentPaymentController`
+  having no status gate of its own).
+- **`pages/front-desk/Reschedule.jsx`** - same `SlotPicker`-reuse shape as
+  the patient-facing `Reschedule.jsx`, posting to the staff
+  `RescheduleController` endpoint (`newSlotId`/`newProviderId`) instead of
+  the ownership-scoped one; provider defaults to the appointment's current
+  one but is re-pickable.
+- **`pages/front-desk/Appointments.jsx`** (`/front-desk/appointments`) - the
+  full tenant-wide list the dashboard's own "recent appointments" preview
+  links out to (same relationship as `MyAppointments.jsx` to the patient
+  dashboard in phase A). `GET /api/appointments` carries only a `patientId`
+  (or a guest's `contactName`) - patient names are resolved via one
+  `GET /api/patients` call built into an id->name `Map`, not an N+1 lookup
+  per row.
+- `layout/AppShell.jsx`'s front-desk nav gained "Book for a walk-in"/
+  "Appointments" links alongside the existing "Dashboard" one;
+  `front-desk/Dashboard.jsx`'s stat cards and recent-appointments rows are
+  now real links into this new UI instead of static text.
+
 ## Testing
 
 - `TenantContextFilterTest` - unit tests locking in the claim-shape parsing
@@ -1628,6 +1689,75 @@ server-side (`@PreAuthorize`).
   when cross-checking a displayed time against a raw API response during
   live verification here.
 
+## Verified this session - frontend phase C (2026-09-13)
+
+- `npm run build` in `node-bff/frontend/` - clean, no new npm dependencies.
+  No backend changes this phase, so no `spring-boot-api` rebuild needed -
+  `docker compose up -d --build --force-recreate node-bff` alone (frontend
+  is baked into that image) picked up the new pages.
+- This session picked back up an already-in-progress working tree (the
+  five new `pages/front-desk/*.jsx` files plus their `App.jsx`/`queries.js`/
+  `AppShell.jsx`/`Dashboard.jsx` wiring already existed uncommitted) - full
+  live verification was still run end to end before committing rather than
+  trusting the uncommitted diff on sight, same discipline as every other
+  phase.
+- **The whole front-desk walk-in flow was live-verified end to end** as a
+  real `demo-front-desk` login through the real browser/node-bff/nginx
+  stack:
+  - `PatientSearch` listed real seeded patients immediately (empty-query
+    browse); clicking one navigated straight into `BookForPatient` with the
+    right patient name resolved in the header. The inline "register new
+    patient" form worked too on a separate pass.
+  - `BookForPatient` correctly showed **no open slots** for a provider with
+    no working hours configured (`Dr. Browser Test`, a leftover test
+    provider) and a full multi-week slot grid for one that does
+    (`Dr. Demo Provider`) - the empty-state and populated-state both
+    confirmed, not just the happy path. Booked a real appointment
+    (ref `4CCBC6`) - landed on `AppointmentDetail` showing `Booked`.
+  - Drove a separate appointment (ref `F6A604`) through the full check-in
+    sequence - `Check in` -> `Checked In`, `Room` -> `Roomed`, `Start
+    visit` -> `With Provider`, `Check out` -> `Checked Out` - the "Next
+    step" button correctly swapped to the right single action at every
+    status, and `Checked Out` correctly hid the "Next step"/Reschedule/
+    Cancel sections entirely (the `isTerminal` gate).
+  - Recorded a cash payment ($35.00) against that same appointment while
+    `with_provider` - it appeared in the payments list immediately; **spot
+    -checked directly in Postgres** (`SELECT ... FROM payments`) to confirm
+    it round-tripped as a real row, not just an optimistic UI update.
+  - Rescheduled `4CCBC6` to a different slot on the same provider - no
+    error, navigated back to the (still `Booked`) detail page. **Spot
+    -checked in Postgres** (`appointment_reschedules` joined back to
+    `appointments`) that `previous_slot_id` genuinely differs from the
+    appointment's current `slot_id` and a `$0.00` fee row was written (the
+    platform default) - confirming the mutation actually moved the slot,
+    not just displayed success.
+  - Cancelled `4CCBC6` - status flipped to `Cancelled`, and confirmed the
+    Payments section itself also disappears once `cancelled` (not just the
+    action buttons) - the `status !== 'cancelled'` gate on that section
+    working as designed.
+  - `Appointments` (the full tenant-wide list) correctly resolved every
+    row's real patient name (or guest `contactName`) via the
+    id->name `Map` built from one `GET /api/patients` call, sorted
+    newest-`bookedAt`-first, with correctly-coloured `StatusPill`s across
+    every status seen this session (`Booked`/`Checked In`/`With Provider`/
+    `Checked Out`/`Cancelled`/`No Show`).
+  - `AppShell`'s front-desk nav (`Dashboard`/`Book for a walk-in`/
+    `Appointments`) and the dashboard's own "Book for a walk-in" button and
+    now-clickable recent-appointments rows all worked; branding
+    ("Browser Verified Clinic" in orange) stayed correctly applied
+    throughout, confirming this phase's new pages sit inside the same
+    branded `AppShell` as every other role's screens, not a separate
+    unstyled shell.
+  - One click-automation quirk worth noting for future sessions, **not an
+    app bug**: `find()`-obtained element refs occasionally went stale
+    against React re-renders mid-flow (a click would silently land on
+    whatever was at those stale coordinates instead, once landing on the
+    "Dashboard" nav link instead of "Start visit") - re-navigating directly
+    to the appointment URL and clicking by a freshly-screenshotted
+    coordinate recovered every time. Genuine state changes (the Room ->
+    With Provider transition itself) were then confirmed via
+    `get_page_text`/Postgres, not assumed from the click alone.
+
 ## Known gaps (don't pretend these are done)
 
 - No initial `clinic_admin` user provisioning as part of clinic onboarding
@@ -1635,20 +1765,18 @@ server-side (`@PreAuthorize`).
   someone must still create/assign a `clinic_admin` user in Keycloak by
   hand and add them as an org member before the new clinic is actually
   usable.
-- **Frontend covers the shell/dashboards (phase A) and the patient/guest
-  booking lifecycle (phase B) only** - real routing/nav/branding, every
-  role's dashboard, and patient/guest book/view/cancel/reschedule/track are
-  all real and live-data. Still missing: front-desk's own walk-in
-  search/book/patient-registration UI (a different first step - patient
-  search/registration instead of a guest-contact form - reusing most of the
-  same `SlotPicker`/confirm-panel components once built), check-in-action
-  UI, encounter-documentation UI, clinic-admin settings/CRUD UI (providers/
+- **Frontend covers the shell/dashboards (phase A), the patient/guest
+  booking lifecycle (phase B), and front-desk's own walk-in flow (phase C)
+  only** - real routing/nav/branding, every role's dashboard,
+  patient/guest book/view/cancel/reschedule/track, and front-desk's
+  patient search/registration/booking/check-in-actions/payment-recording/
+  reschedule/cancel are all real and live-data. Still missing:
+  encounter-documentation UI, clinic-admin settings/CRUD UI (providers/
   rooms/appointment-types/fee-policies/working-hours/lab-rates/branding),
   lab-order creation/status-transition/result-entry/patient-lab-request UI,
-  payment-recording UI, and platform-admin clinic-creation UI. Every one of
-  these endpoints is built and live-verified server-side; none has a page
-  yet. See "Frontend" above for phase A/B's own write-ups and deliberate
-  scope boundaries.
+  and platform-admin clinic-creation UI. Every one of these endpoints is
+  built and live-verified server-side; none has a page yet. See "Frontend"
+  above for phase A/B/C's own write-ups and deliberate scope boundaries.
 - `demo-front-desk` (created live this session for frontend-phase-A
   verification - see "Verified this session") isn't yet in
   `infra/keycloak/realm-export.json`, so a from-scratch environment won't

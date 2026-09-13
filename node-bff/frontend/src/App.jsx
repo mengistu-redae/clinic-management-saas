@@ -14,6 +14,11 @@ import AppointmentDetail from './pages/AppointmentDetail.jsx';
 import Reschedule from './pages/Reschedule.jsx';
 import MyAppointments from './pages/MyAppointments.jsx';
 import TrackAppointment from './pages/TrackAppointment.jsx';
+import FrontDeskPatientSearch from './pages/front-desk/PatientSearch.jsx';
+import FrontDeskBookForPatient from './pages/front-desk/BookForPatient.jsx';
+import FrontDeskAppointments from './pages/front-desk/Appointments.jsx';
+import FrontDeskAppointmentDetail from './pages/front-desk/AppointmentDetail.jsx';
+import FrontDeskReschedule from './pages/front-desk/Reschedule.jsx';
 
 /** Logged-out landing at "/" - PublicShell's own header/nav carries the wayfinding (Book/Track/Log in). */
 function PublicHome() {
@@ -137,6 +142,47 @@ export default function App() {
           element={
             <RequireRole role="patient">
               <MyAppointments />
+            </RequireRole>
+          }
+        />
+        {/* Front-desk workflow - staff-only, no guest/public angle. */}
+        <Route
+          path="/front-desk/patients"
+          element={
+            <RequireRole role="front_desk">
+              <FrontDeskPatientSearch />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/front-desk/book/:patientId"
+          element={
+            <RequireRole role="front_desk">
+              <FrontDeskBookForPatient />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/front-desk/appointments"
+          element={
+            <RequireRole role="front_desk">
+              <FrontDeskAppointments />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/front-desk/appointments/:id"
+          element={
+            <RequireRole role="front_desk">
+              <FrontDeskAppointmentDetail />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/front-desk/appointments/:id/reschedule"
+          element={
+            <RequireRole role="front_desk">
+              <FrontDeskReschedule />
             </RequireRole>
           }
         />

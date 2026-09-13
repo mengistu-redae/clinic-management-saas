@@ -192,12 +192,20 @@ function invalidateMyAppointments(queryClient, id) {
   }
 }
 
-/** patient_portal channel - patientId is never sent, the caller's own patient record is resolved server-side. */
+/**
+ * patient_portal OR front_desk channel - which one is decided server-side
+ * from the caller's JWT role, never client-supplied. patient_portal never
+ * sends patientId (the caller's own patient record is resolved server
+ * -side); front_desk always does (an existing, tenant-checked Patient).
+ */
 export function useCreateAppointment() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body) => apiPost('/api/appointments', body),
-    onSuccess: () => invalidateMyAppointments(queryClient),
+    onSuccess: () => {
+      invalidateMyAppointments(queryClient);
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+    },
   });
 }
 
@@ -221,5 +229,95 @@ export function useRescheduleMyAppointment(id) {
   return useMutation({
     mutationFn: (body) => apiPost(`/api/my-appointments/${id}/reschedule`, body),
     onSuccess: () => invalidateMyAppointments(queryClient, id),
+  });
+}
+
+// ---- front-desk workflow (staff-scoped - see PatientController/
+// AppointmentController/CheckInController/CancellationController/
+// RescheduleController/payment.AppointmentPaymentController) ----
+
+export function usePatients(query) {
+  return useQuery({
+    queryKey: ['patients', query ?? 'all'],
+    queryFn: () => apiGet(`/api/patients${query ? `?query=${encodeURIComponent(query)}` : ''}`),
+  });
+}
+
+export function usePatient(id) {
+  return useQuery({
+    queryKey: ['patient', id],
+    queryFn: () => apiGet(`/api/patients/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreatePatient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/patients', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['patients'] }),
+  });
+}
+
+/** Tenant-scoped single-appointment read (staff) - distinct from the patient-owned useMyAppointment. */
+export function useAppointment(id) {
+  return useQuery({
+    queryKey: ['appointment', id],
+    queryFn: () => apiGet(`/api/appointments/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+function invalidateAppointment(queryClient, id) {
+  queryClient.invalidateQueries({ queryKey: ['appointments'] });
+  queryClient.invalidateQueries({ queryKey: ['appointment', id] });
+}
+
+function useCheckInAction(path) {
+  return function useAction(id) {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: (body) => apiPost(`/api/appointments/${id}/${path}`, body),
+      onSuccess: () => invalidateAppointment(queryClient, id),
+    });
+  };
+}
+
+/** Each mirrors CheckInController's own linear sequence - booked -> checked_in -> roomed -> with_provider -> checked_out, plus no_show (only from booked). */
+export const useCheckIn = useCheckInAction('check-in');
+export const useRoom = useCheckInAction('room');
+export const useStart = useCheckInAction('start');
+export const useCheckOut = useCheckInAction('check-out');
+export const useMarkNoShow = useCheckInAction('no-show');
+
+export function useCancelAppointment(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (reason) => apiPost(`/api/appointments/${id}/cancel`, reason ? { reason } : undefined),
+    onSuccess: () => invalidateAppointment(queryClient, id),
+  });
+}
+
+export function useRescheduleAppointment(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/appointments/${id}/reschedule`, body),
+    onSuccess: () => invalidateAppointment(queryClient, id),
+  });
+}
+
+export function useAppointmentPayments(id) {
+  return useQuery({
+    queryKey: ['appointment-payments', id],
+    queryFn: () => apiGet(`/api/appointments/${id}/payments`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateAppointmentPayment(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/appointments/${id}/payments`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['appointment-payments', id] }),
   });
 }
