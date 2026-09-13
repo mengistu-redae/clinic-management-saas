@@ -96,18 +96,20 @@ docker compose exec -T postgres psql -U clinicops -d clinic_management < infra/p
 ```
 
 To try the provider clinical flow (phase 4), you also need a demo provider
-login, since `demo-clinic-admin`/`demo-patient` are the only users in
-`realm-export.json`. On a fresh environment, add a third user there
-(`realmRoles: ["provider"]`) before first boot - `start-dev --import-realm`
-only imports a realm that doesn't already exist yet, so this only works
-before the realm has ever been created. Against an already-running
-instance, create it live instead (same shape as
-`create-demo-clinic.sh`'s own admin-API calls): create the user via
-Keycloak's admin REST API, assign the `provider` realm role, add it as a
-member of the `demo-clinic` Organization, log in once (to auto-provision
-its `app_users` row, same as any other role), then
-`UPDATE providers SET app_user_id = '<that id>' WHERE ...` to link it to
-the seeded "Dr. Demo Provider" row from the script above.
+login, and to try platform-admin onboarding (phase 6) you need a demo
+`platform_admin` login - neither is seeded by default alongside
+`demo-clinic-admin`/`demo-patient` in `realm-export.json`. On a fresh
+environment, add the user there (`realmRoles: ["provider"]` or
+`["platform_admin"]`) before first boot - `start-dev --import-realm` only
+imports a realm that doesn't already exist yet, so this only works before
+the realm has ever been created. Against an already-running instance,
+create it live instead (same shape as `create-demo-clinic.sh`'s own
+admin-API calls): create the user via Keycloak's admin REST API and assign
+the role. For a provider, also log in once (to auto-provision its
+`app_users` row) then `POST /api/providers/{id}/link-login` (as
+`demo-clinic-admin`) to link it to the seeded "Dr. Demo Provider" row - or,
+now that phase 6 exists, `platform_admin` itself never needs an
+Organization membership at all (it's cross-tenant by design).
 
 Service URLs:
 
@@ -167,6 +169,16 @@ already in use" / "ports are not available".
   -settings override that actually changed the reschedule notice-hour gate
   (not just present in code), and re-linking a provider's login to a
   different provider row and back.
+- **Phase 6** - platform-admin onboarding: `POST /api/platform/clinics`
+  creates a real Keycloak Organization (via a plain `RestClient`, not the
+  `keycloak-admin-client` library) then the local `clinics` row, plus
+  deactivate/reactivate. Live-verified end to end: a brand-new clinic
+  really appeared in Keycloak's own organization list and locally with the
+  right alias; a repeated alias 409'd and created zero orphaned orgs;
+  deactivating the real demo clinic immediately 403'd its own admin's
+  staff calls and 409'd a guest booking against it (both pre-existing
+  enforcement, reached for the first time via a real toggle), and
+  reactivating restored both.
 
 Backend only so far - no booking/front-desk/provider/admin UI yet.
 
@@ -175,7 +187,10 @@ a running log of what's verified and how.
 
 ## Known gaps
 
-- No platform-admin flows yet - phase 6.
+- No initial `clinic_admin` user provisioning as part of clinic onboarding
+  (deliberate scope decision) - a freshly onboarded clinic needs someone to
+  manually create/assign its first `clinic_admin` in Keycloak before it's
+  actually usable.
 - No PHI-access audit log in v1 (deferred by decision - see `CLAUDE.md`).
 - No lab-orders module yet - scoped as its own later session per the
   original kickoff spec (`clinic-management-kickoff-prompt.md`).

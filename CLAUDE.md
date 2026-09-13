@@ -258,6 +258,22 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   `PatientController`'s own read-path precedent. `ClinicSettingsService` is
   the one real service this phase, since `resolve(...)` is a genuine
   cross-cutting dependency other code (`RescheduleService`) now has.
+- **Deactivate/reactivate are dedicated `POST /deactivate`/`POST /reactivate`
+  actions, not fields folded into a generic update** (decided 2026-09-13,
+  phase 6 plan mode) - matches the kickoff spec's own framing (deactivation
+  is a distinct, consequential action - it locks out an entire tenant, not
+  a mere field edit) and this codebase's existing convention for
+  significant state transitions (check-in/cancel/reschedule are all
+  dedicated action endpoints). Idempotent, matching `CheckInService`'s
+  established re-call convention.
+- **No initial `clinic_admin` user provisioning in phase 6** (decided
+  2026-09-13) - `POST /api/platform/clinics` creates the Keycloak
+  Organization + local `clinics` row only, matching both the kickoff
+  spec's silence on this and the reference project's identical scope
+  (`OperatorProvisioningService` never creates a user either). A real gap -
+  a freshly onboarded clinic has nobody who can log in until someone
+  creates/assigns a `clinic_admin` user by hand - deliberately left there,
+  not solved differently here.
 
 ## Phase plan
 
@@ -290,9 +306,13 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
    only - the frontend settings/branding hub is deferred, same as every
    prior phase's UI. See "Phase 5: clinic-admin config" below and
    "Verified this session - phase 5".
-6. **Platform-admin onboarding** - Keycloak Organization creation via
-   `RestClient` (not the `keycloak-admin-client` library - see the kickoff
-   spec's reasoning) + local `clinics` insert, deactivate/reactivate.
+6. **Platform-admin onboarding** (built 2026-09-13) - Keycloak Organization
+   creation via `RestClient` (not the `keycloak-admin-client` library - see
+   the kickoff spec's reasoning) + local `clinics` insert, and (going
+   further than the reference project ever did) a real reactivate endpoint.
+   Deactivation enforcement itself needed no new work - `TenantContextFilter`/
+   `ClinicInactiveException` have blocked it since phase 1. See "Phase 6:
+   platform-admin onboarding" below and "Verified this session - phase 6".
 7. **Lab orders module** (separate future session, scoped via its own
    multiple-choice questions - not part of this plan).
 
@@ -622,6 +642,62 @@ only schema gap - `clinic_settings`/`fee_policies`/`providers`/
     `(providerId, cutoffHours)` tier with 409; `POST /{id}/delete` is a
     real hard delete (see the pinned decision above).
 
+## Phase 6: platform-admin onboarding
+
+Ports the reference project's `com.bustix.platform` near-verbatim (read in
+full before writing anything) - `PlatformController`/
+`OperatorProvisioningService`/`KeycloakOrganizationClient`/
+`KeycloakAdminTokenProvider` map 1:1 to
+`com.clinicops.platform.PlatformController`/`ClinicProvisioningService`/
+`KeycloakOrganizationClient`/`KeycloakAdminTokenProvider`, just pointed at
+the `clinic` realm instead of `bustix`. No migration - `clinics` has had
+everything needed (`keycloak_org_id`/`name`/`status`/`created_at`) since
+`V1__init.sql`.
+
+- **`KeycloakAdminTokenProvider`**/**`KeycloakOrganizationClient`** - the
+  exact two-call flow `infra/keycloak/create-demo-clinic.sh` already did by
+  hand: log in as the Keycloak admin (master realm, `admin-cli` client,
+  Resource Owner Password Credentials grant) via `RestClient`, then
+  `POST /admin/realms/clinic/organizations` with the new org's `name`/
+  `alias`/`domains`, reading the new org's id off the `Location` header.
+  Deliberately `RestClient`, not the `keycloak-admin-client` library - its
+  transitive RESTEasy/Jackson versions risk classpath conflicts with
+  Spring's own stack (the kickoff spec's exact reasoning). Both config keys
+  (`clinicops.keycloak-admin.*`) and the docker-compose env vars had sat
+  unused since phase 1, already commented "phase 6."
+- **`ClinicProvisioningService.provisionClinic`** - pre-checks
+  `ClinicRepository.findByKeycloakOrgId` (409 `ClinicAlreadyExistsException`
+  before ever calling Keycloak - confirmed live: a rejected duplicate
+  attempt creates zero orgs in Keycloak, not an orphaned one) -> creates
+  the Keycloak org -> saves the local `Clinic` row (`keycloakOrgId` =
+  the alias, never the Keycloak-internal id - same "alias, not id, is what
+  a token's `organization` claim carries" finding `TenantContextFilter`
+  already documented in phase 1). No compensating rollback if the local
+  save fails after Keycloak succeeds - the kickoff spec's own documented
+  caveat, matching the reference project's identical non-solution.
+- **`PlatformController`** (`/api/platform/clinics`, every endpoint
+  `hasRole('PLATFORM_ADMIN')`) - `GET` (every clinic, any status - an
+  admin needs to see deactivated ones to reactivate them), `GET /{id}`,
+  `POST` (create), `POST /{id}/update` (partial, `name` only -
+  `keycloak_org_id` isn't editable, it's what `TenantContextFilter`
+  matches a staff token's org claim against), `POST /{id}/deactivate` /
+  `POST /{id}/reactivate` (idempotent re-call, same convention as
+  `CheckInService`'s transitions). `KeycloakAdminException` maps to 502 -
+  the failure is genuinely upstream, in Keycloak, not a client error.
+- **Deactivation enforcement needed zero new code** - `TenantContextFilter`
+  (staff, 403 "Clinic account is deactivated") and `AppointmentService`'s
+  `ClinicInactiveException` (guest/patient-portal booking, 409) have
+  enforced this since phase 1/2. Phase 6 just builds the toggle. Confirmed
+  live end to end: deactivating the real `demo-clinic` immediately 403'd
+  `demo-clinic-admin`'s own `GET /api/clinic/me` and 409'd a guest booking
+  against it (`"This clinic is not currently accepting bookings"`);
+  reactivating restored both paths - proving the wiring, not just the code.
+- **A `GET /api/clinics/{id}/availability`-style residual gap, inherited
+  deliberately** - a deactivated clinic's availability still shows up via
+  the public availability search (only the final booking call and staff
+  API access are blocked), matching the reference project's own documented
+  choice for its marketplace search. Not solved differently here.
+
 ## Frontend
 
 `node-bff/frontend/` - a React + Vite + Tailwind SPA with its own
@@ -715,6 +791,20 @@ server-side (`@PreAuthorize`).
   email" -> 404). One new case added to `RescheduleIntegrationTest`: a
   `ClinicSettings` override actually changes the notice-gate boundary,
   proving `RescheduleService`'s refactor is wired, not just present.
+- `ClinicProvisioningServiceTest` (phase 6, **pure Mockito unit test - no
+  Spring context, no Testcontainers, no HTTP** - actually runs locally,
+  first real growth in that suite since `FeeCalculatorTest`) - a fresh
+  alias creates the Keycloak org before saving the local row (call-order
+  verified); a taken alias throws `ClinicAlreadyExistsException` and
+  **never calls Keycloak at all** (`verify(..., never())`, same style as
+  `FeeCalculatorTest`); a `KeycloakAdminException` propagates without an
+  inconsistent local row being saved.
+- `PlatformControllerIntegrationTest` (phase 6) - `@MockBean
+  KeycloakOrganizationClient` so `POST` tests don't attempt a real network
+  call; create/list/get/update/duplicate-alias-409 (and confirms
+  `KeycloakOrganizationClient` is never even invoked for the duplicate);
+  deactivate-then-reactivate idempotent round-trip; every non
+  -`platform_admin` role (including `patient`) 403s the whole controller.
 - CI (`.github/workflows/ci.yml`): three parallel jobs - `mvn verify`
   (spring-boot-api), `npm test` (node-bff), `npm run build` (frontend).
 
@@ -1020,9 +1110,63 @@ server-side (`@PreAuthorize`).
     attempt picked an already-occupied day/time by mistake); a genuinely
     free window (18:00-19:00) succeeded, then was removed via `/remove`.
 
+## Verified this session - phase 6 (2026-09-13)
+
+- `mvn -q clean compile test-compile` - clean. `mvn test`: **23/23** unit
+  tests pass for real (`SlotGeneratorTest` 6, `TenantContextFilterTest` 7,
+  `FeeCalculatorTest` 7, `ClinicProvisioningServiceTest` 3 - new this
+  phase). `PlatformControllerIntegrationTest` hits the same Testcontainers/
+  Windows Docker Desktop npipe wall as every other integration test class -
+  checked its surefire report directly, identical
+  `IllegalStateException: Could not find a valid Docker environment` root
+  cause, not a new issue.
+- No migration needed - `clinics` already had everything; Flyway confirmed
+  "up to date" at `v4` on container restart.
+- **The whole onboarding/deactivate/reactivate flow was live-verified end
+  to end** against the real running stack, as a genuine `demo-platform-admin`
+  (created fresh this phase, live via the admin API - same
+  `--import-realm`-skips-an-existing-realm reasoning as phase 4's
+  `demo-provider`):
+  - `POST /api/platform/clinics` for a brand-new "Second Demo Clinic" -
+    confirmed it's really in Keycloak (`GET .../organizations` listed it
+    with the right alias/domain) **and** in the local `clinics` table with
+    `keycloak_org_id` = the alias, not Keycloak's internal org id.
+  - Repeating the same `orgAlias` - 409, and confirmed via Keycloak's own
+    org list that the rejected attempt created **zero** new/orphaned orgs
+    (still exactly 2: `demo-clinic` + `second-demo-clinic`) - the local
+    pre-check genuinely prevents the wasted admin-API round trip, not just
+    in theory.
+  - `GET`/`GET /{id}` listed both clinics; `POST .../update` renamed the
+    new one.
+  - **Reused the real `demo-clinic`/`demo-clinic-admin` for deactivate/
+    reactivate**, since a brand-new clinic has no staff user yet:
+    `POST .../deactivate` on `demo-clinic` (idempotent re-call confirmed
+    too), then confirmed live - via a real browser session, not just an
+    integration test - that `demo-clinic-admin`'s `GET /api/clinic/me` now
+    403s with the exact pre-existing `"Clinic account is deactivated"`
+    message, and a real guest booking against one of `demo-clinic`'s own
+    open slots 409s with `"This clinic is not currently accepting
+    bookings"`. `POST .../reactivate` restored both - a guest booking
+    against the same slot then succeeded (200), confirmed via `curl`.
+  - Learned mid-verification: the browser's node-bff session cookie and
+    Keycloak's own SSO cookie are both shared **per browser profile, not
+    per tab** - opening a second tab and logging in as a different user
+    silently replaces the session in every other open tab too, and
+    revisiting `/auth/login` after only a node-bff-level logout silently
+    re-authenticates via the still-live Keycloak SSO session rather than
+    prompting again. Switching users cleanly required a real Keycloak
+    logout (`/realms/clinic/protocol/openid-connect/logout`, confirming
+    the "Do you want to log out?" prompt) first. Noting this here since
+    it's cost real time twice now (this phase and phase 4) - worth
+    remembering for any future multi-role live verification.
+
 ## Known gaps (don't pretend these are done)
 
-- No platform-admin onboarding flow yet - phase 6.
+- No initial `clinic_admin` user provisioning as part of clinic onboarding
+  (deliberate, see "Domain decisions") - after `POST /api/platform/clinics`,
+  someone must still create/assign a `clinic_admin` user in Keycloak by
+  hand and add them as an org member before the new clinic is actually
+  usable.
 - No clinic-admin/settings/branding **frontend UI** yet (phase 5 stayed
   backend-only, same as every phase so far) - the CRUD/settings/branding
   endpoints exist but nothing in `node-bff/frontend/` calls them yet.
