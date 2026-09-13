@@ -1,6 +1,7 @@
 package com.clinicops.appointment;
 
 import com.clinicops.clinic.Clinic;
+import com.clinicops.clinicsettings.ClinicSettings;
 import com.clinicops.provider.Provider;
 import com.clinicops.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
@@ -103,6 +104,32 @@ class RescheduleIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new RescheduleAppointmentRequest(
                                 fixture.newSlot().getId(), fixture.provider().getId()))))
+                .andExpect(status().isConflict());
+    }
+
+    /** Proves ClinicSettingsService.resolve is actually wired into RescheduleService, not just present - see CLAUDE.md's phase 5 write-up. */
+    @Test
+    void aClinicSettingsOverrideActuallyChangesTheNoticeGate() throws Exception {
+        Clinic clinic = createClinic("resched-override-" + UUID.randomUUID(), "Override Clinic");
+        Provider provider = createProvider(clinic.getId(), "Dr. Override");
+        var type = createAppointmentType(clinic.getId(), "Visit", 30, "60.00");
+
+        ClinicSettings settings = new ClinicSettings();
+        settings.setTenantId(clinic.getId());
+        settings.setRescheduleMinNoticeHours(48);
+        clinicSettingsRepository.save(settings);
+
+        // 24h notice - clears the platform default (4h) but not this clinic's overridden 48h minimum.
+        Instant start = Instant.now().plusSeconds(24 * 3600);
+        var slot = createSlot(clinic.getId(), provider.getId(), type.getId(), start, start.plusSeconds(1800));
+        var appointment = createBookedAppointment(clinic.getId(), slot.getId(), null, provider.getId(), type.getId(), null);
+        var newSlot = createSlot(clinic.getId(), provider.getId(), type.getId(), start.plusSeconds(3600), start.plusSeconds(5400));
+
+        mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/reschedule")
+                        .with(asFrontDesk("fd-1", clinic.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RescheduleAppointmentRequest(
+                                newSlot.getId(), provider.getId()))))
                 .andExpect(status().isConflict());
     }
 

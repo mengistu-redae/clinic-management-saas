@@ -23,4 +23,7 @@ public class AppointmentType extends BaseTenantEntity {
 
     @Column(name = "price_amount", nullable = false)
     private BigDecimal priceAmount;
+
+    @Column(nullable = false)
+    private String status = "active";
 }

@@ -6,6 +6,7 @@ import com.clinicops.appointmenttype.AppointmentType;
 import com.clinicops.appointmenttype.AppointmentTypeRepository;
 import com.clinicops.clinic.Clinic;
 import com.clinicops.clinic.ClinicRepository;
+import com.clinicops.clinicsettings.ClinicSettingsRepository;
 import com.clinicops.feepolicy.FeePolicy;
 import com.clinicops.feepolicy.FeePolicyRepository;
 import com.clinicops.patient.Patient;
@@ -14,6 +15,8 @@ import com.clinicops.provider.Provider;
 import com.clinicops.provider.ProviderRepository;
 import com.clinicops.provider.ProviderWorkingHours;
 import com.clinicops.provider.ProviderWorkingHoursRepository;
+import com.clinicops.room.Room;
+import com.clinicops.room.RoomRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
 import com.clinicops.user.AppUser;
@@ -140,6 +143,12 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected AppUserRepository appUserRepository;
 
+    @Autowired
+    protected RoomRepository roomRepository;
+
+    @Autowired
+    protected ClinicSettingsRepository clinicSettingsRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -189,6 +198,13 @@ public abstract class AbstractIntegrationTest {
         hours.setStartTime(start);
         hours.setEndTime(end);
         return providerWorkingHoursRepository.save(hours);
+    }
+
+    protected Room createRoom(UUID tenantId, String name) {
+        Room room = new Room();
+        room.setTenantId(tenantId);
+        room.setName(name);
+        return roomRepository.save(room);
     }
 
     protected AppointmentType createAppointmentType(UUID tenantId, String name, int durationMinutes, String price) {

@@ -1,7 +1,8 @@
 -- Phase 2 verification seed: a demo room/provider/appointment-type/working
 -- hours for the demo clinic created by infra/keycloak/create-demo-clinic.sh.
--- Provider/room/appointment-type admin CRUD is phase 5 scope - until then,
--- this is how test data gets in. Run:
+-- Phase 5 added real CRUD for all of these (ProviderController/RoomController/
+-- AppointmentTypeController/FeePolicyController) - this script just remains
+-- the fastest way to get a first clinic populated from nothing. Run:
 --   docker compose exec -T postgres psql -U clinicops -d clinic_management -f /dev/stdin < infra/postgres/seed-demo-scheduling-data.sql
 -- (or paste the DO block via `docker compose exec -T postgres psql -U clinicops -d clinic_management`)
 

@@ -1,12 +1,13 @@
 package com.clinicops.appointment;
 
+import com.clinicops.clinicsettings.ClinicSettingsService;
+import com.clinicops.clinicsettings.EffectiveClinicSettings;
 import com.clinicops.notification.Notification;
 import com.clinicops.notification.NotificationRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,9 +42,7 @@ public class RescheduleService {
     private final AppointmentReschedulesRepository appointmentReschedulesRepository;
     private final PatientRepository patientRepository;
     private final NotificationRepository notificationRepository;
-    private final long minNoticeHours;
-    private final BigDecimal feePatientPortal;
-    private final BigDecimal feeFrontDesk;
+    private final ClinicSettingsService clinicSettingsService;
 
     public RescheduleService(
             AppointmentRepository appointmentRepository,
@@ -52,18 +51,14 @@ public class RescheduleService {
             AppointmentReschedulesRepository appointmentReschedulesRepository,
             PatientRepository patientRepository,
             NotificationRepository notificationRepository,
-            @Value("${clinicops.appointment.reschedule.min-notice-hours}") long minNoticeHours,
-            @Value("${clinicops.appointment.reschedule.fee-patient-portal}") BigDecimal feePatientPortal,
-            @Value("${clinicops.appointment.reschedule.fee-front-desk}") BigDecimal feeFrontDesk) {
+            ClinicSettingsService clinicSettingsService) {
         this.appointmentRepository = appointmentRepository;
         this.slotRepository = slotRepository;
         this.slotLockService = slotLockService;
         this.appointmentReschedulesRepository = appointmentReschedulesRepository;
         this.patientRepository = patientRepository;
         this.notificationRepository = notificationRepository;
-        this.minNoticeHours = minNoticeHours;
-        this.feePatientPortal = feePatientPortal;
-        this.feeFrontDesk = feeFrontDesk;
+        this.clinicSettingsService = clinicSettingsService;
     }
 
     @Transactional
@@ -91,10 +86,11 @@ public class RescheduleService {
         Slot oldSlot = slotRepository.findById(appointment.getSlotId())
                 .orElseThrow(() -> new NoSuchElementException("Slot not found: " + appointment.getSlotId()));
 
+        EffectiveClinicSettings settings = clinicSettingsService.resolve(appointment.getTenantId());
         long noticeHours = Duration.between(Instant.now(), oldSlot.getStartTime()).toHours();
-        if (noticeHours < minNoticeHours) {
+        if (noticeHours < settings.rescheduleMinNoticeHours()) {
             throw new TooLateToRescheduleException(
-                    "Fewer than " + minNoticeHours + " hours remain before this appointment - cancel it instead");
+                    "Fewer than " + settings.rescheduleMinNoticeHours() + " hours remain before this appointment - cancel it instead");
         }
 
         String lockToken = UUID.randomUUID().toString();
@@ -129,7 +125,7 @@ public class RescheduleService {
             oldSlot.setStatus("open");
             slotRepository.save(oldSlot);
 
-            BigDecimal fee = "patient_portal".equals(channel) ? feePatientPortal : feeFrontDesk;
+            BigDecimal fee = "patient_portal".equals(channel) ? settings.rescheduleFeePatientPortal() : settings.rescheduleFeeFrontDesk();
 
             AppointmentReschedule audit = new AppointmentReschedule();
             audit.setTenantId(appointment.getTenantId());

@@ -61,8 +61,9 @@ mvn verify                          # in spring-boot-api/ - Testcontainers-backe
 npm test                            # in node-bff/ - node's built-in test runner
 npm run build                       # in node-bff/frontend/
 
-# test data (provider/room/appointment-type/working-hours/fee-policies have
-# no admin CRUD yet - see "Known gaps")
+# one-time demo seed data (providers/rooms/appointment-types/fee-policies
+# now have real CRUD too, phase 5 - this script is just the fastest way to
+# get a first clinic populated from nothing)
 docker compose exec -T postgres psql -U clinicops -d clinic_management < infra/postgres/seed-demo-scheduling-data.sql
 ```
 
@@ -162,8 +163,10 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   pattern. A second booking at the same clinic by the same portal login
   reuses the same `Patient` row - confirmed live, see "Verified this session".
 - **Provider/room/appointment-type/working-hours have no admin CRUD yet**
-  (decided 2026-09-12) - phase 1's plan assigned their full CRUD to phase 5
-  (clinic-admin config), but phase 2's booking flow needs to *read* them.
+  (decided 2026-09-12; **superseded by phase 5, 2026-09-13** - the CRUD now
+  exists, see "Phase 5: clinic-admin config") - phase 1's plan assigned
+  their full CRUD to phase 5, but phase 2's booking flow needs to *read*
+  them.
   Resolved by building the entities/read-repos now and seeding data via SQL
   (`infra/postgres/seed-demo-scheduling-data.sql`, same spirit as
   `create-demo-clinic.sh`) rather than building admin CRUD endpoints early.
@@ -210,6 +213,51 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   mirrors `GET /api/my-appointments`'s ownership-scoped-by-JWT pattern
   rather than adding `?date=&providerId=` params to `GET /api/appointments`,
   which front_desk/clinic_admin keep using unchanged to see everyone.
+- **`rooms`/`appointment_types` deactivate via a `status` string, not a
+  boolean `active`** (decided 2026-09-13, phase 5 plan mode) - matches
+  `clinics.status`/`providers.status`/`appointments.status` exactly rather
+  than the reference project's boolean convention; both tables needed a
+  new `V4` column since neither had one at all before this phase.
+- **`fee_policies` CRUD uses real hard DELETE**; providers/rooms/
+  appointment-types use soft-deactivate (decided 2026-09-13) - directly
+  reuses the reference project's own `RefundPolicyController` reasoning:
+  fee tiers are configuration with a well-defined "missing = 0%" fallback
+  already in `FeeCalculator`, so deleting one leaves nothing inconsistent;
+  providers/rooms/appointment-types are referenced by FK from `slots`/
+  each other with no `ON DELETE CASCADE`, so a real delete would fail once
+  anything references the row - soft-deactivate isn't just stylistic there.
+- **The phase-3 "`clinic_settings`' fee fields vs. `fee_policies`" decision
+  is now reconfirmed, not just assumed** (2026-09-13) - `RescheduleService`
+  was refactored to actually call `ClinicSettingsService.resolve(tenantId)`
+  for its flat reschedule fee/notice-hours instead of raw `@Value` fields;
+  `CancellationService` still only reads the tiered `fee_policies`/
+  `FeeCalculator`, confirming the split holds now that both paths are real.
+- **`provider_working_hours` gets CRUD too, nested under `/api/providers/
+  {id}/working-hours`** (decided 2026-09-13) - not named in the phase-plan's
+  one-line CRUD list, but a provider isn't manageable without it. Rejects
+  an overlapping window for the same provider+day (checked in-memory, no
+  DB constraint exists for this) rather than allowing a nonsensical one.
+- **A `Provider`-to-login link/unlink endpoint** (decided 2026-09-13) -
+  closes the gap phase 4 flagged (`Provider.appUserId` was manual SQL +
+  Keycloak admin API). Looks up an already-provisioned `AppUser` by email
+  (`findFirstByEmail` - no unique constraint on that column) and sets/clears
+  the FK; no Keycloak call needed since the account must already exist
+  locally (someone has logged in at least once).
+- **A new public `GET /api/clinics/{id}/appointment-types` endpoint**
+  (decided 2026-09-13) - a real pre-existing gap, not scope creep: nothing
+  let a patient/guest discover a clinic's appointment types before booking
+  one, even though `POST /api/appointments`/`guest` already require an
+  `appointmentTypeId` with no way to look one up. Mirrors
+  `GET /api/clinics/{id}/availability`'s `permitAll` shape; active-only.
+- **No dedicated Writer-bean for phase 5's CRUD** (decided 2026-09-13) -
+  re-confirmed from the reference project's own `BusController`/
+  `RouteController`/`OperatorSettingsService`: that split is reserved for
+  genuine cross-bean `@Transactional` self-invocation or lock/race handling
+  (`AppointmentWriter`, `AppUserWriter`, `PatientWriter`), not plain
+  single-row CRUD - controllers call repositories directly, matching
+  `PatientController`'s own read-path precedent. `ClinicSettingsService` is
+  the one real service this phase, since `resolve(...)` is a genuine
+  cross-cutting dependency other code (`RescheduleService`) now has.
 
 ## Phase plan
 
@@ -235,9 +283,13 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
    complaint/assessment/plan), and a full-replace prescription list. See
    "Phase 4: provider clinical flow" below and "Verified this session -
    phase 4".
-5. **Clinic-admin config** - providers/rooms/appointment-types/fee-policy
-   CRUD, `ClinicSettingsService.resolve`, the branding endpoint, the
-   settings/branding frontend hub.
+5. **Clinic-admin config** (built 2026-09-13) - providers/rooms/appointment
+   -types/fee-policy/working-hours CRUD, `ClinicSettingsService.resolve`
+   (and `RescheduleService` refactored to actually consume it), the
+   branding endpoint, and a provider-login link/unlink endpoint. Backend
+   only - the frontend settings/branding hub is deferred, same as every
+   prior phase's UI. See "Phase 5: clinic-admin config" below and
+   "Verified this session - phase 5".
 6. **Platform-admin onboarding** - Keycloak Organization creation via
    `RestClient` (not the `keycloak-admin-client` library - see the kickoff
    spec's reasoning) + local `clinics` insert, deactivate/reactivate.
@@ -509,6 +561,67 @@ concept) - confirmed via a broad grep before writing anything.
   `SlotGenerationService`'s existing day-math convention exactly - no new
   timezone concept introduced), optional `?date=` param defaults to today.
 
+## Phase 5: clinic-admin config
+
+Mirrors the reference project's `com.bustix.operator` (settings/branding)
+and `Bus`/`Route`/`RefundPolicy` (CRUD) almost 1:1 - both read in full
+before writing anything. New migration: `V4__clinic_admin_config.sql` adds
+`status VARCHAR(20) DEFAULT 'active'` to `rooms`/`appointment_types` (the
+only schema gap - `clinic_settings`/`fee_policies`/`providers`/
+`provider_working_hours` already had everything since `V1__init.sql`).
+
+- **`com.clinicops.clinicsettings`** (new package) - `ClinicSettings` is a
+  singleton keyed by `tenantId` itself (no separate id, same shape as the
+  reference project's `OperatorSettings`), split into two disjoint column
+  groups so one endpoint's full-replace can never wipe the other's fields:
+  a *settings* group (tax rate, fees, notice hours, reminder lead, contact
+  info) and a *branding* group (logo/colors/display name/footer). `Clinic
+  SettingsService.resolve(tenantId)` is the one merge point the kickoff
+  spec asks for - holds the platform `@Value` defaults (moved here from
+  `RescheduleService`), coalesces each nullable override, safe for a `null`
+  tenantId. `ClinicSettingsController`/`ClinicBrandingController`:
+  `GET`/`POST /api/clinic/settings` (`clinic_admin` only, full-replace -
+  the one place in this codebase that isn't partial-update, matching the
+  reference project's own settings-vs-CRUD convention split), `GET
+  /api/clinic/branding` (`clinic_admin`+`front_desk`+`provider` - staff
+  need it to theme their workspace) / `POST` (`clinic_admin` only,
+  hex-color/URL-validated). `displayName` falls back to the clinic's own
+  `Clinic.name` when unset; every other branding field stays `null` (no
+  server-side fallback) if unset.
+- **`RescheduleService` now actually depends on `ClinicSettingsService`** -
+  dropped its three `@Value` fields, calls `resolve(tenantId)` for the
+  notice-hours/fee instead. Live-verified this isn't cosmetic: overriding
+  `rescheduleMinNoticeHours` to 48 on a clinic made a 23h-notice reschedule
+  attempt 409 with `"Fewer than 48 hours remain..."`, where the platform
+  default (4h) would have allowed it.
+- **Provider/Room/AppointmentType/FeePolicy/WorkingHours CRUD** - same
+  shape four times over: `GET` (list, tenant-scoped, optional `?status=`;
+  3-role read), `GET /{id}`, `POST` (create, `clinic_admin`), `POST
+  /{id}/update` (partial - only non-null fields applied; `clinic_admin`).
+  No PUT/PATCH/DELETE anywhere (still zero uses of any of those verbs in
+  this codebase) - update/remove endpoints get an explicit verb suffix
+  (`/update`, `/remove`, `/delete`, `/link-login`) instead. Entities
+  returned directly, no response DTOs, matching `PatientController`.
+  - `ProviderController` (new) - `roomId` cross-tenant-validated when
+    given; `status` allow-listed. Plus `POST .../link-login` /
+    `.../unlink-login` (see the pinned decision above).
+  - `ProviderWorkingHoursController` (new) - nested under the provider;
+    rejects an overlapping window (checked in-memory against
+    `findAllByProviderIdAndDayOfWeek`) and a bad time range; hard `/remove`
+    (no FK references a working-hours row directly).
+  - `RoomController`/`AppointmentTypeController` (new) - same shape.
+    `AppointmentTypeController` also has the new public
+    `GET /api/clinics/{clinicId}/appointment-types` (`permitAll`, active
+    -only, narrow `AppointmentTypeDirectoryView` projection) - confirmed
+    genuinely anonymous through `node-bff` with zero cookies, same "verify
+    through the BFF, not just spring-boot-api directly" lesson from phase
+    3. `node-bff/src/routes/api.js`'s `PUBLIC_ROUTES` updated and the
+    container rebuilt accordingly.
+  - `FeePolicyController` (new) - `clinic_admin` only on every endpoint
+    (financial config, tighter than the other three); rejects a duplicate
+    `(providerId, cutoffHours)` tier with 409; `POST /{id}/delete` is a
+    real hard delete (see the pinned decision above).
+
 ## Frontend
 
 `node-bff/frontend/` - a React + Vite + Tailwind SPA with its own
@@ -586,6 +699,22 @@ server-side (`@PreAuthorize`).
   clearly for a `provider` token with no linked `Provider` row. No new pure
   -unit tests this phase (no calculation logic like `FeeCalculator`'s to
   isolate) - still 20/20 unit tests total, unchanged from phase 3.
+- `ClinicSettingsIntegrationTest`/`ProviderControllerIntegrationTest`/
+  `ProviderWorkingHoursIntegrationTest`/`RoomControllerIntegrationTest`/
+  `AppointmentTypeControllerIntegrationTest`/`FeePolicyControllerIntegrationTest`
+  (phase 5) - `resolve`/`GET` with no row returns pure platform defaults;
+  full-replace then a `null` field reverting to the default; settings and
+  branding confirmed disjoint; branding's 3-role `GET`/`clinic_admin`-only
+  `POST` gate; invalid hex-color/URL -> 400; create/list/get/update/
+  deactivate-then-reactivate for providers/rooms/appointment-types; a bad
+  `roomId`/`status` -> 400; an overlapping working-hours window -> 409, a
+  bad time range -> 400; a duplicate fee-policy tier -> 409, delete removes
+  the row; the public appointment-types listing returns only `active` rows
+  with no auth; cross-tenant 404 for every new resource;
+  `link-login`/`unlink-login` (including "nobody's ever logged in with that
+  email" -> 404). One new case added to `RescheduleIntegrationTest`: a
+  `ClinicSettings` override actually changes the notice-gate boundary,
+  proving `RescheduleService`'s refactor is wired, not just present.
 - CI (`.github/workflows/ci.yml`): three parallel jobs - `mvn verify`
   (spring-boot-api), `npm test` (node-bff), `npm run build` (frontend).
 
@@ -832,21 +961,76 @@ server-side (`@PreAuthorize`).
   - `clinic_admin` successfully created an encounter on a provider's
     appointment with no ownership check, confirmed live (the override path).
 
+## Verified this session - phase 5 (2026-09-13)
+
+- `mvn -q clean compile test-compile` - clean. `mvn test`: still 20/20 unit
+  tests pass for real (no new pure-unit tests this phase). All integration
+  test classes, including the six new phase-5 ones, hit the same
+  Testcontainers/Windows Docker Desktop npipe wall as phases 1-4 - checked
+  a surefire report directly, same `IllegalStateException: Could not find
+  a valid Docker environment` root cause every time, not a new issue.
+- **`V4__clinic_admin_config.sql` applied cleanly** against the live stack
+  (`spring-boot-api` logs: "Successfully applied 1 migration ... now at
+  version v4"); Hibernate validated the new `status` columns with no drift.
+- **The whole CRUD/settings/branding/linking surface was live-verified end
+  to end** against the real running stack, as `demo-clinic-admin` and
+  `demo-provider`:
+  - Created a provider (with a `roomId`), a room, an appointment type, and
+    a fee-policy tier via their respective `POST`s - each showed up via its
+    own `GET` list.
+  - Deactivated then reactivated the new provider via `/update` -
+    `?status=active` correctly excluded it while inactive. Same confirmed
+    for the room and appointment type; the new public appointment-types
+    listing correctly stopped including the deactivated type.
+  - Deleted the fee-policy tier via `/delete` - gone from the list
+    afterward (real delete, not soft-deactivate, confirmed).
+  - `GET /api/clinics/{id}/appointment-types` confirmed **genuinely
+    anonymous** via a bare `curl` through `node-bff` with zero cookies -
+    200 with the narrow projection, not just proven from an authenticated
+    browser tab. `node-bff` was rebuilt after adding the route to
+    `PUBLIC_ROUTES`, per the phase-3 lesson.
+  - `GET /api/clinic/settings` before any override showed pure platform
+    defaults; a full-replace `POST` (`rescheduleMinNoticeHours: 48`,
+    a support phone) showed up in both `overrides` and `effective`; a
+    later `POST` with that field omitted (`null`) reverted `effective`
+    back to the platform default (4h) - confirmed live, not just via the
+    integration test.
+  - **The `RescheduleService` refactor's live proof**: booked a guest
+    appointment with ~23h notice (comfortably clearing the old 4h default
+    but not the new 48h override), then attempted to reschedule it as
+    `demo-clinic-admin` - `409 "Fewer than 48 hours remain..."`, where the
+    same request would have succeeded before the override. Reverted the
+    override back to defaults afterward.
+  - `POST`/`GET /api/clinic/branding` as `clinic_admin` - `displayName`
+    correctly fell back to "Demo Clinic" before any branding was set, then
+    reflected the new logo/colors/display name/footer after `POST`.
+    Confirmed `GET` also succeeds as `demo-provider` (staff-read carve-out)
+    and settings stayed untouched by the branding write (disjoint columns).
+  - **Provider-login linking, live**: unlinked `demo-provider` from
+    "Dr. Demo Provider", linked it instead to the newly-created provider by
+    email (`findFirstByEmail`) - confirmed via Postgres the FK moved to the
+    new row, and `GET /api/my-schedule` (as `demo-provider`) immediately
+    started resolving against the new provider (empty list, since it has
+    no appointments, instead of the old provider's 7). Restored the
+    original link afterward to keep the demo environment's documented
+    baseline intact.
+  - Working-hours: confirmed the overlap rejection is real by attempting a
+    window that collided with the seeded provider's existing 9am-5pm
+    -every-day windows (409, correctly caught even though my first test
+    attempt picked an already-occupied day/time by mistake); a genuinely
+    free window (18:00-19:00) succeeded, then was removed via `/remove`.
+
 ## Known gaps (don't pretend these are done)
 
-- No clinic-admin config or platform-admin onboarding flows yet - phases
-  5-6.
+- No platform-admin onboarding flow yet - phase 6.
+- No clinic-admin/settings/branding **frontend UI** yet (phase 5 stayed
+  backend-only, same as every phase so far) - the CRUD/settings/branding
+  endpoints exist but nothing in `node-bff/frontend/` calls them yet.
 - No provider clinical **frontend UI** yet (phase 4 is backend-only, same
   as every phase so far) - `GET /api/my-schedule`/encounter endpoints exist
   but nothing in `node-bff/frontend/` calls them yet.
 - No PHI-access audit log in v1 (deferred by decision, 2026-09-12).
 - No lab-orders module yet - scoped as its own later session.
-- No provider/room/appointment-type/working-hours/fee-policy admin CRUD yet
-  (phase 5) - seeded via SQL for now
-  (`infra/postgres/seed-demo-scheduling-data.sql`). Same story for linking a
-  `Provider` row to a login (`Provider.appUserId`) - manual, via the
-  Keycloak admin API + a direct `UPDATE providers SET app_user_id = ...`
-  (see "Verified this session - phase 4"), until phase 5 exists.
 - No invoicing/payment creation wired to booking yet (not assigned to any
   phase so far - see "Domain decisions"). Cancellation/reschedule fees are
   **computed and recorded** (`appointment_cancellations.fee_amount`,

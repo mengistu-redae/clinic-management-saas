@@ -11,4 +11,6 @@ public interface AppointmentTypeRepository extends JpaRepository<AppointmentType
     Optional<AppointmentType> findByIdAndTenantId(UUID id, UUID tenantId);
 
     List<AppointmentType> findAllByTenantId(UUID tenantId);
+
+    List<AppointmentType> findAllByTenantIdAndStatus(UUID tenantId, String status);
 }

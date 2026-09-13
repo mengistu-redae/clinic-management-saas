@@ -87,8 +87,10 @@ Then log in at `http://localhost:3000/auth/login` as `demo-clinic-admin` or
 `demo-patient` (both `changeme`, both forced to reset on first login - see
 `infra/keycloak/realm-export.json`).
 
-To try the booking flow (phase 2), seed a demo provider/room/appointment
-type/working-hours first (no admin CRUD for these yet - see "Known gaps"):
+To try the booking flow, seed a demo provider/room/appointment type/
+working-hours first (or create them yourself via the phase-5 CRUD
+endpoints - `POST /api/providers`, `/api/rooms`, `/api/appointment-types`,
+`/api/fee-policies` - as `demo-clinic-admin`):
 ```bash
 docker compose exec -T postgres psql -U clinicops -d clinic_management < infra/postgres/seed-demo-scheduling-data.sql
 ```
@@ -154,20 +156,29 @@ already in use" / "ports are not available".
   appointment confirmed as one row (not duplicated), prescriptions fully
   replacing rather than merging, the provider-ownership 403 against a
   second real provider account, and the `clinic_admin` override.
+- **Phase 5** - clinic-admin config: full CRUD for providers/rooms/
+  appointment-types/fee-policies/provider-working-hours, `PATCH`-equivalent
+  clinic settings and branding (`ClinicSettingsService.resolve` - the
+  merge point every consumer, including `RescheduleService`, now reads),
+  and a provider-login link/unlink endpoint. Live-verified end to end:
+  create/deactivate/reactivate for each resource, a real fee-policy
+  delete, the new public `GET /api/clinics/{id}/appointment-types` proven
+  genuinely anonymous through `node-bff` with zero cookies, a live clinic
+  -settings override that actually changed the reschedule notice-hour gate
+  (not just present in code), and re-linking a provider's login to a
+  different provider row and back.
 
-Backend only so far - no booking/front-desk/provider UI yet.
+Backend only so far - no booking/front-desk/provider/admin UI yet.
 
 See `CLAUDE.md` for the full phase plan, every design decision and why, and
 a running log of what's verified and how.
 
 ## Known gaps
 
-- No clinic-admin config or platform-admin flows yet - phases 5-6.
+- No platform-admin flows yet - phase 6.
 - No PHI-access audit log in v1 (deferred by decision - see `CLAUDE.md`).
 - No lab-orders module yet - scoped as its own later session per the
   original kickoff spec (`clinic-management-kickoff-prompt.md`).
-- No provider/room/appointment-type/working-hours/fee-policy admin CRUD yet
-  (phase 5) - seeded via SQL for now.
 - No invoicing/payment creation wired to booking yet; cancellation/
   reschedule fees are computed and recorded but nothing charges them yet.
   Email is a stub (outbox rows are written, nothing sends them yet).
