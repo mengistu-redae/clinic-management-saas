@@ -321,3 +321,197 @@ export function useCreateAppointmentPayment(id) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['appointment-payments', id] }),
   });
 }
+
+// ---- clinic-admin config (providers/rooms/appointment-types/fee-policies/
+// working-hours/lab-rates/settings/branding - see ProviderController/
+// RoomController/AppointmentTypeController/FeePolicyController/
+// ProviderWorkingHoursController/LabRateController/ClinicSettingsController/
+// ClinicBrandingController) ----
+
+export function useCreateProvider() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/providers', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
+  });
+}
+
+/** Partial update, per ProviderController's own /update shape - only non-null fields are applied server-side. */
+export function useUpdateProvider(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/providers/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
+  });
+}
+
+export function useLinkProviderLogin(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (email) => apiPost(`/api/providers/${id}/link-login`, { email }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
+  });
+}
+
+export function useUnlinkProviderLogin(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/providers/${id}/unlink-login`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
+  });
+}
+
+export function useProviderWorkingHours(providerId) {
+  return useQuery({
+    queryKey: ['provider-working-hours', providerId],
+    queryFn: () => apiGet(`/api/providers/${providerId}/working-hours`),
+    enabled: Boolean(providerId),
+  });
+}
+
+export function useCreateWorkingHours(providerId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/providers/${providerId}/working-hours`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['provider-working-hours', providerId] }),
+  });
+}
+
+export function useRemoveWorkingHours(providerId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => apiPost(`/api/providers/${providerId}/working-hours/${id}/remove`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['provider-working-hours', providerId] }),
+  });
+}
+
+export function useCreateRoom() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/rooms', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rooms'] }),
+  });
+}
+
+export function useUpdateRoom(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/rooms/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rooms'] }),
+  });
+}
+
+export function useCreateAppointmentType() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/appointment-types', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['appointment-types'] }),
+  });
+}
+
+export function useUpdateAppointmentType(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/appointment-types/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['appointment-types'] }),
+  });
+}
+
+/** Unfiltered (no providerId) fetches every tier, clinic-wide defaults and every provider override alike - the admin UI groups them client-side, same shape as the reference project's own RefundPolicies.jsx. */
+export function useFeePolicies() {
+  return useQuery({
+    queryKey: ['fee-policies'],
+    queryFn: () => apiGet('/api/fee-policies'),
+  });
+}
+
+function invalidateFeePolicies(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['fee-policies'] });
+}
+
+export function useCreateFeePolicy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/fee-policies', body),
+    onSuccess: () => invalidateFeePolicies(queryClient),
+  });
+}
+
+export function useUpdateFeePolicy(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/fee-policies/${id}/update`, body),
+    onSuccess: () => invalidateFeePolicies(queryClient),
+  });
+}
+
+export function useDeleteFeePolicy(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/fee-policies/${id}/delete`),
+    onSuccess: () => invalidateFeePolicies(queryClient),
+  });
+}
+
+/** {overrides, effective, defaults} - see ClinicSettingsResponse. */
+export function useClinicSettings(enabled) {
+  return useQuery({
+    queryKey: ['clinic', 'settings'],
+    queryFn: () => apiGet('/api/clinic/settings'),
+    enabled,
+  });
+}
+
+/** Full-replace, per ClinicSettingsController - a field left out (null) reverts that column to the platform default. */
+export function useUpdateClinicSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/clinic/settings', body),
+    onSuccess: (data) => queryClient.setQueryData(['clinic', 'settings'], data),
+  });
+}
+
+/** Full-replace of the disjoint branding column group - see ClinicBrandingController. Also refreshes the read query BrandingProvider/AppShell consume, so a saved change themes the workspace on next fetch. */
+export function useUpdateClinicBranding() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/clinic/branding', body),
+    onSuccess: (data) => queryClient.setQueryData(['clinic', 'branding'], data),
+  });
+}
+
+export function useLabRates(enabled) {
+  return useQuery({
+    queryKey: ['clinic', 'lab-rates'],
+    queryFn: () => apiGet('/api/clinic/lab-rates'),
+    enabled,
+  });
+}
+
+function invalidateLabRates(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['clinic', 'lab-rates'] });
+}
+
+export function useCreateLabRate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/clinic/lab-rates', body),
+    onSuccess: () => invalidateLabRates(queryClient),
+  });
+}
+
+export function useUpdateLabRate(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/clinic/lab-rates/${id}/update`, body),
+    onSuccess: () => invalidateLabRates(queryClient),
+  });
+}
+
+export function useDeleteLabRate(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/clinic/lab-rates/${id}/delete`),
+    onSuccess: () => invalidateLabRates(queryClient),
+  });
+}

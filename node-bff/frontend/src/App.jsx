@@ -19,6 +19,14 @@ import FrontDeskBookForPatient from './pages/front-desk/BookForPatient.jsx';
 import FrontDeskAppointments from './pages/front-desk/Appointments.jsx';
 import FrontDeskAppointmentDetail from './pages/front-desk/AppointmentDetail.jsx';
 import FrontDeskReschedule from './pages/front-desk/Reschedule.jsx';
+import ClinicAdminProviders from './pages/clinic-admin/Providers.jsx';
+import ClinicAdminRooms from './pages/clinic-admin/Rooms.jsx';
+import ClinicAdminAppointmentTypes from './pages/clinic-admin/AppointmentTypes.jsx';
+import ClinicAdminSettingsLayout from './pages/clinic-admin/SettingsLayout.jsx';
+import ClinicAdminSettings from './pages/clinic-admin/Settings.jsx';
+import ClinicAdminBranding from './pages/clinic-admin/Branding.jsx';
+import ClinicAdminFeePolicies from './pages/clinic-admin/FeePolicies.jsx';
+import ClinicAdminLabRates from './pages/clinic-admin/LabRates.jsx';
 
 /** Logged-out landing at "/" - PublicShell's own header/nav carries the wayfinding (Book/Track/Log in). */
 function PublicHome() {
@@ -186,6 +194,45 @@ export default function App() {
             </RequireRole>
           }
         />
+        {/* Clinic-admin config - staff-only, mirrors the reference project's
+            operator_admin fleet-management + settings-hub shape. */}
+        <Route
+          path="/clinic-admin/providers"
+          element={
+            <RequireRole role="clinic_admin">
+              <ClinicAdminProviders />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/clinic-admin/rooms"
+          element={
+            <RequireRole role="clinic_admin">
+              <ClinicAdminRooms />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/clinic-admin/appointment-types"
+          element={
+            <RequireRole role="clinic_admin">
+              <ClinicAdminAppointmentTypes />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/clinic-admin/settings"
+          element={
+            <RequireRole role="clinic_admin">
+              <ClinicAdminSettingsLayout />
+            </RequireRole>
+          }
+        >
+          <Route index element={<ClinicAdminSettings />} />
+          <Route path="branding" element={<ClinicAdminBranding />} />
+          <Route path="fee-policies" element={<ClinicAdminFeePolicies />} />
+          <Route path="lab-rates" element={<ClinicAdminLabRates />} />
+        </Route>
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

@@ -62,9 +62,23 @@ export default function AppShell() {
                 </NavLink>
               )}
               {hasRole('clinic_admin') && (
-                <NavLink to="/clinic-admin" className={navLinkClass}>
-                  Dashboard
-                </NavLink>
+                <>
+                  <NavLink to="/clinic-admin" end className={navLinkClass}>
+                    Dashboard
+                  </NavLink>
+                  <NavLink to="/clinic-admin/providers" className={navLinkClass}>
+                    Providers
+                  </NavLink>
+                  <NavLink to="/clinic-admin/rooms" className={navLinkClass}>
+                    Rooms
+                  </NavLink>
+                  <NavLink to="/clinic-admin/appointment-types" className={navLinkClass}>
+                    Appointment Types
+                  </NavLink>
+                  <NavLink to="/clinic-admin/settings" className={navLinkClass}>
+                    Settings
+                  </NavLink>
+                </>
               )}
               {hasRole('platform_admin') && (
                 <NavLink to="/platform-admin" className={navLinkClass}>

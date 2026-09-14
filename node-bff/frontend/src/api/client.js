@@ -5,11 +5,33 @@
  * session cookie rides along automatically on same-origin requests, which is
  * the whole point of the BFF pattern: this file never touches a token.
  *
- * Error bodies from spring-boot-api are plain text, not a JSON envelope -
- * every @ExceptionHandler across the API returns a bare String (see e.g.
- * ClinicController.handleClinicNotFound) - so ApiError.message is read as
- * text, not parsed as JSON.
+ * Error bodies from spring-boot-api come in two shapes: every controller
+ * -local @ExceptionHandler (see e.g. ClinicController.handleClinicNotFound)
+ * returns a bare String, but a ResponseStatusException thrown directly with
+ * no dedicated handler (overlap/duplicate/bad-status checks, sprinkled
+ * across most controllers) falls through to Spring Boot's own default
+ * /error JSON body instead - {timestamp,status,error,message,path} once
+ * server.error.include-message: always is set (see application.yml; a real
+ * bug found live building the clinic-admin UI - without it, that JSON body
+ * has no message field at all). parseErrorBody handles both: JSON with a
+ * message field is unwrapped to just that string, anything else (plain
+ * text, or JSON with no message) is used as-is.
  */
+async function parseErrorBody(response) {
+  const text = await response.text().catch(() => '');
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      const body = JSON.parse(text);
+      if (body && typeof body.message === 'string' && body.message) {
+        return body.message;
+      }
+    } catch {
+      // Not actually JSON despite the header - fall through to the raw text.
+    }
+  }
+  return text;
+}
 export class ApiError extends Error {
   constructor(status, message) {
     super(message || `Request failed with status ${status}`);
@@ -46,8 +68,7 @@ export async function apiFetch(path, options = {}) {
   }
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new ApiError(response.status, text);
+    throw new ApiError(response.status, await parseErrorBody(response));
   }
 
   if (response.status === 204) {

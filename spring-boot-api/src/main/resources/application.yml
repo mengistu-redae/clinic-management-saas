@@ -1,5 +1,16 @@
 server:
   port: 8081
+  error:
+    # Without this, Spring Boot's default /error body omits the exception's
+    # own reason text entirely for a bare ResponseStatusException (thrown
+    # directly across many controllers - overlap/duplicate/bad-status
+    # checks - with no dedicated @ExceptionHandler of their own), so the
+    # frontend's err.message ends up showing the generic {timestamp,status,
+    # error,path} JSON instead of the actual validation message. Found live
+    # while building the clinic-admin CRUD UI (the working-hours overlap
+    # 409). include-message: always is safe here - every message already
+    # thrown is written to be shown to the caller, never leaks internals.
+    include-message: always
 
 management:
   endpoints:

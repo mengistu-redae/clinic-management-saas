@@ -1044,6 +1044,92 @@ pure frontend wiring against them.
   `front-desk/Dashboard.jsx`'s stat cards and recent-appointments rows are
   now real links into this new UI instead of static text.
 
+**Frontend phase D** (built 2026-09-14, later session) is clinic-admin's
+settings/CRUD UI - providers (+ nested working-hours + login link/unlink),
+rooms, appointment-types, fee-policies, lab-rates, and a settings/branding
+hub. Ported from the reference bus-ticketing-saas project's own
+`operator/Buses.jsx`/`Routes.jsx`/`RefundPolicies.jsx`/`SettingsLayout.jsx`/
+`Settings.jsx`/`Branding.jsx` (all read in full before writing anything) -
+same inline-edit-row/create-form/tab-hub shapes, adapted to this app's
+resources. Zero backend endpoint changes needed - every endpoint this
+drives already existed and was already live-verified server-side in phase
+5 - but one real, pre-existing backend bug surfaced immediately on first
+live use and did need a genuine fix (below), not just a frontend workaround.
+
+- **A real bug found and fixed live**: a `ResponseStatusException` thrown
+  directly with no dedicated `@ExceptionHandler` (the overlap/duplicate
+  /bad-status checks sprinkled across most phase-5 controllers -
+  `ProviderWorkingHoursController`'s overlap check was the one that
+  actually got hit first) falls through to Spring Boot's own default
+  `/error` JSON body, which - without `server.error.include-message:
+  always` - omits the exception's own reason text entirely. The frontend's
+  `err.message` then showed the generic `{timestamp,status,error,path}`
+  JSON blob instead of "This window overlaps an existing one for this
+  provider and day". This was a latent bug since phase 5 (every controller
+  -local `@ExceptionHandler` returns a bare String and always worked -
+  `client.js`'s own doc comment claimed *every* error body was plain text on
+  that basis) - simply never exercised by a validation error actually
+  reaching a `catch` block in a live session until this phase's working
+  -hours overlap test. Fixed two ways together: `server.error.include
+  -message: always` in `application.yml` (spring-boot-api) so the JSON body
+  actually carries the message now, and `api/client.js`'s `parseErrorBody`
+  (node-bff/frontend) to unwrap `{message: "..."}` JSON into just that
+  string rather than assuming every error body is plain text - handles both
+  shapes correctly now, not just the ResponseStatusException one. Confirmed
+  live: the overlap 409 now shows "This window overlaps an existing one for
+  this provider and day" instead of raw JSON.
+- **`pages/clinic-admin/Providers.jsx`** - create form + inline edit (`full
+  Name`/`specialty`/`roomId`/`status`) per `ProviderController`, all
+  statuses shown (not active-only, unlike the booking-flow directories) -
+  an admin needs to see and reactivate deactivated ones too. Two more
+  panels toggle inline per row rather than separate routes:
+  - **Working hours** (`WorkingHoursPanel`) - `ProviderWorkingHoursController`
+    CRUD, day-of-week 0=Sunday select, `<input type="time">` for start/end,
+    a hard `/remove`. The overlap-rejection bug above was found testing
+    exactly this panel.
+  - **Login** (link/unlink) - an email field posting to `/link-login` when
+    unlinked, an "Unlink" button + "linked to a login" badge when linked -
+    `ProviderController`'s existing endpoints, confirmed live with a real
+    round trip (linked to `demo-front-desk`'s account, then unlinked).
+- **`pages/clinic-admin/Rooms.jsx`** / **`AppointmentTypes.jsx`** - same
+  create-form + inline-edit-row shape as `Providers.jsx`, simpler (no
+  nested panels) - `RoomController`/`AppointmentTypeController`.
+- **`pages/clinic-admin/SettingsLayout.jsx`** - the tab hub (`General`/
+  `Branding`/`Fee Policies`/`Lab Rates`), ported near-verbatim from the
+  reference's own `operator/SettingsLayout.jsx`.
+  - **`Settings.jsx`** (General tab) - `ClinicSettingsController`'s
+    `{overrides, effective, defaults}` shape edited as one full-replace
+    form; each blank field shows the platform default as a placeholder/hint
+    beside it. Confirmed live that clearing a field back to blank actually
+    reverts `effective` to the platform default (not just that setting a
+    value works) - re-confirms the phase-5 `RescheduleService` wiring is
+    still intact from the UI's own save path, not just the raw API.
+  - **`Branding.jsx`** - reads the already-resolved `GET /api/clinic/
+    branding` (this endpoint has no raw-override/effective split the way
+    settings does, since it's a single disjoint column group with one
+    always-resolved view - `displayName`'s fallback to the clinic's legal
+    name means the field pre-fills even when unset, harmless to resave
+    as-is) with a live colour preview (`lib/color.js`'s `themeVars`,
+    already built in frontend phase A) that visibly matches the real
+    `AppShell` header/button chrome - confirmed live, not just built to
+    look similar.
+  - **`FeePolicies.jsx`** - tiers grouped by `providerId` (clinic-wide
+    default first, then providers by name) - unfiltered `GET
+    /api/fee-policies` fetched once, grouped client-side, same shape as the
+    reference's own route-grouped `RefundPolicies.jsx`. Confirmed live that
+    a provider-specific tier set stays entirely separate from the
+    clinic-wide default (never merged in the UI, matching `FeeCalculator`'s
+    own replace-not-merge semantics).
+  - **`LabRates.jsx`** - `LabRateController` CRUD; `testCode` shown
+    read-only (not an editable field) once a rate exists, matching
+    `UpdateLabTestRateRequest`'s own shape (delete-and-recreate to move a
+    rate to a different code, no in-place rename).
+- `layout/AppShell.jsx`'s clinic-admin nav gained "Providers"/"Rooms"/
+  "Appointment Types"/"Settings" links; `clinic-admin/Dashboard.jsx`'s
+  three CRUD-backed stat cards are now real links into this new UI, plus a
+  new "Manage settings" header button - same "make the new pages
+  discoverable from the dashboard" treatment as front-desk phase C.
+
 ## Testing
 
 - `TenantContextFilterTest` - unit tests locking in the claim-shape parsing
@@ -1758,6 +1844,78 @@ pure frontend wiring against them.
     With Provider transition itself) were then confirmed via
     `get_page_text`/Postgres, not assumed from the click alone.
 
+## Verified this session - frontend phase D (2026-09-14)
+
+- `npm run build` in `node-bff/frontend/` - clean, no new npm dependencies.
+  `docker compose up -d --build --force-recreate spring-boot-api node-bff`
+  (both changed - the `application.yml`/`client.js` error-message fix
+  touched both) - both healthy.
+- This session picked back up mid-verification after a real session gap -
+  the browser's node-bff cookie had expired by the time verification
+  resumed, surfacing as a silent redirect back to the Keycloak login page
+  mid-flow. Re-logging in as `demo-clinic-admin` and re-checking state
+  before continuing (rather than assuming a click had succeeded) caught
+  this immediately - a working-hours removal that looked "clicked" had in
+  fact never reached the server, confirmed by revisiting the same panel.
+- **The whole clinic-admin CRUD/settings surface was live-verified end to
+  end** against the real running stack, as a real `demo-clinic-admin` login:
+  - **Providers**: created "Dr. Browser Verified", edited it (room
+    reassigned, confirmed via the updated row), deactivated then
+    reactivated it. **Working hours**: added a window, then - this is what
+    surfaced the error-message bug above - attempted an overlapping second
+    window on the same day; first saw the raw JSON error body, fixed the
+    backend/client live, rebuilt, retried the identical overlap and
+    confirmed the real message now renders ("This window overlaps an
+    existing one for this provider and day"); removed the window
+    afterward (hard delete, confirmed gone). **Login**: linked the test
+    provider to a real already-provisioned account
+    (`demo-front-desk@example.test`) - confirmed the "has a login" badge
+    and panel state flipped to show "Unlink"; unlinked it, confirmed the
+    panel reverted to the link form. A provider with no working hours
+    correctly shows "No open slots" wording; one with an unconfigured
+    overlap-free window books normally (implicitly reused the same
+    provider/slot-generation path already proven in earlier phases, not
+    re-tested here).
+  - **Rooms**: created "Room Browser Verified", renamed it via edit,
+    deactivated then reactivated - confirmed status persists correctly
+    across each transition, not just the click landing.
+  - **Appointment Types**: created "Browser Verified Checkup"
+    (30 min/$40), edited its price to $45 while `Inactive` and confirmed
+    the status itself stayed untouched by an edit that didn't touch
+    `status` (partial-update semantics preserved, not accidentally reset
+    on every save).
+  - **Fee Policies**: confirmed the seeded clinic-wide default tiers
+    (24h/0%, 2h/50%, 0h/100%) render grouped correctly; added a
+    provider-specific tier (`Dr. Browser Verified`, 48h/25%) and confirmed
+    it renders in its own group, separate from the clinic-wide default -
+    edited it to 30%, then hard-deleted it (confirmed gone, not
+    soft-deactivated).
+  - **Lab Rates**: confirmed the seeded `CBC`/`LFT`/`LIPID` rates render;
+    created `TSH` ($28 base), edited it to add a $3 collection fee,
+    deleted it (confirmed gone).
+  - **Settings (General)**: confirmed the resolved `{overrides, effective,
+    defaults}` view - all fields blank/showing pure platform defaults
+    before any override. Set `rescheduleMinNoticeHours` to 48, saved,
+    **confirmed the override persisted across a fresh page navigation**
+    (not just optimistic local state) - then cleared it back to blank,
+    saved again, and confirmed the field reverted to showing "4" as a
+    greyed placeholder again, i.e. `effective` genuinely fell back to the
+    platform default rather than the override merely displaying as blank.
+  - **Branding**: confirmed the real pre-existing branding (from phase-5
+    verification) pre-filled correctly, and that the live colour preview
+    panel visually matches the real `AppShell` header/button chrome
+    (orange brand bar, teal accent button) - not just built to resemble it.
+  - **A real mistake made and caught during this same verification, not by
+    the app**: a coordinate-based click meant for the Footer Note field
+    landed on the Logo URL field instead (the page had scrolled/reflowed
+    between the screenshot and the click), appending stray text and saving
+    a corrupted `logoUrl` to the live demo clinic's branding row. Caught
+    immediately on the very next screenshot (the appended text was visibly
+    in the wrong field), corrected by re-typing the clean URL and saving
+    again, then confirmed clean via a fresh page load - flagged here
+    explicitly since it was this session's own automation error editing
+    live shared demo data, not a bug in the code being verified.
+
 ## Known gaps (don't pretend these are done)
 
 - No initial `clinic_admin` user provisioning as part of clinic onboarding
@@ -1766,17 +1924,18 @@ pure frontend wiring against them.
   hand and add them as an org member before the new clinic is actually
   usable.
 - **Frontend covers the shell/dashboards (phase A), the patient/guest
-  booking lifecycle (phase B), and front-desk's own walk-in flow (phase C)
-  only** - real routing/nav/branding, every role's dashboard,
-  patient/guest book/view/cancel/reschedule/track, and front-desk's
-  patient search/registration/booking/check-in-actions/payment-recording/
-  reschedule/cancel are all real and live-data. Still missing:
-  encounter-documentation UI, clinic-admin settings/CRUD UI (providers/
-  rooms/appointment-types/fee-policies/working-hours/lab-rates/branding),
+  booking lifecycle (phase B), front-desk's own walk-in flow (phase C),
+  and clinic-admin's settings/CRUD surface (phase D) only** - real
+  routing/nav/branding, every role's dashboard, patient/guest
+  book/view/cancel/reschedule/track, front-desk's patient
+  search/registration/booking/check-in-actions/payment-recording/
+  reschedule/cancel, and clinic-admin's providers (+ working-hours + login
+  linking)/rooms/appointment-types/fee-policies/lab-rates/settings/branding
+  are all real and live-data. Still missing: encounter-documentation UI,
   lab-order creation/status-transition/result-entry/patient-lab-request UI,
   and platform-admin clinic-creation UI. Every one of these endpoints is
   built and live-verified server-side; none has a page yet. See "Frontend"
-  above for phase A/B/C's own write-ups and deliberate scope boundaries.
+  above for phase A/B/C/D's own write-ups and deliberate scope boundaries.
 - `demo-front-desk` (created live this session for frontend-phase-A
   verification - see "Verified this session") isn't yet in
   `infra/keycloak/realm-export.json`, so a from-scratch environment won't

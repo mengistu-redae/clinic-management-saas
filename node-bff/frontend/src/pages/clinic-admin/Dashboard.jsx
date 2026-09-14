@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import {
   useProviders,
   useRooms,
@@ -50,12 +51,23 @@ export default function ClinicAdminDashboard() {
 
   return (
     <div className="flex flex-col gap-8">
-      <h1 className="text-2xl font-bold text-ink">Clinic Overview</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-ink">Clinic Overview</h1>
+        <Link to="/clinic-admin/settings" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
+          Manage settings
+        </Link>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard label="Active providers" value={providers.data.length} />
-        <StatCard label="Active rooms" value={rooms.data.length} />
-        <StatCard label="Appointment types" value={appointmentTypes.data.length} />
+        <Link to="/clinic-admin/providers" className="block transition-shadow hover:shadow-md">
+          <StatCard label="Active providers" value={providers.data.length} />
+        </Link>
+        <Link to="/clinic-admin/rooms" className="block transition-shadow hover:shadow-md">
+          <StatCard label="Active rooms" value={rooms.data.length} />
+        </Link>
+        <Link to="/clinic-admin/appointment-types" className="block transition-shadow hover:shadow-md">
+          <StatCard label="Appointment types" value={appointmentTypes.data.length} />
+        </Link>
         <StatCard label="Active appointments" value={activeAppointmentCount} />
         <StatCard label="Pending lab requests" value={labOrderRequests.data.length} hint="awaiting confirm & order" />
       </div>
