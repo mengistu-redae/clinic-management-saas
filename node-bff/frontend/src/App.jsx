@@ -27,6 +27,7 @@ import ClinicAdminSettings from './pages/clinic-admin/Settings.jsx';
 import ClinicAdminBranding from './pages/clinic-admin/Branding.jsx';
 import ClinicAdminFeePolicies from './pages/clinic-admin/FeePolicies.jsx';
 import ClinicAdminLabRates from './pages/clinic-admin/LabRates.jsx';
+import ProviderEncounter from './pages/provider/Encounter.jsx';
 
 /** Logged-out landing at "/" - PublicShell's own header/nav carries the wayfinding (Book/Track/Log in). */
 function PublicHome() {
@@ -112,6 +113,14 @@ export default function App() {
           element={
             <RequireRole role="provider">
               <ProviderDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/provider/appointments/:id/encounter"
+          element={
+            <RequireRole role="provider">
+              <ProviderEncounter />
             </RequireRole>
           }
         />

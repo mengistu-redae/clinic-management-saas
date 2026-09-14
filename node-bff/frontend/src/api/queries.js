@@ -515,3 +515,38 @@ export function useDeleteLabRate(id) {
     onSuccess: () => invalidateLabRates(queryClient),
   });
 }
+
+// ---- provider clinical (encounter documentation + prescriptions - see
+// EncounterController) ----
+
+/**
+ * 404 (no encounter documented yet) is an expected, common state here, not
+ * a failure - retry:false so a real 404 surfaces immediately as
+ * isError/error.status instead of retrying a few times first; the page
+ * itself treats a 404 as "show a blank create form," not an error banner.
+ */
+export function useEncounter(appointmentId) {
+  return useQuery({
+    queryKey: ['encounter', appointmentId],
+    queryFn: () => apiGet(`/api/appointments/${appointmentId}/encounter`),
+    enabled: Boolean(appointmentId),
+    retry: false,
+  });
+}
+
+export function useUpsertEncounter(appointmentId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/appointments/${appointmentId}/encounter`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounter', appointmentId] }),
+  });
+}
+
+/** Full-replace - the given list becomes the entire prescription list, never merged with what was there before. */
+export function useReplacePrescriptions(appointmentId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (items) => apiPost(`/api/appointments/${appointmentId}/encounter/prescriptions`, items),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounter', appointmentId] }),
+  });
+}

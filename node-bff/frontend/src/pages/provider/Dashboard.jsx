@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useMySchedule } from '../../api/queries.js';
 import StatCard from '../../components/StatCard.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
@@ -39,9 +40,14 @@ export default function ProviderDashboard() {
         ) : (
           <ul className="flex flex-col gap-2">
             {data.map((a) => (
-              <li key={a.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                <span className="font-mono text-sm text-ink">{a.appointmentRef}</span>
-                <StatusPill status={a.status} />
+              <li key={a.id}>
+                <Link
+                  to={`/provider/appointments/${a.id}/encounter`}
+                  className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 hover:border-slate-200 hover:bg-slate-50"
+                >
+                  <span className="font-mono text-sm text-ink">{a.appointmentRef}</span>
+                  <StatusPill status={a.status} />
+                </Link>
               </li>
             ))}
           </ul>

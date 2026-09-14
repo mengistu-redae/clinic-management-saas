@@ -1130,6 +1130,52 @@ live use and did need a genuine fix (below), not just a frontend workaround.
   new "Manage settings" header button - same "make the new pages
   discoverable from the dashboard" treatment as front-desk phase C.
 
+**Frontend phase E** (built 2026-09-14, later session) is the provider
+clinical UI - encounter documentation (chief complaint/assessment/plan)
+plus a full-replace prescription list, both on one page. Zero backend
+changes needed - `EncounterController` has covered this exact shape since
+phase 4. Reached only from the provider dashboard's "Today's Schedule"
+rows (`pages/provider/Dashboard.jsx` gained the same row-wraps-in-`Link`
+treatment as front-desk/clinic-admin's dashboards before it) - no separate
+nav link, since `GET /api/my-schedule` is already the full day's list, not
+a truncated preview the way front-desk's dashboard needed a separate
+"Appointments" page to see everything.
+
+- **`pages/provider/Encounter.jsx`** (`/provider/appointments/:id/
+  encounter`) - fetches the appointment (`useAppointment`, the same
+  tenant-scoped staff hook front-desk's pages already use) and resolves the
+  patient name the identical way front-desk's `AppointmentDetail.jsx` does
+  (`usePatient(appointment.patientId)`, falling back to `contactName` for a
+  guest). **Client-side mirrors `EncounterService.requireDocumentableStatus`
+  exactly** (`with_provider`/`checked_out` only) so the common case never
+  round-trips a 409 - a `booked`/`checked_in`/`roomed` appointment shows an
+  explanatory `EmptyState` instead of the form, confirmed live
+  (`"This appointment is still 'booked' - start the visit..."`).
+  - **Note form** - `useEncounter(id)` (`GET .../encounter`, `retry:
+    false` since a 404 - no encounter documented yet - is an expected,
+    common state here, not a failure to retry) drives create-vs-update
+    button text ("Save note" vs "Update note"); `useUpsertEncounter`
+    posts. Confirmed live via direct Postgres query that a second save
+    updates the same row, never creates a duplicate (matches the DB's own
+    unique-`appointment_id` constraint and `EncounterService.upsert`'s
+    find-or-create).
+  - **Prescriptions** - locked behind a "Save the note above first" message
+    until an encounter exists (mirrors `EncounterService.
+    replacePrescriptions`'s own 400 for the same case, checked client-side
+    so that 400 is never actually hit in normal use), then a
+    `TiersEditor`-style add/remove line-item list (medication/dosage/
+    instructions), `useReplacePrescriptions` posting the whole list -
+    confirmed live via Postgres that this is a genuine full-replace (one
+    row, matching the one line submitted), not an append.
+- **Not built this phase, a real gap**: `EncounterController` allows
+  `clinic_admin` on every endpoint too (no ownership check for that role,
+  same override pattern as everywhere else), but this phase only wired the
+  route/page for `provider` - `clinic_admin` has no UI path to a specific
+  appointment's encounter yet (front-desk's own `AppointmentDetail.jsx`,
+  the natural place clinic_admin might reach one from, is `front_desk`
+  -role-gated, not shared). Noted in "Known gaps" below rather than
+  silently left implicit.
+
 ## Testing
 
 - `TenantContextFilterTest` - unit tests locking in the claim-shape parsing
@@ -1916,6 +1962,36 @@ live use and did need a genuine fix (below), not just a frontend workaround.
     explicitly since it was this session's own automation error editing
     live shared demo data, not a bug in the code being verified.
 
+## Verified this session - frontend phase E (2026-09-14)
+
+- `npm run build` in `node-bff/frontend/` - clean, no new npm dependencies.
+  No backend changes this phase, so no `spring-boot-api` rebuild -
+  `docker compose up -d --build --force-recreate node-bff` alone.
+- **The whole encounter-documentation flow was live-verified end to end**
+  as a real `demo-provider` login, against real appointments (not fixtures):
+  - Opened a real `checked_out` appointment's encounter page - patient
+    name ("Walk In") resolved correctly, the note form rendered (confirming
+    `checked_out` counts as documentable, matching the "editable
+    indefinitely" decision from phase 4), and the prescriptions section
+    correctly showed the "save the note first" lock since no encounter
+    existed yet.
+  - Filled in and saved a real note (chief complaint/assessment/plan) -
+    button label flipped from "Save note" to "Update note", a "Saved."
+    confirmation appeared, and **a direct Postgres query confirmed exactly
+    one `encounters` row** for that appointment with the submitted text.
+  - Added one prescription line and saved - confirmed via Postgres it
+    landed as a real `prescriptions` row (not just an optimistic UI
+    update), correctly linked to the encounter's own id.
+  - **Confirmed the fresh-load repopulation actually works, not just the
+    save**: re-navigated to the same URL from scratch and confirmed all
+    three note fields and the prescription line re-appeared prefilled from
+    the server, not from any local/cached state carried over from the save.
+  - Navigated to a different, still-`booked` appointment's encounter page -
+    confirmed the client-side status gate correctly blocks it with a clear
+    explanatory message ("This appointment is still 'booked' - start the
+    visit...") and no form at all, matching `EncounterService.
+    requireDocumentableStatus` without ever needing to hit the real 409.
+
 ## Known gaps (don't pretend these are done)
 
 - No initial `clinic_admin` user provisioning as part of clinic onboarding
@@ -1925,17 +2001,26 @@ live use and did need a genuine fix (below), not just a frontend workaround.
   usable.
 - **Frontend covers the shell/dashboards (phase A), the patient/guest
   booking lifecycle (phase B), front-desk's own walk-in flow (phase C),
-  and clinic-admin's settings/CRUD surface (phase D) only** - real
-  routing/nav/branding, every role's dashboard, patient/guest
-  book/view/cancel/reschedule/track, front-desk's patient
-  search/registration/booking/check-in-actions/payment-recording/
-  reschedule/cancel, and clinic-admin's providers (+ working-hours + login
-  linking)/rooms/appointment-types/fee-policies/lab-rates/settings/branding
-  are all real and live-data. Still missing: encounter-documentation UI,
-  lab-order creation/status-transition/result-entry/patient-lab-request UI,
-  and platform-admin clinic-creation UI. Every one of these endpoints is
-  built and live-verified server-side; none has a page yet. See "Frontend"
-  above for phase A/B/C/D's own write-ups and deliberate scope boundaries.
+  clinic-admin's settings/CRUD surface (phase D), and the provider's own
+  encounter documentation (phase E) only** - real routing/nav/branding,
+  every role's dashboard, patient/guest book/view/cancel/reschedule/track,
+  front-desk's patient search/registration/booking/check-in-actions/
+  payment-recording/reschedule/cancel, clinic-admin's providers
+  (+ working-hours + login linking)/rooms/appointment-types/fee-policies/
+  lab-rates/settings/branding, and provider note/prescription
+  documentation are all real and live-data. Still missing: lab-order
+  creation/status-transition/result-entry/patient-lab-request UI, and
+  platform-admin clinic-creation UI. Every one of these endpoints is built
+  and live-verified server-side; none has a page yet. See "Frontend" above
+  for phase A/B/C/D/E's own write-ups and deliberate scope boundaries.
+- **`clinic_admin` has no UI path to encounter documentation** (found phase
+  E) - `EncounterController` allows that role on every endpoint (no
+  ownership check, same override pattern used everywhere else), but phase
+  E's `/provider/appointments/{id}/encounter` route is `RequireRole
+  role="provider"`-gated (UX-only, matching every other role-gated route in
+  this app) - a `clinic_admin` visiting it directly gets redirected back to
+  `/` like any other wrong-role visit, not just "no link to click." No page
+  exists for that role to reach an encounter at all yet.
 - `demo-front-desk` (created live this session for frontend-phase-A
   verification - see "Verified this session") isn't yet in
   `infra/keycloak/realm-export.json`, so a from-scratch environment won't
