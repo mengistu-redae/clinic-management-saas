@@ -41,6 +41,9 @@ export default function AppShell() {
                   <NavLink to="/my-appointments" className={navLinkClass}>
                     My Appointments
                   </NavLink>
+                  <NavLink to="/my-lab-orders" className={navLinkClass}>
+                    My Lab Orders
+                  </NavLink>
                 </>
               )}
               {hasRole('front_desk') && (
@@ -57,9 +60,14 @@ export default function AppShell() {
                 </>
               )}
               {hasRole('provider') && (
-                <NavLink to="/provider" className={navLinkClass}>
-                  Dashboard
-                </NavLink>
+                <>
+                  <NavLink to="/provider" end className={navLinkClass}>
+                    Dashboard
+                  </NavLink>
+                  <NavLink to="/lab-orders" className={navLinkClass}>
+                    Lab Orders
+                  </NavLink>
+                </>
               )}
               {hasRole('clinic_admin') && (
                 <>
@@ -74,6 +82,9 @@ export default function AppShell() {
                   </NavLink>
                   <NavLink to="/clinic-admin/appointment-types" className={navLinkClass}>
                     Appointment Types
+                  </NavLink>
+                  <NavLink to="/lab-orders" className={navLinkClass}>
+                    Lab Orders
                   </NavLink>
                   <NavLink to="/clinic-admin/settings" className={navLinkClass}>
                     Settings

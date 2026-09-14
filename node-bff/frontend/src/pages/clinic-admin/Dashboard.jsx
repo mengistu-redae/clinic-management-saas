@@ -69,7 +69,9 @@ export default function ClinicAdminDashboard() {
           <StatCard label="Appointment types" value={appointmentTypes.data.length} />
         </Link>
         <StatCard label="Active appointments" value={activeAppointmentCount} />
-        <StatCard label="Pending lab requests" value={labOrderRequests.data.length} hint="awaiting confirm & order" />
+        <Link to="/lab-orders" className="block transition-shadow hover:shadow-md">
+          <StatCard label="Pending lab requests" value={labOrderRequests.data.length} hint="awaiting confirm & order" />
+        </Link>
       </div>
     </div>
   );

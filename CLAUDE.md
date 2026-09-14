@@ -1176,6 +1176,92 @@ a truncated preview the way front-desk's dashboard needed a separate
   -role-gated, not shared). Noted in "Known gaps" below rather than
   silently left implicit.
 
+**Frontend phase F** (built 2026-09-14, later session) is the lab-orders
+UI - the largest single frontend phase yet, covering all three angles the
+kickoff spec's own phase 7 backend built: staff order creation/status
+-transitions/results/cancellation, the patient request->confirm-and-order
+flow, and public two-factor tracking. Zero backend/BFF changes needed -
+every endpoint (including the tracking route's `permitAll()`/
+`PUBLIC_ROUTES` wiring) already existed and was already live-verified
+server-side in phase 7. Ported from the reference bus-ticketing-saas
+project's own `cargo/Waybills.jsx`/`WaybillDetail.jsx`/`customer/
+RequestShipment.jsx`/`MyShipments.jsx`/`pages/Track.jsx` (all read in full
+before writing anything) - same list+create+pending-queue/detail
+-with-status-actions/request-form/public-tracking shapes, adapted to lab
+orders' own fields and status machine (`ordered -> specimen_collected ->
+in_transit -> resulted -> reviewed`, or `cancelled`/`requested`).
+
+- **`components/labOrder/LabOrderTestsEditor.jsx`** (new, shared) - the
+  test-line-item editor (testCode/testName/specimenType) used by every
+  form that submits a `tests: TestItem[]` list (create, edit-while
+  -ordered, confirm-and-order) - same "one reusable line-item editor"
+  shape as the reference project's own `WaybillItemsEditor.jsx`. A
+  `<datalist>` of already-configured lab-rate test codes (from
+  `useLabRates`, phase D) backs the test-code field so staff can see
+  what's actually priceable without leaving the form.
+- **`pages/lab-orders/LabOrders.jsx`** (`/lab-orders`, shared by
+  `provider`+`clinic_admin` - identical `LabOrderController`/
+  `LabOrderStatusController`/`LabOrderCancellationController`/
+  `PatientLabRequestController` permissions on every endpoint here, one
+  route tree instead of duplicating it per role) - a pending-patient
+  -requests banner (`GET /api/lab-orders/requests`) linking into each
+  order's own confirm-and-order form, a create form (patient/provider
+  pickers + the tests editor + a consent checkbox), and the tenant-wide
+  list with a client-side status filter. Patient/provider names resolved
+  the same id->name-`Map` pattern front-desk's `Appointments.jsx`
+  established, not per-row lookups.
+- **`pages/lab-orders/LabOrderDetail.jsx`** - one page covering every
+  `LabOrderStatusService` transition, `LabOrderCancellationController`,
+  and `payment.LabOrderPaymentController`, mirroring
+  `WaybillDetail.jsx`'s own shape exactly: a `requested` order swaps the
+  normal action UI for a confirm-and-order form (pre-filled from the
+  patient's freeform test names, same auto-init-on-load pattern as that
+  reference page's own confirm-and-issue form); an `ordered` order can be
+  edited (patient/provider/notes/priority/tests) or have its specimen
+  collected (presented-ID field, confirmed live that a mismatch shows the
+  real backend message - "Presented ID does not match the ID on file, or
+  nothing is on file to check against" - not a raw error, and that this
+  identity check treats no-ID-on-file as a mismatch too, the deliberate
+  phase-7 divergence from check-in's own convention); `in_transit` shows a
+  per-test result-entry form (value/unit/reference range/abnormal
+  checkbox); `resulted`/`reviewed` show the entered results inline in the
+  test table (visible immediately once resulted, matching the phase-7
+  "not gated on review" decision - confirmed live as a genuinely different
+  login, not just the ordering provider's own session).
+- **`pages/patient/RequestLabTest.jsx`** (`/my-lab-orders/request`) - a
+  clinic picker (`useClinicsDirectory`, public) + freeform test-name
+  list (no test-code picker, no pricing shown - a patient names tests in
+  plain language exactly like the reference project's own `consignee`
+  -side request form leaves pricing to staff) + optional notes, posting
+  to `POST /api/my-lab-orders`.
+- **`pages/patient/MyLabOrders.jsx`** (`/my-lab-orders`, the full list the
+  dashboard's own top-5 preview links out to) / **`MyLabOrderDetail.jsx`**
+  (`/my-lab-orders/:id`, read-only) - **there's no dedicated
+  `GET /api/my-lab-orders/{id}`** (only the list), so the detail page
+  filters the same `useMyLabOrders(true)` list `MyLabOrders.jsx` already
+  fetches rather than adding a new backend endpoint for one lookup - same
+  "no extra endpoint needed" reasoning phase B's own `AppointmentDetail.jsx`
+  used for resolving clinic/provider/type names from public directories.
+  Every staff action (status transitions/confirm-and-order/payments) stays
+  off this page entirely; result values ARE shown once resulted (only the
+  anonymous tracking view hides them).
+- **`pages/TrackLabOrder.jsx`** (`/track-lab-order`, public) - ported
+  directly from this app's own `TrackAppointment.jsx` (not the reference
+  project's `Track.jsx`, since this app already has its own established
+  two-factor-ref-tracking-page convention) - `LabOrderTrackingView`'s
+  narrow status/timestamps-only shape, mismatch and unknown-ref both 404
+  identically, confirmed live via a genuinely anonymous session (logged
+  out first, not just an unauthenticated route inside an authenticated
+  tab).
+- `layout/AppShell.jsx` gained a "Lab Orders" link for both `provider` and
+  `clinic_admin`; `layout/PublicShell.jsx` gained "Track a lab order"
+  alongside "Track an appointment"; `patient/Dashboard.jsx`'s
+  "Request a lab test" `ComingSoonButton` (disabled since frontend phase A)
+  is now a real link, and its lab-orders panel rows/-"View all" link are
+  real too, matching the appointments panel's own treatment;
+  `clinic-admin/Dashboard.jsx`'s "Pending lab requests" stat card is now a
+  link into `/lab-orders`.
+
 ## Testing
 
 - `TenantContextFilterTest` - unit tests locking in the claim-shape parsing
@@ -1992,6 +2078,63 @@ a truncated preview the way front-desk's dashboard needed a separate
     visit...") and no form at all, matching `EncounterService.
     requireDocumentableStatus` without ever needing to hit the real 409.
 
+## Verified this session - frontend phase F (2026-09-14)
+
+- `npm run build` in `node-bff/frontend/` - clean, no new npm dependencies.
+  No backend changes this phase, so no `spring-boot-api` rebuild -
+  `docker compose up -d --build --force-recreate node-bff` alone.
+- **The whole lab-order lifecycle was live-verified end to end**, spanning
+  three real identities (`demo-provider`, `demo-clinic-admin`,
+  `demo-patient`, switched via the app's own "Log out" button each time):
+  - **Staff creation and the full status machine** (as `demo-provider`):
+    created a real order (`ED064B`, patient "Walk In", test `CBC`) -
+    confirmed the snapshotted price ($25.00 = $20 base + $5 collection,
+    matching the seeded `lab_test_rates` row). Drove it through
+    `collect-specimen` - first with a wrong ID (409, the exact message
+    rendered, not a raw error), then the matching one (200, `Specimen
+    Collected`) - `send` (`In Transit`, the result-entry form appeared) -
+    entered a result (value/unit/reference-range/abnormal checkbox) and
+    saved (`Resulted`, the result rendered inline in the test table,
+    including the ABNORMAL flag) - `review` (`Reviewed`, terminal, every
+    action button correctly disappeared, only Payments remained).
+  - **Role-gated payment recording, a real 403 confirmed correctly, not a
+    bug**: `demo-provider` attempting to record a payment on that same
+    order got a 403 (`LabOrderPaymentController.recordPayment` is
+    `front_desk`/`clinic_admin` only, not `provider` - read access is
+    3-role, write isn't) - confirmed the generic "Request failed with
+    status 403" fallback is correct here specifically because Spring
+    Security's own 403 body carries no message (unlike the
+    `ResponseStatusException` case the phase-D bug fix targeted). Switched
+    to `demo-clinic-admin` and recorded the same $25.00 payment
+    successfully - "Collected 25.00 of 25.00" - and confirmed the abnormal
+    result from the provider's own earlier session was still visible
+    (proving results are readable across genuinely different logins, not
+    session-cached).
+  - **Edit and cancel** (as `demo-clinic-admin`): created a second order
+    (`D81EDF`, `LFT`, $30.00), edited it while `ordered` (priority ->
+    Urgent, confirmed it saved), then cancelled it - confirmed via
+    Postgres the `lab_order_cancellations` row recorded a **$30.00 fee on
+    a $30.00 total** (the clinic's zero-cutoff 100% tier, `dueAt =
+    Instant.now()` always lands there by design, per the phase-7
+    decision) - not just that the status flipped.
+  - **The full patient request -> confirm-and-order round trip**: as
+    `demo-patient`, submitted a freeform request ("Lipid panel", no
+    pricing shown) via the dashboard's now-real "Request a lab test"
+    button - landed on the patient's own detail page showing `Requested`
+    and the pending-review message. As `demo-clinic-admin`, the pending
+    -requests banner on `/lab-orders` showed it immediately; confirmed
+    -and-ordered it (assigned `Dr. Demo Provider` + the real `LIPID` test
+    code) - confirmed live it flipped to `Ordered` with the real $35.00
+    price, provider name, and test code all populated from the confirm
+    form.
+  - **Public tracking, genuinely anonymous**: logged out first (not just
+    an unauthenticated route inside an authenticated tab), tracked
+    `ED064B` with its patient's real phone - got back only status/
+    timestamps, no result values/reference ranges/abnormal flags: then
+    retried with a wrong phone - 404'd with the same "no lab order found"
+    message an unknown ref would give, confirmed identical to the
+    appointment-tracking page's own established mismatch behavior.
+
 ## Known gaps (don't pretend these are done)
 
 - No initial `clinic_admin` user provisioning as part of clinic onboarding
@@ -2001,18 +2144,21 @@ a truncated preview the way front-desk's dashboard needed a separate
   usable.
 - **Frontend covers the shell/dashboards (phase A), the patient/guest
   booking lifecycle (phase B), front-desk's own walk-in flow (phase C),
-  clinic-admin's settings/CRUD surface (phase D), and the provider's own
-  encounter documentation (phase E) only** - real routing/nav/branding,
-  every role's dashboard, patient/guest book/view/cancel/reschedule/track,
-  front-desk's patient search/registration/booking/check-in-actions/
-  payment-recording/reschedule/cancel, clinic-admin's providers
-  (+ working-hours + login linking)/rooms/appointment-types/fee-policies/
-  lab-rates/settings/branding, and provider note/prescription
-  documentation are all real and live-data. Still missing: lab-order
-  creation/status-transition/result-entry/patient-lab-request UI, and
-  platform-admin clinic-creation UI. Every one of these endpoints is built
-  and live-verified server-side; none has a page yet. See "Frontend" above
-  for phase A/B/C/D/E's own write-ups and deliberate scope boundaries.
+  clinic-admin's settings/CRUD surface (phase D), the provider's own
+  encounter documentation (phase E), and the full lab-orders module
+  (phase F) only** - real routing/nav/branding, every role's dashboard,
+  patient/guest book/view/cancel/reschedule/track, front-desk's patient
+  search/registration/booking/check-in-actions/payment-recording/
+  reschedule/cancel, clinic-admin's providers (+ working-hours + login
+  linking)/rooms/appointment-types/fee-policies/lab-rates/settings/
+  branding, provider note/prescription documentation, and staff lab-order
+  creation/status-transitions/results/cancellation/payments plus the
+  patient request->confirm-and-order flow and public tracking are all real
+  and live-data. Still missing: **platform-admin clinic-creation UI** -
+  the one remaining gap, every other endpoint named in the kickoff spec's
+  phase plan now has a page. Live-verified server-side since phase 6; just
+  no frontend yet. See "Frontend" above for phase A/B/C/D/E/F's own
+  write-ups and deliberate scope boundaries.
 - **`clinic_admin` has no UI path to encounter documentation** (found phase
   E) - `EncounterController` allows that role on every endpoint (no
   ownership check, same override pattern used everywhere else), but phase

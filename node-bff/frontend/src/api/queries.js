@@ -550,3 +550,101 @@ export function useReplacePrescriptions(appointmentId) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounter', appointmentId] }),
   });
 }
+
+// ---- lab orders (staff - provider/clinic_admin; see LabOrderController/
+// LabOrderStatusController/LabOrderCancellationController/
+// PatientLabRequestController/payment.LabOrderPaymentController) ----
+
+export function useLabOrders(enabled) {
+  return useQuery({
+    queryKey: ['lab-orders'],
+    queryFn: () => apiGet('/api/lab-orders'),
+    enabled,
+  });
+}
+
+export function useLabOrder(id) {
+  return useQuery({
+    queryKey: ['lab-order', id],
+    queryFn: () => apiGet(`/api/lab-orders/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateLabOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/lab-orders', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lab-orders'] }),
+  });
+}
+
+function invalidateLabOrder(queryClient, id) {
+  queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+  queryClient.invalidateQueries({ queryKey: ['lab-order', id] });
+  queryClient.invalidateQueries({ queryKey: ['lab-order-requests'] });
+}
+
+/** Partial update - clinical fields only while status = "ordered", per LabOrderService.update. */
+export function useUpdateLabOrder(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/lab-orders/${id}/update`, body),
+    onSuccess: () => invalidateLabOrder(queryClient, id),
+  });
+}
+
+function useLabOrderAction(path) {
+  return function useAction(id) {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: (body) => apiPost(`/api/lab-orders/${id}/${path}`, body),
+      onSuccess: () => invalidateLabOrder(queryClient, id),
+    });
+  };
+}
+
+/** Each mirrors LabOrderStatusService's own linear sequence - ordered -> specimen_collected -> in_transit -> resulted -> reviewed. */
+export const useCollectSpecimen = useLabOrderAction('collect-specimen');
+export const useSendLabOrder = useLabOrderAction('send');
+export const useResultLabOrder = useLabOrderAction('result');
+export const useReviewLabOrder = useLabOrderAction('review');
+export const useCancelLabOrder = useLabOrderAction('cancel');
+/** Turns a "requested" (patient-initiated) order into a priced "ordered" one - see PatientLabRequestController.confirmAndOrder. */
+export const useConfirmAndOrder = useLabOrderAction('confirm-and-order');
+
+export function useLabOrderPayments(id) {
+  return useQuery({
+    queryKey: ['lab-order-payments', id],
+    queryFn: () => apiGet(`/api/lab-orders/${id}/payments`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateLabOrderPayment(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/lab-orders/${id}/payments`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lab-order-payments', id] }),
+  });
+}
+
+// ---- patient lab requests (see PatientLabRequestController.createRequest - GET is useMyLabOrders above) ----
+
+export function useCreateLabRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/my-lab-orders', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['my-lab-orders'] }),
+  });
+}
+
+/** Two-factor public tracking, driven by a submitted {ref, phone} - see pages/TrackLabOrder.jsx. */
+export function useTrackLabOrder(ref, phone) {
+  return useQuery({
+    queryKey: ['track-lab-order', ref, phone],
+    queryFn: () => apiGet(`/api/lab-orders/track/${encodeURIComponent(ref)}?phone=${encodeURIComponent(phone)}`),
+    enabled: Boolean(ref && phone),
+    retry: false,
+  });
+}

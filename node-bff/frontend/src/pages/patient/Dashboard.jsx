@@ -10,17 +10,6 @@ import { formatDateTime } from '../../lib/format.js';
 const ACTIVE_APPOINTMENT_STATUSES = new Set(['booked', 'checked_in', 'roomed', 'with_provider']);
 const OPEN_LAB_ORDER_STATUSES = new Set(['requested', 'ordered', 'specimen_collected', 'in_transit', 'resulted']);
 
-function ComingSoonButton({ children }) {
-  return (
-    <span
-      title="Coming in a later phase"
-      className="cursor-not-allowed rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-ink-muted opacity-60"
-    >
-      {children}
-    </span>
-  );
-}
-
 function ListPanel({ title, action, children }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-surface p-4 shadow-sm">
@@ -83,7 +72,12 @@ export default function PatientDashboard() {
           >
             Book an appointment
           </Link>
-          <ComingSoonButton>Request a lab test</ComingSoonButton>
+          <Link
+            to="/my-lab-orders/request"
+            className="rounded-lg border border-brand/40 px-4 py-2 text-sm font-medium text-brand hover:bg-brand-light/40"
+          >
+            Request a lab test
+          </Link>
         </div>
       </div>
 
@@ -125,15 +119,29 @@ export default function PatientDashboard() {
           )}
         </ListPanel>
 
-        <ListPanel title="My lab orders">
+        <ListPanel
+          title="My lab orders"
+          action={
+            myLabOrders.length > 0 && (
+              <Link to="/my-lab-orders" className="text-xs font-medium text-brand hover:underline">
+                View all
+              </Link>
+            )
+          }
+        >
           {myLabOrders.length === 0 ? (
             <EmptyState title="No lab orders yet" description="Lab orders and requests you've made will show up here." />
           ) : (
             <ul className="flex flex-col gap-2">
               {myLabOrders.slice(0, 5).map(({ order }) => (
-                <li key={order.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                  <span className="font-mono text-sm text-ink">{order.orderRef}</span>
-                  <StatusPill status={order.status} />
+                <li key={order.id}>
+                  <Link
+                    to={`/my-lab-orders/${order.id}`}
+                    className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 hover:border-slate-200 hover:bg-slate-50"
+                  >
+                    <span className="font-mono text-sm text-ink">{order.orderRef}</span>
+                    <StatusPill status={order.status} />
+                  </Link>
                 </li>
               ))}
             </ul>

@@ -26,6 +26,12 @@ export default function PublicShell() {
               >
                 Track an appointment
               </Link>
+              <Link
+                to="/track-lab-order"
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-muted hover:bg-slate-100 hover:text-ink"
+              >
+                Track a lab order
+              </Link>
             </nav>
           </div>
           <a

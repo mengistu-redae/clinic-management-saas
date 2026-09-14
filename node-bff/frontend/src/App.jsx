@@ -28,6 +28,12 @@ import ClinicAdminBranding from './pages/clinic-admin/Branding.jsx';
 import ClinicAdminFeePolicies from './pages/clinic-admin/FeePolicies.jsx';
 import ClinicAdminLabRates from './pages/clinic-admin/LabRates.jsx';
 import ProviderEncounter from './pages/provider/Encounter.jsx';
+import LabOrders from './pages/lab-orders/LabOrders.jsx';
+import LabOrderDetail from './pages/lab-orders/LabOrderDetail.jsx';
+import RequestLabTest from './pages/patient/RequestLabTest.jsx';
+import MyLabOrders from './pages/patient/MyLabOrders.jsx';
+import MyLabOrderDetail from './pages/patient/MyLabOrderDetail.jsx';
+import TrackLabOrder from './pages/TrackLabOrder.jsx';
 
 /** Logged-out landing at "/" - PublicShell's own header/nav carries the wayfinding (Book/Track/Log in). */
 function PublicHome() {
@@ -146,6 +152,7 @@ export default function App() {
         <Route path="/book/:clinicId" element={<BookingForm />} />
         <Route path="/appointments/:id" element={<AppointmentDetail />} />
         <Route path="/track-appointment" element={<TrackAppointment />} />
+        <Route path="/track-lab-order" element={<TrackLabOrder />} />
         <Route
           path="/appointments/:id/reschedule"
           element={
@@ -159,6 +166,30 @@ export default function App() {
           element={
             <RequireRole role="patient">
               <MyAppointments />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/my-lab-orders"
+          element={
+            <RequireRole role="patient">
+              <MyLabOrders />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/my-lab-orders/request"
+          element={
+            <RequireRole role="patient">
+              <RequestLabTest />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/my-lab-orders/:id"
+          element={
+            <RequireRole role="patient">
+              <MyLabOrderDetail />
             </RequireRole>
           }
         />
@@ -242,6 +273,27 @@ export default function App() {
           <Route path="fee-policies" element={<ClinicAdminFeePolicies />} />
           <Route path="lab-rates" element={<ClinicAdminLabRates />} />
         </Route>
+        {/* Lab orders - shared by provider and clinic_admin alike (identical
+            backend permissions on every LabOrderController/
+            LabOrderStatusController/LabOrderCancellationController/
+            PatientLabRequestController endpoint), one route tree instead of
+            duplicating it per role. */}
+        <Route
+          path="/lab-orders"
+          element={
+            <RequireRole roles={['provider', 'clinic_admin']}>
+              <LabOrders />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/lab-orders/:id"
+          element={
+            <RequireRole roles={['provider', 'clinic_admin']}>
+              <LabOrderDetail />
+            </RequireRole>
+          }
+        />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
