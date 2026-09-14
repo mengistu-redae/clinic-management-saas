@@ -92,9 +92,14 @@ export default function AppShell() {
                 </>
               )}
               {hasRole('platform_admin') && (
-                <NavLink to="/platform-admin" className={navLinkClass}>
-                  Dashboard
-                </NavLink>
+                <>
+                  <NavLink to="/platform-admin" end className={navLinkClass}>
+                    Dashboard
+                  </NavLink>
+                  <NavLink to="/platform-admin/clinics" className={navLinkClass}>
+                    Clinics
+                  </NavLink>
+                </>
               )}
             </nav>
           </div>

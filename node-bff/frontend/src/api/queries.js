@@ -648,3 +648,40 @@ export function useTrackLabOrder(ref, phone) {
     retry: false,
   });
 }
+
+// ---- platform-admin clinic onboarding (see PlatformController) ----
+
+function invalidatePlatformClinics(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['platform', 'clinics'] });
+}
+
+/** The only create call in this app that reaches out to Keycloak (a real Organization) before touching Postgres - see ClinicProvisioningService. Slower, more ways to fail (a taken orgAlias, Keycloak unreachable) than every other create form here. */
+export function useCreateClinic() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/platform/clinics', body),
+    onSuccess: () => invalidatePlatformClinics(queryClient),
+  });
+}
+
+/** Partial update - name only, per UpdateClinicRequest (keycloak_org_id is fixed at creation). */
+export function useUpdateClinic(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/platform/clinics/${id}/update`, body),
+    onSuccess: () => invalidatePlatformClinics(queryClient),
+  });
+}
+
+function useClinicStatusAction(path) {
+  return function useAction(id) {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: () => apiPost(`/api/platform/clinics/${id}/${path}`),
+      onSuccess: () => invalidatePlatformClinics(queryClient),
+    });
+  };
+}
+
+export const useDeactivateClinic = useClinicStatusAction('deactivate');
+export const useReactivateClinic = useClinicStatusAction('reactivate');

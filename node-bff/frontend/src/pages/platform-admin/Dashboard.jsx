@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { usePlatformClinics } from '../../api/queries.js';
 import StatCard from '../../components/StatCard.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
@@ -25,15 +26,31 @@ export default function PlatformAdminDashboard() {
 
   return (
     <div className="flex flex-col gap-8">
-      <h1 className="text-2xl font-bold text-ink">Platform Overview</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-ink">Platform Overview</h1>
+        <Link to="/platform-admin/clinics" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
+          Onboard a clinic
+        </Link>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <StatCard label="Total clinics" value={data.length} />
-        <StatCard label="Active" value={activeCount} hint={`${data.length - activeCount} deactivated`} />
+        <Link to="/platform-admin/clinics" className="block transition-shadow hover:shadow-md">
+          <StatCard label="Total clinics" value={data.length} />
+        </Link>
+        <Link to="/platform-admin/clinics" className="block transition-shadow hover:shadow-md">
+          <StatCard label="Active" value={activeCount} hint={`${data.length - activeCount} deactivated`} />
+        </Link>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-surface p-4 shadow-sm">
-        <p className="mb-3 text-sm font-semibold text-ink">Clinics</p>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-semibold text-ink">Clinics</p>
+          {data.length > 0 && (
+            <Link to="/platform-admin/clinics" className="text-xs font-medium text-brand hover:underline">
+              Manage
+            </Link>
+          )}
+        </div>
         {data.length === 0 ? (
           <EmptyState title="No clinics yet" description="Clinics onboarded onto the platform will show up here." />
         ) : (

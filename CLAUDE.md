@@ -1262,6 +1262,38 @@ in_transit -> resulted -> reviewed`, or `cancelled`/`requested`).
   `clinic-admin/Dashboard.jsx`'s "Pending lab requests" stat card is now a
   link into `/lab-orders`.
 
+**Frontend phase G** (built 2026-09-14, later session) is platform-admin's
+clinic onboarding UI - the last item named in the kickoff spec's own phase
+plan without a page. Zero backend changes needed - `PlatformController`
+has covered this exact shape since phase 6. Ported from the reference
+bus-ticketing-saas project's own `platform/Operators.jsx` (read in full
+before writing anything) - same create-form + inline-edit-row shape every
+other phase-D-style CRUD page in this app already uses, with one
+deliberate difference: this page also offers **Reactivate**, since
+`PlatformController` has a real reactivate endpoint (phase 6), unlike the
+reference project's operator-onboarding page, which only ever
+soft-deactivates with no way back through the UI.
+
+- **`pages/platform-admin/Clinics.jsx`** (`/platform-admin/clinics`) - a
+  create form (name/org alias/domain) that's genuinely the only "create"
+  call in this whole app that reaches out to Keycloak (a real
+  Organization, via `ClinicProvisioningService`) before ever touching
+  Postgres - slower and with more ways to fail (a taken alias, Keycloak
+  unreachable) than every other create form here, called out in the
+  page's own copy. `orgAlias`/`keycloakOrgId` isn't editable after
+  creation (`UpdateClinicRequest` only takes `name`) - it's what
+  `TenantContextFilter` matches a staff token's organization claim
+  against, so changing it would silently break tenant resolution for
+  every existing staff login at that clinic. Each row: inline edit
+  (name only), Deactivate/Reactivate (idempotent, matching
+  `PlatformController.setStatus`'s own re-call convention).
+- `layout/AppShell.jsx` gained a "Clinics" link for `platform_admin`;
+  `platform-admin/Dashboard.jsx` gained an "Onboard a clinic" header
+  button, its two stat cards now link into `/platform-admin/clinics`, and
+  its clinic list gained a "Manage" link - same "make the new page
+  discoverable from the dashboard" treatment every prior phase's own
+  dashboard tweak used.
+
 ## Testing
 
 - `TenantContextFilterTest` - unit tests locking in the claim-shape parsing
@@ -2135,6 +2167,30 @@ in_transit -> resulted -> reviewed`, or `cancelled`/`requested`).
     message an unknown ref would give, confirmed identical to the
     appointment-tracking page's own established mismatch behavior.
 
+## Verified this session - frontend phase G (2026-09-14)
+
+- `npm run build` in `node-bff/frontend/` - clean, no new npm dependencies.
+  No backend changes this phase, so no `spring-boot-api` rebuild -
+  `docker compose up -d --build --force-recreate node-bff` alone.
+- **The whole clinic-onboarding flow was live-verified end to end** as a
+  real `demo-platform-admin` login:
+  - Onboarded a genuinely new clinic ("Browser Verified Clinic Two",
+    alias `browser-verified-clinic-two`) - **confirmed via a direct
+    Keycloak admin-API call that a real Organization was created**
+    (3 orgs listed afterward, not just a local Postgres row).
+  - Attempted a duplicate org alias (`demo-clinic`, already taken) - 409
+    with the real backend message ("A clinic already exists for org
+    alias: demo-clinic") rendered correctly, not a raw error - and
+    **confirmed via the same Keycloak admin-API call that the rejected
+    attempt created zero new/orphaned orgs** (still exactly 3), proving
+    `ClinicProvisioningService`'s local pre-check genuinely runs before
+    ever calling Keycloak, not just in the backend test suite.
+  - Edited the new clinic's name inline - saved correctly, `orgAlias`
+    untouched (matches `UpdateClinicRequest`'s name-only shape).
+  - Deactivated then reactivated it - status and the action button's own
+    label flipped correctly both times (idempotent transitions, same
+    convention as `CheckInService`'s own).
+
 ## Known gaps (don't pretend these are done)
 
 - No initial `clinic_admin` user provisioning as part of clinic onboarding
@@ -2142,23 +2198,20 @@ in_transit -> resulted -> reviewed`, or `cancelled`/`requested`).
   someone must still create/assign a `clinic_admin` user in Keycloak by
   hand and add them as an org member before the new clinic is actually
   usable.
-- **Frontend covers the shell/dashboards (phase A), the patient/guest
-  booking lifecycle (phase B), front-desk's own walk-in flow (phase C),
-  clinic-admin's settings/CRUD surface (phase D), the provider's own
-  encounter documentation (phase E), and the full lab-orders module
-  (phase F) only** - real routing/nav/branding, every role's dashboard,
-  patient/guest book/view/cancel/reschedule/track, front-desk's patient
-  search/registration/booking/check-in-actions/payment-recording/
-  reschedule/cancel, clinic-admin's providers (+ working-hours + login
-  linking)/rooms/appointment-types/fee-policies/lab-rates/settings/
-  branding, provider note/prescription documentation, and staff lab-order
-  creation/status-transitions/results/cancellation/payments plus the
-  patient request->confirm-and-order flow and public tracking are all real
-  and live-data. Still missing: **platform-admin clinic-creation UI** -
-  the one remaining gap, every other endpoint named in the kickoff spec's
-  phase plan now has a page. Live-verified server-side since phase 6; just
-  no frontend yet. See "Frontend" above for phase A/B/C/D/E/F's own
-  write-ups and deliberate scope boundaries.
+- **Frontend now covers every module named in the kickoff spec's own
+  phase plan** (phases A through G - shell/dashboards, patient/guest
+  booking, front-desk's walk-in flow, clinic-admin's settings/CRUD,
+  provider encounter documentation, the full lab-orders module, and
+  platform-admin clinic onboarding) - real routing/nav/branding, every
+  role's dashboard, and every backend endpoint built across all seven
+  backend phases now has a live-data page reaching it. No named-module
+  gap remains; what's left (below) is smaller cross-cutting items -
+  `clinic_admin` lacking a UI path into a couple of `provider`-gated
+  pages, no automated frontend test suite, and the pre-existing backend
+  known-gaps list further down (PHI audit, real payment-gateway
+  integration, notifications, per-clinic timezone, etc.) - not missing
+  screens. See "Frontend" above for phase A/B/C/D/E/F/G's own write-ups
+  and deliberate scope boundaries.
 - **`clinic_admin` has no UI path to encounter documentation** (found phase
   E) - `EncounterController` allows that role on every endpoint (no
   ownership check, same override pattern used everywhere else), but phase

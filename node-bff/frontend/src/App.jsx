@@ -34,6 +34,7 @@ import RequestLabTest from './pages/patient/RequestLabTest.jsx';
 import MyLabOrders from './pages/patient/MyLabOrders.jsx';
 import MyLabOrderDetail from './pages/patient/MyLabOrderDetail.jsx';
 import TrackLabOrder from './pages/TrackLabOrder.jsx';
+import PlatformAdminClinics from './pages/platform-admin/Clinics.jsx';
 
 /** Logged-out landing at "/" - PublicShell's own header/nav carries the wayfinding (Book/Track/Log in). */
 function PublicHome() {
@@ -143,6 +144,14 @@ export default function App() {
           element={
             <RequireRole role="platform_admin">
               <PlatformAdminDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/platform-admin/clinics"
+          element={
+            <RequireRole role="platform_admin">
+              <PlatformAdminClinics />
             </RequireRole>
           }
         />
