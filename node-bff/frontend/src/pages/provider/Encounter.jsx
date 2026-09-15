@@ -7,6 +7,7 @@ import {
   useUpsertEncounter,
   useReplacePrescriptions,
 } from '../../api/queries.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
@@ -26,12 +27,14 @@ const emptyLine = () => ({ medicationName: '', dosage: '', instructions: '' });
  * EncounterService.upsert) plus a full-replace prescription list (POST
  * .../encounter/prescriptions). Reached from the provider dashboard's
  * "Today's Schedule" rows, not a standalone nav link - same relationship as
- * front-desk's AppointmentDetail to its own dashboard. clinic_admin can hit
- * the same backend endpoints (no ownership check for that role) but has no
- * page into this yet - a real gap, see CLAUDE.md's "Known gaps".
+ * front-desk's AppointmentDetail to its own dashboard, or (for clinic_admin,
+ * who hits the same backend endpoints with no ownership check) from a
+ * "Document encounter" link on the shared front-desk/AppointmentDetail.jsx
+ * page - this route's own RequireRole gate in App.jsx allows both roles.
  */
 export default function Encounter() {
   const { id } = useParams();
+  const { hasRole } = useAuth();
   const appointmentQuery = useAppointment(id);
   const appointment = appointmentQuery.data;
 
@@ -134,8 +137,11 @@ export default function Encounter() {
           title="Not ready to document yet"
           description={`This appointment is still '${appointment.status.replace(/_/g, ' ')}' - start the visit (check-in → room → start visit) before charting a note.`}
           action={
-            <Link to="/provider" className="text-sm font-medium text-brand hover:underline">
-              Back to Today's Schedule
+            <Link
+              to={hasRole('clinic_admin') ? `/front-desk/appointments/${id}` : '/provider'}
+              className="text-sm font-medium text-brand hover:underline"
+            >
+              {hasRole('clinic_admin') ? 'Back to appointment' : "Back to Today's Schedule"}
             </Link>
           }
         />

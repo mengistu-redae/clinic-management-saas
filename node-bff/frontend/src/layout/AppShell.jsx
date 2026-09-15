@@ -74,6 +74,9 @@ export default function AppShell() {
                   <NavLink to="/clinic-admin" end className={navLinkClass}>
                     Dashboard
                   </NavLink>
+                  <NavLink to="/front-desk/appointments" className={navLinkClass}>
+                    Appointments
+                  </NavLink>
                   <NavLink to="/clinic-admin/providers" className={navLinkClass}>
                     Providers
                   </NavLink>

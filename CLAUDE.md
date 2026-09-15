@@ -908,6 +908,64 @@ clinic_admin (only the provider-scoped one exists), are natural, small
 pieces of the *next* frontend phase (the one that builds real time-sorted
 schedule/booking views), not this one.
 
+**clinic_admin encounter-access fix** (built 2026-09-15) - closed the one
+remaining gap from "Frontend covers every module..." below: `clinic_admin`
+had full backend access to `EncounterController` (no ownership check,
+confirmed since phase 4) but no page reaching it, since
+`/provider/appointments/:id/encounter` and the `AppointmentDetail.jsx`
+front-desk uses to drive check-in/payments/cancel/reschedule were both
+gated `RequireRole role="..."` to a single role. Rather than building a
+second encounter-documentation page, **shared the existing pages** -
+confirmed first via `Grep` that `CheckInController`/`CancellationController`/
+`RescheduleController` already permit `CLINIC_ADMIN` too (they do, since
+phase 3), so nothing server-side needed to change:
+- `App.jsx`'s `RequireRole role="front_desk"` on `/front-desk/appointments`,
+  `/front-desk/appointments/:id`, `/front-desk/appointments/:id/reschedule`
+  became `roles={['front_desk', 'clinic_admin']}`; `role="provider"` on
+  `/provider/appointments/:id/encounter` became
+  `roles={['provider', 'clinic_admin']}` - same `roles` array shape
+  `/lab-orders` already used for its own provider+clinic_admin sharing.
+- `AppShell.jsx` - added an "Appointments" nav link for `clinic_admin`
+  pointing at the same `/front-desk/appointments` route (no separate
+  clinic-admin-branded route created - reusing the URL, not renaming it).
+- `front-desk/AppointmentDetail.jsx` - a "Document encounter" link/button,
+  visible only when `hasRole('clinic_admin')` **and** the appointment's
+  status is in the same `with_provider`/`checked_out` set
+  `EncounterService`/`provider/Encounter.jsx` already gate on client-side -
+  never shown to `front_desk` (zero backend access to encounter content,
+  the phase-4 pinned decision), and never shown before there's actually
+  something to chart.
+- `provider/Encounter.jsx` - the "not ready to document yet" empty state's
+  back-link was hardcoded to `/provider` (a `RequireRole role="provider"`
+  -gated dashboard `clinic_admin` can't reach) - made role-aware:
+  `clinic_admin` gets "Back to appointment" -> `/front-desk/appointments/:id`
+  (the page they came from), `provider` keeps "Back to Today's Schedule" ->
+  `/provider` unchanged.
+
+**Verified live this session**: as `demo-clinic-admin`, reached
+`/front-desk/appointments` (no redirect - the widened gate works), opened a
+real `with_provider` appointment ("Encounter Test Patient") and saw the new
+"Document encounter" link, followed it to the shared encounter page (no
+redirect to `/`), and **edited the existing note** - confirmed via Postgres
+exactly one `encounters` row for that appointment both before and after (id
+unchanged, `updated_at` bumped), same "editable indefinitely, upsert never
+duplicates" guarantee phase 4 already proved for `provider`. Confirmed the
+"Document encounter" link is correctly absent on a `booked` appointment, and
+that navigating there directly renders the existing "not ready to document
+yet" empty state with the new "Back to appointment" link, which correctly
+lands back on `/front-desk/appointments/:id` (not a loop). Logged out
+(app's own "Log out" button - one step, confirmed clean per the frontend
+-phase-A finding) and back in as `demo-front-desk`: the same `with_provider`
+appointment's detail page shows no "Document encounter" section at all, and
+navigating directly to the encounter URL redirects cleanly back to `/` -
+`front_desk` still has zero access, both by omission (no link) and by the
+route gate (direct URL doesn't work either). `front_desk` still lists/opens
+appointments on the now-shared route normally. Logged in as `demo-provider`
+and reached the same encounter page directly - unaffected, and it correctly
+showed the note `demo-clinic-admin` had just edited (chief complaint "Sore
+throat, documented by clinic_admin"), proving the shared-editing path works
+across roles, not just per-role in isolation.
+
 **Frontend phase B** (built 2026-09-13, same session) is that next phase for
 the patient side specifically: the booking flow (patient + guest, full
 lifecycle - create/view/cancel/reschedule, plus public tracking). Unlike
@@ -2205,21 +2263,18 @@ soft-deactivates with no way back through the UI.
   platform-admin clinic onboarding) - real routing/nav/branding, every
   role's dashboard, and every backend endpoint built across all seven
   backend phases now has a live-data page reaching it. No named-module
-  gap remains; what's left (below) is smaller cross-cutting items -
-  `clinic_admin` lacking a UI path into a couple of `provider`-gated
-  pages, no automated frontend test suite, and the pre-existing backend
-  known-gaps list further down (PHI audit, real payment-gateway
-  integration, notifications, per-clinic timezone, etc.) - not missing
-  screens. See "Frontend" above for phase A/B/C/D/E/F/G's own write-ups
-  and deliberate scope boundaries.
-- **`clinic_admin` has no UI path to encounter documentation** (found phase
-  E) - `EncounterController` allows that role on every endpoint (no
-  ownership check, same override pattern used everywhere else), but phase
-  E's `/provider/appointments/{id}/encounter` route is `RequireRole
-  role="provider"`-gated (UX-only, matching every other role-gated route in
-  this app) - a `clinic_admin` visiting it directly gets redirected back to
-  `/` like any other wrong-role visit, not just "no link to click." No page
-  exists for that role to reach an encounter at all yet.
+  gap remains; what's left (below) is smaller cross-cutting items - no
+  automated frontend test suite, and the pre-existing backend known-gaps
+  list further down (PHI audit, real payment-gateway integration,
+  notifications, per-clinic timezone, etc.) - not missing screens. See
+  "Frontend" above for phase A/B/C/D/E/F/G's own write-ups and deliberate
+  scope boundaries.
+- ~~`clinic_admin` has no UI path to encounter documentation~~ **closed
+  2026-09-15** - see "clinic_admin encounter-access fix" above.
+  `front-desk/AppointmentDetail.jsx` is now shared with `clinic_admin` (a
+  new "Document encounter" link on it, gated by role + status), and
+  `/provider/appointments/{id}/encounter`'s `RequireRole` widened to allow
+  both roles.
 - `demo-front-desk` (created live this session for frontend-phase-A
   verification - see "Verified this session") isn't yet in
   `infra/keycloak/realm-export.json`, so a from-scratch environment won't

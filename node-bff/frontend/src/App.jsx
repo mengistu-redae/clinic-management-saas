@@ -126,7 +126,7 @@ export default function App() {
         <Route
           path="/provider/appointments/:id/encounter"
           element={
-            <RequireRole role="provider">
+            <RequireRole roles={['provider', 'clinic_admin']}>
               <ProviderEncounter />
             </RequireRole>
           }
@@ -202,7 +202,14 @@ export default function App() {
             </RequireRole>
           }
         />
-        {/* Front-desk workflow - staff-only, no guest/public angle. */}
+        {/* Front-desk workflow - staff-only, no guest/public angle. Patient
+            search/registration and booking stay front_desk-only (matches
+            PatientController's own write role); the appointments list/
+            detail/reschedule pages are shared with clinic_admin too - every
+            action they drive (CheckInController/CancellationController/
+            RescheduleController/LabOrderPaymentController) already permits
+            CLINIC_ADMIN server-side, so this just gives clinic_admin a UI
+            path in, rather than duplicating the page tree. */}
         <Route
           path="/front-desk/patients"
           element={
@@ -222,7 +229,7 @@ export default function App() {
         <Route
           path="/front-desk/appointments"
           element={
-            <RequireRole role="front_desk">
+            <RequireRole roles={['front_desk', 'clinic_admin']}>
               <FrontDeskAppointments />
             </RequireRole>
           }
@@ -230,7 +237,7 @@ export default function App() {
         <Route
           path="/front-desk/appointments/:id"
           element={
-            <RequireRole role="front_desk">
+            <RequireRole roles={['front_desk', 'clinic_admin']}>
               <FrontDeskAppointmentDetail />
             </RequireRole>
           }
@@ -238,7 +245,7 @@ export default function App() {
         <Route
           path="/front-desk/appointments/:id/reschedule"
           element={
-            <RequireRole role="front_desk">
+            <RequireRole roles={['front_desk', 'clinic_admin']}>
               <FrontDeskReschedule />
             </RequireRole>
           }

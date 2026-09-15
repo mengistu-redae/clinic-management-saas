@@ -15,12 +15,18 @@ import {
   useCreateAppointmentPayment,
 } from '../../api/queries.js';
 import { ApiError } from '../../api/client.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
 
 const TERMINAL_STATUSES = new Set(['cancelled', 'checked_out', 'no_show']);
+// Mirrors EncounterService's own status gate (see provider/Encounter.jsx) -
+// only clinic_admin sees this link at all (front_desk has zero backend
+// access to EncounterController, by design - clinical content isn't a
+// front-desk concern), and only once there's actually something to chart.
+const DOCUMENTABLE_STATUSES = new Set(['with_provider', 'checked_out']);
 
 const inputClass =
   'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -37,6 +43,7 @@ const inputClass =
  */
 export default function AppointmentDetail() {
   const { id } = useParams();
+  const { hasRole } = useAuth();
   const appointmentQuery = useAppointment(id);
   const appointment = appointmentQuery.data;
 
@@ -156,6 +163,18 @@ export default function AppointmentDetail() {
           </div>
         </dl>
       </div>
+
+      {hasRole('clinic_admin') && DOCUMENTABLE_STATUSES.has(status) && (
+        <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-200 bg-surface p-4">
+          <p className="text-sm text-ink-muted">Chief complaint, assessment, plan, and prescriptions for this visit.</p>
+          <Link
+            to={`/provider/appointments/${id}/encounter`}
+            className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
+          >
+            Document encounter
+          </Link>
+        </div>
+      )}
 
       {!isTerminal && (
         <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
