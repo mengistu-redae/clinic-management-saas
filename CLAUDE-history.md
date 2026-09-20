@@ -811,3 +811,48 @@ to keep `CLAUDE.md` itself from re-growing past the limit.
     label flipped correctly both times (idempotent transitions, same
     convention as `CheckInService`'s own).
 
+## Verified this session - post-phase-7 backend additions (2026-09-19/20)
+
+`docker compose up --build -d` (fresh images for both `spring-boot-api` and
+`node-bff`, picking up this session's code) - all six services came up
+healthy. Docker Desktop itself wasn't running at session start and had to
+be launched first; the native `postgresql-x64-17` Windows service was still
+holding `:5432` as documented, no conflict since compose maps to `5433`.
+
+- **Initial clinic_admin provisioning, live end to end as a real
+  `demo-platform-admin` browser login** (not just the mocked integration
+  test): onboarded a genuinely new clinic ("Verify Clinic Live", alias
+  `verify-clinic-live`) with the new optional admin email/name fields
+  filled in - the amber one-time banner appeared immediately with a real
+  16-character temporary password. Confirmed via direct Keycloak
+  admin-API calls (not just trusting the UI) that every step of the chain
+  actually happened: the user exists (`admin@verify-clinic-live.example`,
+  firstName/lastName correctly split to "Verify"/"Admin",
+  `requiredActions: ["UPDATE_PASSWORD"]` from the temporary credential),
+  it holds the `clinic_admin` realm role, and it's a real member of the
+  new organization (`membershipType: "UNMANAGED"`, i.e. a direct member,
+  not inherited).
+  - **Then actually logged in as that brand-new account with the shown
+    temporary password** - Keycloak correctly intercepted with its own
+    "Update password" screen ("You need to change your password to
+    activate your account") before letting the login complete, exactly
+    the `temporary: true` behavior the implementation relies on. After
+    setting a real password, landed cleanly on a `clinic_admin` dashboard
+    branded "Verify Clinic Live" with the full clinic-admin nav
+    (Providers/Rooms/Appointment Types/Lab Orders/Settings) and correct
+    all-zero stats for a brand new tenant - proving `TenantContextFilter`
+    resolves this token's organization claim to the right clinic on the
+    very first login, not just that the Keycloak-side objects exist.
+- **NotificationWorker, live against a real booking** - booked a genuine
+  guest appointment via `POST /api/appointments/guest` (through node-bff,
+  not directly against spring-boot-api) with a real `contactEmail`
+  against Demo Clinic's seeded provider/appointment-type/slot data.
+  Within the worker's 10-second poll window, `spring-boot-api`'s own
+  container logs showed `LoggingEmailSender` firing exactly once:
+  `[STUB EMAIL] to=notify-verify@example.com type=appointment_confirmed
+  tenant=8146eddf-... payload={}`. Confirmed directly in Postgres that the
+  same `notifications` row flipped from the write-time `pending` to
+  `status = 'sent'` with `attempts = 0` and a non-null `sent_at` - the
+  full outbox lifecycle working against the real scheduler, not just the
+  pure-Mockito unit test's simulated call sequence.
+

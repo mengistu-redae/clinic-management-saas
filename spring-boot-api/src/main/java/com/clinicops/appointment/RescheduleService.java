@@ -6,6 +6,8 @@ import com.clinicops.notification.Notification;
 import com.clinicops.notification.NotificationRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
+import com.clinicops.payment.Payment;
+import com.clinicops.payment.PaymentRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
 import org.springframework.http.HttpStatus;
@@ -43,6 +45,7 @@ public class RescheduleService {
     private final PatientRepository patientRepository;
     private final NotificationRepository notificationRepository;
     private final ClinicSettingsService clinicSettingsService;
+    private final PaymentRepository paymentRepository;
 
     public RescheduleService(
             AppointmentRepository appointmentRepository,
@@ -51,7 +54,8 @@ public class RescheduleService {
             AppointmentReschedulesRepository appointmentReschedulesRepository,
             PatientRepository patientRepository,
             NotificationRepository notificationRepository,
-            ClinicSettingsService clinicSettingsService) {
+            ClinicSettingsService clinicSettingsService,
+            PaymentRepository paymentRepository) {
         this.appointmentRepository = appointmentRepository;
         this.slotRepository = slotRepository;
         this.slotLockService = slotLockService;
@@ -59,6 +63,7 @@ public class RescheduleService {
         this.patientRepository = patientRepository;
         this.notificationRepository = notificationRepository;
         this.clinicSettingsService = clinicSettingsService;
+        this.paymentRepository = paymentRepository;
     }
 
     @Transactional
@@ -66,18 +71,26 @@ public class RescheduleService {
             UUID appointmentId, UUID tenantId, UUID newSlotId, UUID newProviderId, UUID actingUserId) {
         Appointment appointment = appointmentRepository.findByIdAndTenantId(appointmentId, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + appointmentId));
-        return applyReschedule(appointment, newSlotId, newProviderId, "front_desk", actingUserId);
+        return applyReschedule(appointment, newSlotId, newProviderId, "front_desk", actingUserId, actingUserId);
     }
 
     @Transactional
     public Appointment rescheduleAsCustomer(UUID appointmentId, UUID customerUserId, UUID newSlotId, UUID newProviderId) {
         Appointment appointment = appointmentRepository.findByIdAndCustomerUserId(appointmentId, customerUserId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + appointmentId));
-        return applyReschedule(appointment, newSlotId, newProviderId, "patient_portal", null);
+        return applyReschedule(appointment, newSlotId, newProviderId, "patient_portal", null, customerUserId);
     }
 
+    /**
+     * actingUserId and payerUserId are deliberately separate params, same
+     * reasoning as CancellationService's own split: actingUserId stays null
+     * for a patient's own self-reschedule (AppointmentReschedule.createdBy's
+     * existing "staff-attribution only" signal, unchanged), while
+     * payerUserId is whoever actually triggered the fee - the patient's own
+     * id on the self-service path.
+     */
     private Appointment applyReschedule(
-            Appointment appointment, UUID newSlotId, UUID newProviderId, String channel, UUID actingUserId) {
+            Appointment appointment, UUID newSlotId, UUID newProviderId, String channel, UUID actingUserId, UUID payerUserId) {
         if ("cancelled".equals(appointment.getStatus())) {
             throw new AppointmentAlreadyCancelledException(
                     "Cannot reschedule a cancelled appointment: " + appointment.getId());
@@ -134,6 +147,16 @@ public class RescheduleService {
             audit.setFeeAmount(fee);
             audit.setCreatedBy(actingUserId);
             appointmentReschedulesRepository.save(audit);
+
+            if (fee.signum() > 0) {
+                Payment payment = new Payment();
+                payment.setTenantId(appointment.getTenantId());
+                payment.setAppointmentId(appointment.getId());
+                payment.setAmount(fee);
+                payment.setMethod(Payment.FEE_AUTO_CHARGE_METHOD);
+                payment.setRecordedBy(payerUserId);
+                paymentRepository.save(payment);
+            }
 
             String recipientEmail = appointment.getPatientId() != null
                     ? patientRepository.findById(appointment.getPatientId()).map(Patient::getEmail).orElse(null)

@@ -14,11 +14,13 @@ import java.time.Instant;
 /**
  * Outbox pattern: written in the same transaction as the triggering write
  * (e.g. AppointmentWriter) so a flaky email provider never fails a booking.
- * No NotificationWorker/real sender yet in this phase - see CLAUDE.md's
- * known gaps; `payload` stays a placeholder "{}" until an actual email
- * template is built. Stored as jsonb via Hibernate's native JSON type
- * mapping (@JdbcTypeCode(SqlTypes.JSON)) rather than a plain VARCHAR, so the
- * column stays real jsonb for whenever payload content is added.
+ * NotificationWorker drains this table (fixed-delay poll, retry with a max
+ * attempt count) via whatever NotificationSender bean is wired - only
+ * LoggingEmailSender (a stub) exists so far, see its own javadoc; `payload`
+ * stays a placeholder "{}" until an actual email template is built. Stored
+ * as jsonb via Hibernate's native JSON type mapping
+ * (@JdbcTypeCode(SqlTypes.JSON)) rather than a plain VARCHAR, so the column
+ * stays real jsonb for whenever payload content is added.
  */
 @Entity
 @Table(name = "notifications")

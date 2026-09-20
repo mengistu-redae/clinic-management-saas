@@ -20,8 +20,9 @@ class ClinicProvisioningServiceTest {
 
     private final ClinicRepository clinicRepository = mock(ClinicRepository.class);
     private final KeycloakOrganizationClient keycloakOrganizationClient = mock(KeycloakOrganizationClient.class);
+    private final KeycloakUserProvisioningClient keycloakUserProvisioningClient = mock(KeycloakUserProvisioningClient.class);
     private final ClinicProvisioningService service =
-            new ClinicProvisioningService(clinicRepository, keycloakOrganizationClient);
+            new ClinicProvisioningService(clinicRepository, keycloakOrganizationClient, keycloakUserProvisioningClient);
 
     @Test
     void aFreshAliasCreatesTheKeycloakOrgThenSavesTheLocalRow() {
@@ -64,5 +65,40 @@ class ClinicProvisioningServiceTest {
                 .isInstanceOf(KeycloakAdminException.class);
 
         verify(clinicRepository, never()).save(any());
+    }
+
+    @Test
+    void noAdminEmailNeverTouchesTheUserProvisioningClient() {
+        when(clinicRepository.findByKeycloakOrgId("no-admin-clinic")).thenReturn(Optional.empty());
+        when(keycloakOrganizationClient.createOrganization("No Admin Clinic", "no-admin-clinic", "no-admin.example"))
+                .thenReturn("kc-org-id-456");
+        when(clinicRepository.save(any(Clinic.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ClinicProvisioningResult result =
+                service.provisionClinic("No Admin Clinic", "no-admin-clinic", "no-admin.example", null, null);
+
+        assertThat(result.initialAdminTemporaryPassword()).isNull();
+        verify(keycloakUserProvisioningClient, never()).createUser(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void anAdminEmailProvisionsARealClinicAdminLoginAndReturnsATemporaryPassword() {
+        when(clinicRepository.findByKeycloakOrgId("with-admin-clinic")).thenReturn(Optional.empty());
+        when(keycloakOrganizationClient.createOrganization("With Admin Clinic", "with-admin-clinic", "with-admin.example"))
+                .thenReturn("kc-org-id-789");
+        when(clinicRepository.save(any(Clinic.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(keycloakUserProvisioningClient.createUser("admin@with-admin.example", "Jane", "Doe"))
+                .thenReturn("kc-user-id-1");
+
+        ClinicProvisioningResult result = service.provisionClinic(
+                "With Admin Clinic", "with-admin-clinic", "with-admin.example", "admin@with-admin.example", "Jane Doe");
+
+        assertThat(result.clinic().getKeycloakOrgId()).isEqualTo("with-admin-clinic");
+        assertThat(result.initialAdminTemporaryPassword()).isNotBlank();
+
+        verify(keycloakUserProvisioningClient).createUser("admin@with-admin.example", "Jane", "Doe");
+        verify(keycloakUserProvisioningClient).assignRealmRole("kc-user-id-1", "clinic_admin");
+        verify(keycloakOrganizationClient).addMember("kc-org-id-789", "kc-user-id-1");
+        verify(keycloakUserProvisioningClient).setTemporaryPassword("kc-user-id-1", result.initialAdminTemporaryPassword());
     }
 }

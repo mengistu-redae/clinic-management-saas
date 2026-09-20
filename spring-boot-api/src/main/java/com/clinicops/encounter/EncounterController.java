@@ -1,6 +1,8 @@
 package com.clinicops.encounter;
 
+import com.clinicops.appointment.AppointmentRepository;
 import com.clinicops.appointment.InvalidAppointmentStatusException;
+import com.clinicops.phiaudit.PhiAccessAuditService;
 import com.clinicops.provider.CurrentProviderService;
 import com.clinicops.tenant.TenantContext;
 import jakarta.validation.Valid;
@@ -34,10 +36,18 @@ public class EncounterController {
 
     private final EncounterService encounterService;
     private final CurrentProviderService currentProviderService;
+    private final AppointmentRepository appointmentRepository;
+    private final PhiAccessAuditService phiAccessAuditService;
 
-    public EncounterController(EncounterService encounterService, CurrentProviderService currentProviderService) {
+    public EncounterController(
+            EncounterService encounterService,
+            CurrentProviderService currentProviderService,
+            AppointmentRepository appointmentRepository,
+            PhiAccessAuditService phiAccessAuditService) {
         this.encounterService = encounterService;
         this.currentProviderService = currentProviderService;
+        this.appointmentRepository = appointmentRepository;
+        this.phiAccessAuditService = phiAccessAuditService;
     }
 
     @PostMapping("/api/appointments/{id}/encounter")
@@ -46,14 +56,19 @@ public class EncounterController {
             @PathVariable UUID id, @RequestBody UpsertEncounterRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
         UUID actingProviderId = actingProviderIdOrNull(jwt, tenantId);
-        return encounterService.upsert(id, tenantId, actingProviderId,
+        Encounter encounter = encounterService.upsert(id, tenantId, actingProviderId,
                 request.chiefComplaint(), request.assessment(), request.plan());
+        phiAccessAuditService.logWrite(tenantId, jwt, "encounter", encounter.getId(), patientIdForAppointment(id, tenantId), "/api/appointments/{id}/encounter");
+        return encounter;
     }
 
     @GetMapping("/api/appointments/{id}/encounter")
     @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
-    public EncounterWithPrescriptions getEncounter(@PathVariable UUID id) {
-        return encounterService.get(id, TenantContext.require());
+    public EncounterWithPrescriptions getEncounter(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        UUID tenantId = TenantContext.require();
+        EncounterWithPrescriptions result = encounterService.get(id, tenantId);
+        phiAccessAuditService.logRead(tenantId, jwt, "encounter", result.encounter().getId(), patientIdForAppointment(id, tenantId), "/api/appointments/{id}/encounter");
+        return result;
     }
 
     @PostMapping("/api/appointments/{id}/encounter/prescriptions")
@@ -62,7 +77,16 @@ public class EncounterController {
             @PathVariable UUID id, @Valid @RequestBody List<PrescriptionInput> items, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
         UUID actingProviderId = actingProviderIdOrNull(jwt, tenantId);
-        return encounterService.replacePrescriptions(id, tenantId, actingProviderId, items);
+        List<Prescription> prescriptions = encounterService.replacePrescriptions(id, tenantId, actingProviderId, items);
+        phiAccessAuditService.logWrite(tenantId, jwt, "prescription", id, patientIdForAppointment(id, tenantId), "/api/appointments/{id}/encounter/prescriptions");
+        return prescriptions;
+    }
+
+    /** Encounter has no patientId of its own (only appointmentId) - resolved via the appointment it belongs to. Null for a guest-channel appointment (no Patient row at all). */
+    private UUID patientIdForAppointment(UUID appointmentId, UUID tenantId) {
+        return appointmentRepository.findByIdAndTenantId(appointmentId, tenantId)
+                .map(com.clinicops.appointment.Appointment::getPatientId)
+                .orElse(null);
     }
 
     /** null = caller is clinic_admin, skip the ownership check; otherwise the caller's own Provider.id. */

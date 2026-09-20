@@ -16,15 +16,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * KeycloakOrganizationClient is mocked out - a real call would hit
- * clinicops.keycloak-admin.base-url (no live Keycloak in this test
- * context), same reasoning NoNetworkJwtDecoderConfig already applies to
- * JWT decoding.
+ * KeycloakOrganizationClient/KeycloakUserProvisioningClient are mocked out -
+ * a real call would hit clinicops.keycloak-admin.base-url (no live Keycloak
+ * in this test context), same reasoning NoNetworkJwtDecoderConfig already
+ * applies to JWT decoding.
  */
 class PlatformControllerIntegrationTest extends AbstractIntegrationTest {
 
     @MockBean
     private KeycloakOrganizationClient keycloakOrganizationClient;
+
+    @MockBean
+    private KeycloakUserProvisioningClient keycloakUserProvisioningClient;
 
     @Test
     void createListGetAndUpdateAClinic() throws Exception {
@@ -34,12 +37,13 @@ class PlatformControllerIntegrationTest extends AbstractIntegrationTest {
         String orgAlias = "platform-crud-" + UUID.randomUUID();
         String body = mockMvc.perform(post("/api/platform/clinics").with(asPlatformAdmin("admin"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateClinicRequest("New Test Clinic", orgAlias, "new-test-clinic.example"))))
+                        .content(objectMapper.writeValueAsString(new CreateClinicRequest("New Test Clinic", orgAlias, "new-test-clinic.example", null, null))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.keycloakOrgId").value(orgAlias))
-                .andExpect(jsonPath("$.status").value("active"))
+                .andExpect(jsonPath("$.clinic.keycloakOrgId").value(orgAlias))
+                .andExpect(jsonPath("$.clinic.status").value("active"))
+                .andExpect(jsonPath("$.initialAdminTemporaryPassword").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
-        UUID id = UUID.fromString(objectMapper.readTree(body).get("id").asText());
+        UUID id = UUID.fromString(objectMapper.readTree(body).get("clinic").get("id").asText());
 
         mockMvc.perform(get("/api/platform/clinics").with(asPlatformAdmin("admin")))
                 .andExpect(status().isOk());
@@ -56,13 +60,35 @@ class PlatformControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void creatingWithAnAdminEmailProvisionsARealClinicAdminLogin() throws Exception {
+        when(keycloakOrganizationClient.createOrganization(anyString(), anyString(), anyString()))
+                .thenReturn("fake-kc-org-id");
+        when(keycloakUserProvisioningClient.createUser(anyString(), anyString(), anyString()))
+                .thenReturn("fake-kc-user-id");
+
+        String orgAlias = "platform-admin-provision-" + UUID.randomUUID();
+        mockMvc.perform(post("/api/platform/clinics").with(asPlatformAdmin("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new CreateClinicRequest("Provisioned Clinic", orgAlias, "provisioned.example", "admin@provisioned.example", "New Admin"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clinic.keycloakOrgId").value(orgAlias))
+                .andExpect(jsonPath("$.initialAdminTemporaryPassword").isNotEmpty());
+
+        org.mockito.Mockito.verify(keycloakUserProvisioningClient).createUser("admin@provisioned.example", "New", "Admin");
+        org.mockito.Mockito.verify(keycloakUserProvisioningClient).assignRealmRole("fake-kc-user-id", "clinic_admin");
+        org.mockito.Mockito.verify(keycloakOrganizationClient).addMember("fake-kc-org-id", "fake-kc-user-id");
+        org.mockito.Mockito.verify(keycloakUserProvisioningClient).setTemporaryPassword(org.mockito.ArgumentMatchers.eq("fake-kc-user-id"), anyString());
+    }
+
+    @Test
     void aDuplicateOrgAliasIsRejectedAndNeverCallsKeycloak() throws Exception {
         String orgAlias = "platform-dup-" + UUID.randomUUID();
         createClinic(orgAlias, "Existing Clinic");
 
         mockMvc.perform(post("/api/platform/clinics").with(asPlatformAdmin("admin"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateClinicRequest("Dupe Clinic", orgAlias, "dupe.example"))))
+                        .content(objectMapper.writeValueAsString(new CreateClinicRequest("Dupe Clinic", orgAlias, "dupe.example", null, null))))
                 .andExpect(status().isConflict());
 
         org.mockito.Mockito.verifyNoInteractions(keycloakOrganizationClient);

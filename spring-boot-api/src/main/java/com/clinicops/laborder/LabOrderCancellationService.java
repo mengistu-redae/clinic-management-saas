@@ -1,6 +1,8 @@
 package com.clinicops.laborder;
 
 import com.clinicops.feepolicy.FeeCalculator;
+import com.clinicops.payment.Payment;
+import com.clinicops.payment.PaymentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,16 +27,19 @@ public class LabOrderCancellationService {
     private final LabOrderTestRepository labOrderTestRepository;
     private final FeeCalculator feeCalculator;
     private final LabOrderCancellationRepository labOrderCancellationRepository;
+    private final PaymentRepository paymentRepository;
 
     public LabOrderCancellationService(
             LabOrderRepository labOrderRepository,
             LabOrderTestRepository labOrderTestRepository,
             FeeCalculator feeCalculator,
-            LabOrderCancellationRepository labOrderCancellationRepository) {
+            LabOrderCancellationRepository labOrderCancellationRepository,
+            PaymentRepository paymentRepository) {
         this.labOrderRepository = labOrderRepository;
         this.labOrderTestRepository = labOrderTestRepository;
         this.feeCalculator = feeCalculator;
         this.labOrderCancellationRepository = labOrderCancellationRepository;
+        this.paymentRepository = paymentRepository;
     }
 
     @Transactional
@@ -65,6 +70,16 @@ public class LabOrderCancellationService {
         cancellation.setReason(reason);
         cancellation.setFeeAmount(feeAmount);
         labOrderCancellationRepository.save(cancellation);
+
+        if (feeAmount.signum() > 0) {
+            Payment payment = new Payment();
+            payment.setTenantId(tenantId);
+            payment.setLabOrderId(order.getId());
+            payment.setAmount(feeAmount);
+            payment.setMethod(Payment.FEE_AUTO_CHARGE_METHOD);
+            payment.setRecordedBy(cancelledByUserId);
+            paymentRepository.save(payment);
+        }
 
         List<LabOrderTest> tests = labOrderTestRepository.findAllByLabOrderId(order.getId());
         return new LabOrderWithTests(order, tests);

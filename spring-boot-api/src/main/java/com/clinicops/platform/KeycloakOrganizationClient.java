@@ -73,4 +73,32 @@ public class KeycloakOrganizationClient {
         String path = location.getPath();
         return path.substring(path.lastIndexOf('/') + 1);
     }
+
+    /**
+     * Mirrors create-demo-clinic.sh's own manual membership-add call. Takes
+     * the Keycloak-internal org id (createOrganization's return value), not
+     * the alias - the members endpoint is keyed by id, unlike the
+     * organization claim a token carries.
+     *
+     * The body must be a bare JSON string ("<userId>"), not a JSON object -
+     * built by hand rather than passed as a plain Java String, since
+     * RestClient's string message converter would otherwise write it
+     * unquoted (invalid JSON) despite the declared content type.
+     */
+    public void addMember(String keycloakOrgId, String userId) {
+        String token = adminTokenProvider.fetchToken();
+        String jsonBody = "\"" + userId + "\"";
+        try {
+            restClient.post()
+                    .uri("/admin/realms/{realm}/organizations/{orgId}/members", REALM, keycloakOrgId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(jsonBody)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException(
+                    "Failed to add user " + userId + " as a member of organization " + keycloakOrgId, e);
+        }
+    }
 }

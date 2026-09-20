@@ -248,6 +248,11 @@ class LabOrderIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.order.status").value("cancelled"));
 
+        // No fee policy configured -> zero fee -> no auto-charged Payment.
+        mockMvc.perform(get("/api/lab-orders/" + id + "/payments").with(asProvider("prov", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
         Fixture f2 = seedClinicProviderPatient("lab-cancel-fee-" + UUID.randomUUID(), "Cancel Fee Clinic");
         String orgAlias2 = f2.clinic().getKeycloakOrgId();
         createFeePolicy(f2.clinic().getId(), null, 0, 100);
@@ -256,6 +261,13 @@ class LabOrderIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/lab-orders/" + id2 + "/cancel").with(asProvider("prov", orgAlias2)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.order.status").value("cancelled"));
+
+        // 100% of the $20.00 (CBC-only) order's totalCost - auto-charged as a real Payment.
+        mockMvc.perform(get("/api/lab-orders/" + id2 + "/payments").with(asProvider("prov", orgAlias2)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].method").value("fee_auto_charged"))
+                .andExpect(jsonPath("$[0].amount").value(20.00));
     }
 
     @Test

@@ -1,10 +1,13 @@
 package com.clinicops.laborder;
 
 import com.clinicops.labrate.NoLabRateConfiguredException;
+import com.clinicops.phiaudit.PhiAccessAuditService;
 import com.clinicops.tenant.TenantContext;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,33 +29,47 @@ import java.util.UUID;
 public class LabOrderController {
 
     private final LabOrderService labOrderService;
+    private final PhiAccessAuditService phiAccessAuditService;
 
-    public LabOrderController(LabOrderService labOrderService) {
+    public LabOrderController(LabOrderService labOrderService, PhiAccessAuditService phiAccessAuditService) {
         this.labOrderService = labOrderService;
+        this.phiAccessAuditService = phiAccessAuditService;
     }
 
     @PostMapping("/api/lab-orders")
     @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
-    public LabOrderWithTests createLabOrder(@Valid @RequestBody CreateLabOrderRequest request) {
-        return labOrderService.create(TenantContext.require(), request);
+    public LabOrderWithTests createLabOrder(@Valid @RequestBody CreateLabOrderRequest request, @AuthenticationPrincipal Jwt jwt) {
+        UUID tenantId = TenantContext.require();
+        LabOrderWithTests result = labOrderService.create(tenantId, request);
+        phiAccessAuditService.logWrite(tenantId, jwt, "lab_order", result.order().getId(), result.order().getPatientId(), "/api/lab-orders");
+        return result;
     }
 
+    /** One log row per list call, not one per order - same "a list touches many patients at once" reasoning as PatientController.patients. */
     @GetMapping("/api/lab-orders")
     @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
-    public List<LabOrder> labOrders() {
-        return labOrderService.listForTenant(TenantContext.require());
+    public List<LabOrder> labOrders(@AuthenticationPrincipal Jwt jwt) {
+        UUID tenantId = TenantContext.require();
+        phiAccessAuditService.logRead(tenantId, jwt, "lab_order_list", null, null, "/api/lab-orders");
+        return labOrderService.listForTenant(tenantId);
     }
 
     @GetMapping("/api/lab-orders/{id}")
     @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
-    public LabOrderWithTests labOrder(@PathVariable UUID id) {
-        return labOrderService.get(id, TenantContext.require());
+    public LabOrderWithTests labOrder(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        UUID tenantId = TenantContext.require();
+        LabOrderWithTests result = labOrderService.get(id, tenantId);
+        phiAccessAuditService.logRead(tenantId, jwt, "lab_order", id, result.order().getPatientId(), "/api/lab-orders/{id}");
+        return result;
     }
 
     @PostMapping("/api/lab-orders/{id}/update")
     @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
-    public LabOrderWithTests updateLabOrder(@PathVariable UUID id, @RequestBody UpdateLabOrderRequest request) {
-        return labOrderService.update(id, TenantContext.require(), request);
+    public LabOrderWithTests updateLabOrder(@PathVariable UUID id, @RequestBody UpdateLabOrderRequest request, @AuthenticationPrincipal Jwt jwt) {
+        UUID tenantId = TenantContext.require();
+        LabOrderWithTests result = labOrderService.update(id, tenantId, request);
+        phiAccessAuditService.logWrite(tenantId, jwt, "lab_order", id, result.order().getPatientId(), "/api/lab-orders/{id}/update");
+        return result;
     }
 
     /** Two-factor public tracking - ref + the patient's own phone must match, otherwise 404 identically to an unknown ref. Status/timestamps only - see LabOrderTrackingView. */

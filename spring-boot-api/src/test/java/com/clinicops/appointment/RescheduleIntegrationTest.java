@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -55,6 +56,44 @@ class RescheduleIntegrationTest extends AbstractIntegrationTest {
         assertThat(appointmentReschedulesRepository.findAllByAppointmentId(fixture.appointment().getId()))
                 .hasSize(1)
                 .allSatisfy(audit -> assertThat(audit.getPreviousSlotId()).isEqualTo(oldSlotId));
+
+        // The platform default reschedule fee is 0.00 - no fee, no auto-charged payment.
+        mockMvc.perform(get("/api/appointments/" + fixture.appointment().getId() + "/payments")
+                        .with(asFrontDesk("fd-1", fixture.clinic().getKeycloakOrgId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    /** Proves the auto-charge actually fires for a real, non-default reschedule fee - see CLAUDE.md's payment-auto-charge write-up. */
+    @Test
+    void aNonZeroRescheduleFeeIsAutoChargedAsAPayment() throws Exception {
+        Clinic clinic = createClinic("resched-autocharge-" + UUID.randomUUID(), "Autocharge Clinic");
+        Provider provider = createProvider(clinic.getId(), "Dr. Autocharge");
+        var type = createAppointmentType(clinic.getId(), "Visit", 30, "60.00");
+
+        ClinicSettings settings = new ClinicSettings();
+        settings.setTenantId(clinic.getId());
+        settings.setRescheduleFeeFrontDesk(new java.math.BigDecimal("25.00"));
+        clinicSettingsRepository.save(settings);
+
+        Instant start = Instant.now().plusSeconds(48 * 3600);
+        var slot = createSlot(clinic.getId(), provider.getId(), type.getId(), start, start.plusSeconds(1800));
+        var appointment = createBookedAppointment(clinic.getId(), slot.getId(), null, provider.getId(), type.getId(), null);
+        var newSlot = createSlot(clinic.getId(), provider.getId(), type.getId(), start.plusSeconds(3600), start.plusSeconds(5400));
+
+        mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/reschedule")
+                        .with(asFrontDesk("fd-1", clinic.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RescheduleAppointmentRequest(
+                                newSlot.getId(), provider.getId()))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/appointments/" + appointment.getId() + "/payments")
+                        .with(asFrontDesk("fd-1", clinic.getKeycloakOrgId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].method").value("fee_auto_charged"))
+                .andExpect(jsonPath("$[0].amount").value(25.00));
     }
 
     @Test
@@ -159,5 +198,47 @@ class RescheduleIntegrationTest extends AbstractIntegrationTest {
                                 newSlot.getId(), provider.getId()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slotId").value(newSlot.getId().toString()));
+    }
+
+    /** A self-reschedule fee is still charged to a real account - the patient's own. */
+    @Test
+    void aSelfRescheduleFeeIsAutoChargedAndAttributedToThePatientsOwnAccount() throws Exception {
+        Clinic clinic = createClinic("resched-self-fee-" + UUID.randomUUID(), "Self Fee Resched Clinic");
+        Provider provider = createProvider(clinic.getId(), "Dr. SelfFeeR");
+        var type = createAppointmentType(clinic.getId(), "Visit", 30, "60.00");
+
+        ClinicSettings settings = new ClinicSettings();
+        settings.setTenantId(clinic.getId());
+        settings.setRescheduleFeePatientPortal(new java.math.BigDecimal("15.00"));
+        clinicSettingsRepository.save(settings);
+
+        Instant start = Instant.now().plusSeconds(48 * 3600);
+        var slot = createSlot(clinic.getId(), provider.getId(), type.getId(), start, start.plusSeconds(1800));
+        var newSlot = createSlot(clinic.getId(), provider.getId(), type.getId(),
+                start.plusSeconds(3600), start.plusSeconds(5400));
+
+        String bookingBody = mockMvc.perform(post("/api/appointments")
+                        .with(asPatient("resched-self-fee-patient"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateAppointmentRequest(
+                                slot.getId(), provider.getId(), type.getId(), null, "idem-resched-self-fee"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID appointmentId = UUID.fromString(objectMapper.readTree(bookingBody).get("id").asText());
+
+        mockMvc.perform(post("/api/my-appointments/" + appointmentId + "/reschedule")
+                        .with(asPatient("resched-self-fee-patient"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RescheduleAppointmentRequest(
+                                newSlot.getId(), provider.getId()))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/appointments/" + appointmentId + "/payments")
+                        .with(asFrontDesk("fd-1", clinic.getKeycloakOrgId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].method").value("fee_auto_charged"))
+                .andExpect(jsonPath("$[0].amount").value(15.00))
+                .andExpect(jsonPath("$[0].recordedBy").isNotEmpty());
     }
 }

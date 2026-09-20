@@ -1,6 +1,7 @@
 package com.clinicops.laborder;
 
 import com.clinicops.labrate.NoLabRateConfiguredException;
+import com.clinicops.phiaudit.PhiAccessAuditService;
 import com.clinicops.tenant.TenantContext;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -25,10 +26,13 @@ public class PatientLabRequestController {
 
     private final LabOrderService labOrderService;
     private final LabOrderRepository labOrderRepository;
+    private final PhiAccessAuditService phiAccessAuditService;
 
-    public PatientLabRequestController(LabOrderService labOrderService, LabOrderRepository labOrderRepository) {
+    public PatientLabRequestController(
+            LabOrderService labOrderService, LabOrderRepository labOrderRepository, PhiAccessAuditService phiAccessAuditService) {
         this.labOrderService = labOrderService;
         this.labOrderRepository = labOrderRepository;
+        this.phiAccessAuditService = phiAccessAuditService;
     }
 
     @PostMapping("/api/my-lab-orders")
@@ -52,8 +56,11 @@ public class PatientLabRequestController {
 
     @PostMapping("/api/lab-orders/{id}/confirm-and-order")
     @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
-    public LabOrderWithTests confirmAndOrder(@PathVariable UUID id, @Valid @RequestBody ConfirmAndOrderRequest request) {
-        return labOrderService.confirmAndOrder(id, TenantContext.require(), request);
+    public LabOrderWithTests confirmAndOrder(@PathVariable UUID id, @Valid @RequestBody ConfirmAndOrderRequest request, @AuthenticationPrincipal Jwt jwt) {
+        UUID tenantId = TenantContext.require();
+        LabOrderWithTests result = labOrderService.confirmAndOrder(id, tenantId, request);
+        phiAccessAuditService.logWrite(tenantId, jwt, "lab_order", id, result.order().getPatientId(), "/api/lab-orders/{id}/confirm-and-order");
+        return result;
     }
 
     @ExceptionHandler(RequestNotIssuableException.class)

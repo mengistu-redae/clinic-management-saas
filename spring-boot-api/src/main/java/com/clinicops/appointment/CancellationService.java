@@ -7,6 +7,8 @@ import com.clinicops.notification.Notification;
 import com.clinicops.notification.NotificationRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
+import com.clinicops.payment.Payment;
+import com.clinicops.payment.PaymentRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ public class CancellationService {
     private final FeeCalculator feeCalculator;
     private final AppointmentCancellationRepository appointmentCancellationRepository;
     private final NotificationRepository notificationRepository;
+    private final PaymentRepository paymentRepository;
 
     public CancellationService(
             AppointmentRepository appointmentRepository,
@@ -45,7 +48,8 @@ public class CancellationService {
             PatientRepository patientRepository,
             FeeCalculator feeCalculator,
             AppointmentCancellationRepository appointmentCancellationRepository,
-            NotificationRepository notificationRepository) {
+            NotificationRepository notificationRepository,
+            PaymentRepository paymentRepository) {
         this.appointmentRepository = appointmentRepository;
         this.slotRepository = slotRepository;
         this.appointmentTypeRepository = appointmentTypeRepository;
@@ -53,23 +57,33 @@ public class CancellationService {
         this.feeCalculator = feeCalculator;
         this.appointmentCancellationRepository = appointmentCancellationRepository;
         this.notificationRepository = notificationRepository;
+        this.paymentRepository = paymentRepository;
     }
 
     @Transactional
     public Appointment cancel(UUID appointmentId, UUID tenantId, UUID cancelledByUserId, String reason) {
         Appointment appointment = appointmentRepository.findByIdAndTenantId(appointmentId, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + appointmentId));
-        return applyCancellation(appointment, cancelledByUserId, reason);
+        return applyCancellation(appointment, cancelledByUserId, cancelledByUserId, reason);
     }
 
     @Transactional
     public Appointment cancelAsCustomer(UUID appointmentId, UUID customerUserId, String reason) {
         Appointment appointment = appointmentRepository.findByIdAndCustomerUserId(appointmentId, customerUserId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + appointmentId));
-        return applyCancellation(appointment, null, reason);
+        return applyCancellation(appointment, null, customerUserId, reason);
     }
 
-    private Appointment applyCancellation(Appointment appointment, UUID cancelledByUserId, String reason) {
+    /**
+     * cancelledByUserId and payerUserId are deliberately separate params,
+     * not one reused for both: cancelledByUserId is staff-attribution only
+     * (stays null for a patient's own self-cancel, an existing signal this
+     * doesn't change) while payerUserId is whoever actually triggered the
+     * fee - the same staff id for the staff path, but the patient's own id
+     * for self-cancel, since a real person did initiate the charge there
+     * too.
+     */
+    private Appointment applyCancellation(Appointment appointment, UUID cancelledByUserId, UUID payerUserId, String reason) {
         if ("cancelled".equals(appointment.getStatus())) {
             throw new AppointmentAlreadyCancelledException(
                     "Appointment already cancelled: " + appointment.getId());
@@ -99,6 +113,16 @@ public class CancellationService {
         cancellation.setReason(reason);
         cancellation.setFeeAmount(feeAmount);
         appointmentCancellationRepository.save(cancellation);
+
+        if (feeAmount.signum() > 0) {
+            Payment payment = new Payment();
+            payment.setTenantId(appointment.getTenantId());
+            payment.setAppointmentId(appointment.getId());
+            payment.setAmount(feeAmount);
+            payment.setMethod(Payment.FEE_AUTO_CHARGE_METHOD);
+            payment.setRecordedBy(payerUserId);
+            paymentRepository.save(payment);
+        }
 
         // Outbox write - skipped when there's no recipient on file (a
         // front-desk cancel for a walk-in with no email captured, or a

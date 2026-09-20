@@ -15,7 +15,7 @@ import { formatDateTime } from '../../lib/format.js';
 const inputClass =
   'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
-const emptyForm = { name: '', orgAlias: '', domain: '' };
+const emptyForm = { name: '', orgAlias: '', domain: '', adminEmail: '', adminFullName: '' };
 
 /**
  * platform_admin clinic onboarding - GET/POST/POST .../update
@@ -29,6 +29,14 @@ const emptyForm = { name: '', orgAlias: '', domain: '' };
  * TenantContextFilter matches a staff token's organization claim against,
  * so changing it would silently break tenant resolution for every
  * existing staff login at that clinic.
+ *
+ * The admin email/full name fields are optional - closes the "no initial
+ * clinic_admin login" gap (see CLAUDE.md's known gaps): when given, the
+ * create response carries a one-time temporary password
+ * (initialAdminTemporaryPassword) that's shown once right here and never
+ * retrievable again - there's no SMTP configured for this realm in local
+ * dev, so the platform_admin has to hand it to the new clinic's admin out
+ * of band.
  */
 export default function PlatformAdminClinics() {
   const { data: clinics, isLoading, isError, error, refetch } = usePlatformClinics(true);
@@ -36,20 +44,27 @@ export default function PlatformAdminClinics() {
 
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState(null);
+  const [provisionedAdmin, setProvisionedAdmin] = useState(null);
 
   async function handleCreate(event) {
     event.preventDefault();
     setFormError(null);
+    setProvisionedAdmin(null);
     if (!form.name.trim() || !form.orgAlias.trim() || !form.domain.trim()) {
       setFormError('Name, org alias, and domain are all required.');
       return;
     }
     try {
-      await createClinic.mutateAsync({
+      const result = await createClinic.mutateAsync({
         name: form.name.trim(),
         orgAlias: form.orgAlias.trim(),
         domain: form.domain.trim(),
+        adminEmail: form.adminEmail.trim() || null,
+        adminFullName: form.adminFullName.trim() || null,
       });
+      if (result?.initialAdminTemporaryPassword) {
+        setProvisionedAdmin({ email: form.adminEmail.trim(), temporaryPassword: result.initialAdminTemporaryPassword });
+      }
       setForm(emptyForm);
     } catch (err) {
       setFormError(err.message || 'Could not onboard this clinic - the org alias may already be taken.');
@@ -61,7 +76,8 @@ export default function PlatformAdminClinics() {
       <h1 className="mb-1 text-2xl font-bold text-ink">Clinics</h1>
       <p className="mb-6 text-sm text-ink-muted">
         Onboarding a new clinic creates a real Keycloak Organization for its staff, then this platform's own record
-        of it. No initial clinic_admin login is created here - assign one in Keycloak afterward.
+        of it. Fill in the admin email/name below to also create an initial clinic_admin login for it - leave both
+        blank to onboard the clinic with nobody able to log in yet, same as before.
       </p>
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
@@ -74,11 +90,29 @@ export default function PlatformAdminClinics() {
         <Field label="Domain">
           <input value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="sunriseclinic.example" className={`${inputClass} w-56`} />
         </Field>
+        <Field label="Initial admin email (optional)">
+          <input type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} placeholder="admin@sunriseclinic.example" className={`${inputClass} w-56`} />
+        </Field>
+        <Field label="Initial admin name (optional)">
+          <input value={form.adminFullName} onChange={(e) => setForm({ ...form, adminFullName: e.target.value })} placeholder="Jane Doe" className={`${inputClass} w-44`} />
+        </Field>
         <button type="submit" disabled={createClinic.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
           {createClinic.isPending ? 'Provisioning…' : 'Onboard clinic'}
         </button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
+      {provisionedAdmin && (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="mb-1 font-semibold">Initial clinic_admin login created for {provisionedAdmin.email}</p>
+          <p className="mb-2">
+            Temporary password (shown once, not recoverable afterward - hand it to them out of band):{' '}
+            <span className="font-mono font-semibold">{provisionedAdmin.temporaryPassword}</span>
+          </p>
+          <button type="button" onClick={() => setProvisionedAdmin(null)} className="text-amber-900 underline">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {isLoading && <Skeleton className="h-32 w-full" />}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}

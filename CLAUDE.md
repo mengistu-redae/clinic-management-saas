@@ -114,13 +114,15 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   `permitAll`) - both endpoints have no tenant filter in the sense that
   they're reachable pre-auth, but the second is scoped to one clinic by path,
   not a cross-tenant query.
-- **`TenantIsolationIntegrationTest`** (planned, grows with each phase): for
-  every staff-scoped resource, clinic A seeds it and clinic B's staff is
-  refused (404/403) on every read/write/action path, plus the deactivation
-  lockout. `ClinicControllerIntegrationTest` (phase 1) and
-  `AppointmentControllerIntegrationTest` (phase 2) seed this idea per
-  resource; a consolidated `TenantIsolationIntegrationTest` pulling every
-  path together is still just a plan, not built.
+- **`TenantIsolationIntegrationTest`** (built 2026-09-20, see "Post-phase-7
+  backend additions") - for every staff-scoped resource, clinic A seeds it
+  and clinic B's staff is refused (404/403). `ClinicControllerIntegrationTest`
+  (phase 1) and `AppointmentControllerIntegrationTest` (phase 2) seeded this
+  idea per resource, and every later per-resource controller test kept
+  doing the same in more depth (validation edges, role combinations) - the
+  consolidated file doesn't replace any of those, it's the one-file
+  "did we forget tenant scoping on something new" regression guard that was
+  still just a plan through phase 7.
 
 ## Domain decisions pinned so far
 
@@ -128,8 +130,10 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   code was written). Each clinic's patients are entirely its own - a person
   seen at two different clinics gets a separate `patients` row at each, with
   no cross-clinic linking/dedup. `patients.tenant_id` is `NOT NULL`.
-- **PHI-access audit: deferred** (decided 2026-09-12). No dedicated audit log
-  of who viewed/changed patient clinical data in v1 - see "Known gaps".
+- **PHI-access audit: deferred** (decided 2026-09-12; **superseded 2026-09-20**,
+  see "Post-phase-7 backend additions") - `com.clinicops.phiaudit` now logs
+  staff access to patient/encounter/lab-order data, reviewable by
+  `clinic_admin` at `GET /api/clinic/phi-access-log`.
 - **Clinic settings' fee fields vs. `fee_policies`** (design read, flagged at
   plan review, not explicitly reconfirmed): the kickoff spec bundles
   "no-show / reschedule fees" into the settings-override list, but
@@ -267,13 +271,14 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   dedicated action endpoints). Idempotent, matching `CheckInService`'s
   established re-call convention.
 - **No initial `clinic_admin` user provisioning in phase 6** (decided
-  2026-09-13) - `POST /api/platform/clinics` creates the Keycloak
-  Organization + local `clinics` row only, matching both the kickoff
-  spec's silence on this and the reference project's identical scope
-  (`OperatorProvisioningService` never creates a user either). A real gap -
-  a freshly onboarded clinic has nobody who can log in until someone
-  creates/assigns a `clinic_admin` user by hand - deliberately left there,
-  not solved differently here.
+  2026-09-13; **superseded 2026-09-19**, see "Post-phase-7 backend
+  additions" - `POST /api/platform/clinics` now optionally creates one too)
+  - `POST /api/platform/clinics` creates the Keycloak Organization + local
+  `clinics` row only, matching both the kickoff spec's silence on this and
+  the reference project's identical scope (`OperatorProvisioningService`
+  never creates a user either). A real gap - a freshly onboarded clinic
+  has nobody who can log in until someone creates/assigns a `clinic_admin`
+  user by hand - deliberately left there, not solved differently here.
 
 ## Phase plan
 
@@ -1352,6 +1357,281 @@ soft-deactivates with no way back through the UI.
   discoverable from the dashboard" treatment every prior phase's own
   dashboard tweak used.
 
+## Post-phase-7 backend additions
+
+Two of the "Known gaps" items closed in one session (built 2026-09-19),
+chosen because both had an already-solved pattern to port from rather than
+needing fresh design: the reference bus-ticketing-saas project's own
+`com.bustix.notification` package (read in full before writing anything)
+covers the outbox-dispatcher half almost verbatim; the initial-admin-login
+half has no reference-project analog (it doesn't solve this either - see
+CLAUDE.md's own phase 6 write-up), so that one's a fresh design built
+directly against this app's existing `KeycloakAdminTokenProvider`/
+`KeycloakOrganizationClient` (whose own javadoc already anticipated exactly
+this second consumer).
+
+- **`com.clinicops.notification.NotificationWorker`** - a line-for-line
+  port of the reference project's own `NotificationWorker`
+  (`@Scheduled(fixedDelay = 10_000)`, `MAX_ATTEMPTS = 5`, pulls
+  `findTop50ByStatusOrderByCreatedAtAsc("pending")`, retries on failure,
+  marks `failed` once attempts are exhausted), adapted only for this app's
+  richer `Notification` shape (`type`/`payload` jsonb instead of
+  `template`/`bookingId`). `NotificationSender` is the same one-method
+  interface; `LoggingEmailSender` is the same stub (logs instead of
+  calling a real provider) - still no real email/SMS provider anywhere in
+  this app, but the outbox no longer just accumulates unread rows forever.
+  `@EnableScheduling` was already on `ClinicManagementApplication` since
+  phase 3's `NoShowScheduler`, so no new wiring needed there.
+  `NotificationWorkerTest` (new, pure Mockito - no Spring context, no
+  Testcontainers, actually runs on this dev machine) covers the
+  successful-send/retry/permanent-failure paths; confirmed passing
+  (`mvn -o test -Dtest=NotificationWorkerTest`).
+- **Initial `clinic_admin` login on clinic onboarding** - closes the "a
+  freshly onboarded clinic has nobody who can log in" gap pinned in phase
+  6. `CreateClinicRequest` gained two **optional** fields, `adminEmail`/
+  `adminFullName` - omitting both reproduces the original behavior exactly
+  (verified via the existing `ClinicProvisioningServiceTest`'s 3-arg
+  `provisionClinic(...)` overload, left untouched for old callers).
+  Supplying `adminEmail` makes `ClinicProvisioningService.provisionClinic`
+  also: create a real Keycloak user (new
+  `KeycloakUserProvisioningClient.createUser`, username/email both set to
+  the given email, `emailVerified: false`), assign it the `clinic_admin`
+  realm role (`assignRealmRole` - a role-representation lookup then a
+  role-mappings POST, the two-step shape Keycloak's admin API requires),
+  add it as a member of the just-created organization (new
+  `KeycloakOrganizationClient.addMember`, keyed by the org's
+  Keycloak-internal id returned from `createOrganization` - previously
+  discarded, now captured), and set a random 16-character temporary
+  password (`setTemporaryPassword`, `temporary: true` so the user must
+  change it at first login).
+  - **No real email delivery** - no SMTP is configured for this realm in
+    local dev (see "Known gaps" - there's no real sender anywhere in this
+    app, `LoggingEmailSender` above included), so Keycloak's own
+    reset-password-email flow isn't used. Instead the generated temporary
+    password is returned once, directly in the create response
+    (`ClinicProvisioningResult { clinic, initialAdminTemporaryPassword }`
+    - same "wrapper record bundling just-created extras" shape as
+    `EncounterWithPrescriptions`/`LabOrderWithTests`), never persisted or
+    logged anywhere. A platform_admin hands it to the new clinic's admin
+    out of band (phone, Slack, whatever) - a deliberately low-tech answer
+    matching this app's actual state (no notification sender existed
+    before this same session), not a permanent design.
+  - **Same no-rollback caveat as clinic creation itself** - if the role
+    assignment/membership/password step fails after the Keycloak user was
+    already created, that user is left orphaned (no role, no org
+    membership), recoverable by hand via the Admin Console. Not solved
+    differently here; this whole flow already accepted that class of risk
+    for the org-vs-local-row case.
+  - `PlatformController.createClinic` now returns `ClinicProvisioningResult`
+    unconditionally (not just when an admin was requested) - the response
+    shape changed for every create call, so `PlatformControllerIntegrationTest`'s
+    existing `jsonPath` assertions were updated to `$.clinic.*` and a new
+    `creatingWithAnAdminEmailProvisionsARealClinicAdminLogin` test added
+    (mocks `KeycloakUserProvisioningClient`, asserts the create/assign
+    -role/add-member/set-password call sequence and a non-empty temporary
+    password in the response). `ClinicProvisioningServiceTest` gained two
+    more pure-unit cases (no-admin-email skips the user-provisioning
+    client entirely; admin-email drives the full sequence) - all 5 cases
+    confirmed passing locally.
+  - **Frontend**: `pages/platform-admin/Clinics.jsx`'s create form gained
+    optional "Initial admin email"/"Initial admin name" fields and a
+    one-time amber banner showing the returned temporary password with a
+    dismiss button (never stored beyond component state - a page refresh
+    loses it, matching "shown once" by construction, not just by policy).
+    The page's own copy ("No initial clinic_admin login is created here -
+    assign one in Keycloak afterward") was rewritten to describe the new,
+    real option.
+  - **Both features live-verified end to end against the real stack**
+    (`docker compose up --build`, a real `demo-platform-admin` browser
+    login, direct Keycloak admin-API checks, and a real guest booking) -
+    not just `npm run build`/the mocked test suites. See
+    CLAUDE-history.md's "Verified this session - post-phase-7 backend
+    additions" for the full write-up: the provisioned account's temporary
+    password was actually used to log in (Keycloak correctly forced a
+    password change first), landed on a `clinic_admin` dashboard
+    correctly scoped to the new clinic; a real booking's outbox row was
+    confirmed flipping from `pending` to `sent` in Postgres within the
+    worker's own poll window, with the stub send visible in
+    `spring-boot-api`'s container logs.
+
+**Test-coverage gaps closed (built 2026-09-20)** - three items, chosen after
+an audit found `PatientController` and `AppointmentPaymentController` had
+**zero** dedicated test coverage (not just missing tenant-isolation cases -
+no test file existed at all), and confirmed the consolidated
+`TenantIsolationIntegrationTest` was still genuinely unbuilt (11 of 19
+resource test classes already had their own inline cross-tenant case; the
+rest - Patient, AppointmentPayment, ProviderWorkingHours - had none).
+ClinicSettings/branding and `my-schedule`/`my-appointments` were confirmed
+to have no cross-tenant vector to even test (they resolve entirely from the
+caller's own token, no `{id}` path parameter naming another tenant's row),
+and `PlatformController` is cross-tenant by design - all three excluded
+with a comment explaining why, not silently skipped.
+
+- **`PatientControllerIntegrationTest`** (new) - create/list/get/search,
+  required-field validation, role checks (`front_desk`/`clinic_admin`
+  write, `+provider` read, `patient` refused entirely), and cross-tenant
+  404 on get/list/search alike (a clinic B search never returns clinic A's
+  patients, not just a direct id lookup).
+- **`AppointmentPaymentIntegrationTest`** (new) - `LabOrderPaymentIntegrationTest`
+  already exercised this controller's happy path incidentally
+  (`appointmentAndLabOrderPaymentsAreScopedPerOwner`) but never its own
+  role/validation/cross-tenant edges. Covers `front_desk`/`clinic_admin`
+  -only recording vs. `+provider` read, a non-positive amount and a blank
+  method both 400, and cross-tenant 404 on both the list and the record
+  action.
+- **`TenantIsolationIntegrationTest`** (new, `com.clinicops.tenant` package)
+  - one method per staff-scoped resource (appointment, patient, provider,
+  provider working hours, room, appointment type, fee policy, lab test
+  rate, encounter, lab order, and both payment owners), each seeding in
+  clinic A and asserting clinic B's staff get 404 on every path checked
+  (not just GET - working-hours and payments also assert the POST/write
+  path), plus one deactivated-clinic lockout case. Deliberately narrower
+  than the existing per-resource tests, not a replacement for them - see
+  the class's own javadoc for the reasoning.
+- All three compile clean and were confirmed to fail **only** via the
+  pre-existing, documented Testcontainers/Windows-npipe wall (same
+  `ExceptionInInitializerError` every other `AbstractIntegrationTest`
+  -based class already hits on this machine, `Failures: 0` in every
+  surefire report) - not a new regression. A `DOCKER_HOST=npipe:////./pipe/docker_engine`
+  override was tried as a quick check in case Docker Desktop (confirmed
+  running and otherwise fully working via plain `docker`/`docker compose`
+  all session) just wasn't being auto-detected - made no difference,
+  consistent with this being the same already-diagnosed incompatibility,
+  not a fresh environment issue worth chasing further here.
+
+**PHI access audit log** (built 2026-09-20) - closes the "PHI-access audit:
+deferred" gap pinned 2026-09-12. No reference-project precedent at all (a
+fresh design, same situation as the clinic_admin-provisioning work above) -
+two scoping questions were put to the user before writing any code, since
+this is genuinely compliance-flavored and the answers change how invasive
+the change is: **what counts as PHI worth logging** (patient demographics
+only vs. + clinical records vs. clinical-only - answered "patient +
+clinical records", i.e. `PatientController` plus encounters/prescriptions/
+lab orders, explicitly not `fee_policies`/payments, which are financial,
+not health, records) and **reads, writes, or both** (answered "both" - a
+real audit trail has to answer "who looked at this" as well as "who
+changed it").
+
+- **`com.clinicops.phiaudit`** (new package) - `PhiAccessLog` (extends
+  `BaseTenantEntity`; `patientId` nullable for a guest-channel appointment/
+  encounter with no `Patient` row at all), `PhiAccessLogRepository`,
+  `PhiAccessAuditService` (the actual logger - `logRead`/`logWrite`,
+  resolves the actor's internal user id via the existing
+  `CurrentUserService.resolveInternalUserId` - already used identically by
+  `AppointmentPaymentController`'s `recordedBy` - plus email/role straight
+  off the JWT), `PhiAccessLogController` (`GET /api/clinic/phi-access-log`,
+  `clinic_admin` only, optional `?patientId=`, most-recent-200, no
+  pagination framework - same simplicity as every other list endpoint in
+  this app). New migration `V6__phi_access_log.sql`.
+- **Explicit call sites, not AOP/an annotation** - every other cross
+  -cutting concern in this codebase (the Notification outbox, `TenantContext`)
+  is a plain injected bean called by name, not an aspect; this follows the
+  same style. Wired into `PatientController` (create/get/list-or-search),
+  `EncounterController` (upsert/get/replace-prescriptions - Encounter has
+  no `patientId` of its own, resolved via the appointment it belongs to,
+  a new `AppointmentRepository` dependency added just for this), and the
+  `laborder` package's staff-facing controllers
+  (`LabOrderController`/`LabOrderStatusController`/`LabOrderCancellationController`/
+  `PatientLabRequestController.confirmAndOrder` - every method already
+  returns or fetches a `LabOrderWithTests`/`LabOrder`, so `patientId` was
+  already in hand at each call site with no extra query). Deliberately
+  **not** wired into `PatientLabRequestController`'s own patient-facing
+  endpoints (`createRequest`/`myLabOrders`) - scoped to staff-initiated
+  access only, matching most audit regimes' own distinction between "staff
+  looked at this" and "the patient checked their own record."
+  - **List/search endpoints log one row per call, not one per result row**
+    (`PatientController.patients`/`LabOrderController.labOrders`) - a
+    search touches many patients at once, not one specific chart;
+    `resourceType` is `patient_search`/`lab_order_list` with a null
+    `patientId`/`resourceId` for these.
+  - **Best-effort, not transactional with the domain write it accounts
+    for** - `PhiAccessAuditService.log` catches and logs a warning on any
+    repository failure rather than propagating it (same "a flaky provider
+    never fails the primary action" reasoning as `NotificationWorker`),
+    and since it's called from the controller after the audited service
+    method has already returned/committed, a domain write can in principle
+    succeed while its audit row fails to write. Not solved differently
+    here - a genuine, documented limitation, not an oversight.
+- **`PhiAccessAuditServiceTest`** (new, pure Mockito - no Spring context,
+  no Testcontainers, actually runs on this dev machine) - role extraction
+  from a real `realm_access.roles` claim shape, a null patientId allowed
+  through, an unrecognized role falling back to `"unknown"` rather than
+  throwing, and a repository failure being swallowed, not propagated; all
+  5 cases confirmed passing. `PhiAccessLogIntegrationTest` (new,
+  Testcontainers-based, blocked on this machine the same way every
+  `AbstractIntegrationTest` subclass is - see the note above) covers the
+  real-request wiring: a patient create+read each write their own row, an
+  encounter read resolves `patientId` through the appointment correctly,
+  and the review endpoint is both `clinic_admin`-only and tenant-scoped
+  (clinic B's admin sees none of clinic A's rows).
+- **Live-verified against the real running stack** (`docker compose up
+  --build -d spring-boot-api` - Flyway applied V6 cleanly, confirmed in
+  the container's own startup log) as real `demo-front-desk`/
+  `demo-clinic-admin` browser logins, not just the test suites: registered
+  a genuinely new patient through the front-desk walk-in UI, confirmed via
+  direct Postgres query that both a `write` row (the registration) and a
+  `read` row (the booking flow's own follow-up patient fetch) landed with
+  the correct `patient_id`; then, as `demo-clinic-admin`, called
+  `GET /api/clinic/phi-access-log?patientId=...` for real (via an
+  in-page `fetch`, cookies included) and got back both rows with the
+  actor's real email/role/internal-user-id correctly resolved from the
+  actual Keycloak-issued token - not a fabricated/mocked identity.
+
+**Payment auto-charge** (built 2026-09-20) - closes "nothing auto-creates a
+payment from a cancellation/reschedule fee" from the phase-7 known gaps.
+One scoping question was put to the user first, since this app has no real
+payment gateway and "auto-charge" can't literally mean "we charged a
+card": auto-create a real `Payment` row for the fee (chosen) vs. just flag
+it as owed and leave a human to record it (would have left the gap
+functionally unclosed). `Payment`'s own javadoc previously stated flatly
+that "creating/cancelling an appointment or lab order never creates or
+voids one" - that line is now the exception, not the rule, and was
+rewritten accordingly.
+
+- **`Payment.FEE_AUTO_CHARGE_METHOD`** (`"fee_auto_charged"`) - the new
+  method value auto-charged fees are recorded under, so they're
+  distinguishable at a glance from a genuine staff-entered cash/card/etc.
+  payment in the same list. A zero fee never creates a row - matches
+  `FeeCalculator`'s own "missing/zero = no charge" fallback exactly, so a
+  clinic with no fee policy configured sees no behavior change at all.
+- **All three fee-computing services** now create one when the computed
+  fee is non-zero: `CancellationService` (both `cancel` and
+  `cancelAsCustomer`), `RescheduleService` (both `reschedule` and
+  `rescheduleAsCustomer`), `LabOrderCancellationService.cancel`. Each
+  already had the fee amount and the appointment/lab-order id in hand at
+  exactly the point its own audit row (`AppointmentCancellation`/
+  `AppointmentReschedule`/`LabOrderCancellation`) gets saved - the `Payment`
+  save sits right next to it, same transaction.
+- **Self-service fees are attributed to the patient's own account, not left
+  unattributed** - `CancellationService`/`RescheduleService` each gained a
+  second actor parameter (`payerUserId`), deliberately kept separate from
+  the existing `cancelledByUserId`/`actingUserId` (which stays staff
+  -attribution-only, null for self-service - an existing signal this
+  doesn't change): for the staff path both params carry the same value,
+  but for a patient's own self-cancel/self-reschedule, `payerUserId` is
+  the patient's own resolved `AppUser` id (already available in the
+  controller from the ownership lookup, just not previously threaded
+  through) while `cancelledByUserId`/`actingUserId` stays null exactly as
+  before.
+- **Live-verified against the real running stack**, not just the test
+  suite: booked a real guest appointment (no `Patient` row at all) ~10.5
+  hours out against Demo Clinic's real fee policy (50% under 2h notice,
+  100% under 0h, 0% beyond 24h - so this notice window lands in the 50%
+  tier), cancelled it as `demo-clinic-admin` through the actual front-desk
+  UI, and confirmed directly in Postgres: one `payments` row,
+  `amount = 25.00` (50% of the $50.00 appointment type), `method =
+  'fee_auto_charged'`, `recorded_by` populated with the acting
+  `clinic_admin`'s real `AppUser` id - including the guest-booking edge
+  case (`appointment.patientId IS NULL`) working correctly, not just a
+  patient-linked booking.
+- Extended `CancellationIntegrationTest`/`RescheduleIntegrationTest`/
+  `LabOrderIntegrationTest` (a non-zero fee creates the right
+  `fee_auto_charged` payment; a zero fee creates none; a self-service fee's
+  `recordedBy` is non-empty) - all compile clean and fail only via the
+  same pre-existing Testcontainers wall as every other `AbstractIntegrationTest`
+  subclass (`Failures: 0` in every surefire report, confirmed via a full
+  suite run before and after).
+
 ## Testing
 
 - `TenantContextFilterTest` - unit tests locking in the claim-shape parsing
@@ -1463,11 +1743,13 @@ dropped, a verbatim split. Check there for the phase-by-phase evidence log;
 append new ones there too, not here.
 ## Known gaps (don't pretend these are done)
 
-- No initial `clinic_admin` user provisioning as part of clinic onboarding
-  (deliberate, see "Domain decisions") - after `POST /api/platform/clinics`,
-  someone must still create/assign a `clinic_admin` user in Keycloak by
-  hand and add them as an org member before the new clinic is actually
-  usable.
+- ~~No initial `clinic_admin` user provisioning as part of clinic
+  onboarding~~ **closed 2026-09-19** - see "Post-phase-7 backend
+  additions". `POST /api/platform/clinics` now optionally creates a real
+  Keycloak `clinic_admin` login too (`adminEmail`/`adminFullName` on the
+  request); still no real email delivery, so the generated temporary
+  password is returned once in the response, not emailed - a
+  platform_admin still hands it over out of band.
 - **Frontend now covers every module named in the kickoff spec's own
   phase plan** (phases A through G - shell/dashboards, patient/guest
   booking, front-desk's walk-in flow, clinic-admin's settings/CRUD,
@@ -1500,21 +1782,36 @@ append new ones there too, not here.
   build` succeeding plus a real, manual browser walkthrough, not a repeatable
   automated check. `node-bff`'s own server-side `npm test` (20 tests) is
   unaffected/unrelated - it never touches `node-bff/frontend/`.
-- No PHI-access audit log in v1 (deferred by decision, 2026-09-12).
-- Payments are now recordable (`com.clinicops.payment`, phase 7) but purely
-  as a manual staff-entered record - no real payment processor/gateway
-  integration, no refund flow, and nothing auto-creates a payment from a
-  cancellation/reschedule fee (those still just get computed and recorded
-  in `appointment_cancellations.fee_amount`/`appointment_reschedules.
-  fee_amount`/`lab_order_cancellations.fee_amount` - a human still has to
-  separately record the actual payment/refund, staff never wired to
-  auto-charge it).
+- ~~No PHI-access audit log in v1~~ **closed 2026-09-20** - see
+  "Post-phase-7 backend additions". Scoped to staff-initiated access only
+  (not a patient viewing their own record) across
+  Patient/Encounter/Prescription/LabOrder; not the same DB transaction as
+  the domain read/write it accounts for, and list/search endpoints log one
+  row per call rather than one per result row - both deliberate, documented
+  boundaries, not oversights.
+- Payments are recordable (`com.clinicops.payment`, phase 7) but still
+  purely a manual staff-entered record for a genuine cash/card/etc.
+  payment - no real payment processor/gateway integration, no refund flow.
+  ~~nothing auto-creates a payment from a cancellation/reschedule
+  fee~~ **closed 2026-09-20** - see "Post-phase-7 backend additions":
+  a non-zero fee now auto-creates a `Payment` row (`method =
+  "fee_auto_charged"`) the moment it's computed, so staff no longer has to
+  separately re-type an amount the system already knows. That row still
+  only means "this fee was assessed," not "cash/a card was actually
+  collected" - there's still no real gateway behind it, and no refund
+  concept exists for the opposite direction.
 - `invoices` (as opposed to `payments`) still exists in `V1__init.sql`,
   unused by any code - no invoice-generation concept anywhere yet.
-- Email/notifications: the `notifications` outbox table is written to
-  (`AppointmentWriter`/`CancellationService`/`RescheduleService`) but there's
-  no `NotificationWorker`/real sender yet - rows just accumulate with
-  `status = 'pending'`.
+- ~~Email/notifications: the `notifications` outbox table is written to but
+  there's no `NotificationWorker`/real sender yet~~ **partially closed
+  2026-09-19** - see "Post-phase-7 backend additions".
+  `com.clinicops.notification.NotificationWorker` now drains the outbox
+  (fixed-delay poll, retry with a max attempt count, marks
+  `sent`/`failed`), but `NotificationSender` is still only
+  `LoggingEmailSender` - a stub that logs instead of calling a real
+  provider. No real email/SMS delivery exists anywhere in this app yet;
+  rows now reliably end up `sent` (logged) or `failed` instead of
+  accumulating as `pending` forever, but nothing actually reaches an inbox.
 - No per-clinic timezone - `SlotGenerator` interprets `provider_working_hours`
   in UTC. Fine for a single-timezone deployment, wrong for one spanning
   multiple.

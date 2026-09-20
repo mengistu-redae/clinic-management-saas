@@ -51,8 +51,9 @@ public class PlatformController {
 
     @PostMapping
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
-    public Clinic createClinic(@Valid @RequestBody CreateClinicRequest request) {
-        return clinicProvisioningService.provisionClinic(request.name(), request.orgAlias(), request.domain());
+    public ClinicProvisioningResult createClinic(@Valid @RequestBody CreateClinicRequest request) {
+        return clinicProvisioningService.provisionClinic(
+                request.name(), request.orgAlias(), request.domain(), request.adminEmail(), request.adminFullName());
     }
 
     /** Partial update - name only. keycloak_org_id is fixed at creation (see UpdateClinicRequest). */

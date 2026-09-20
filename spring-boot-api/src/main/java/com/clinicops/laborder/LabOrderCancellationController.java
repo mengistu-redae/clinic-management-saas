@@ -1,5 +1,6 @@
 package com.clinicops.laborder;
 
+import com.clinicops.phiaudit.PhiAccessAuditService;
 import com.clinicops.tenant.TenantContext;
 import com.clinicops.user.CurrentUserService;
 import org.springframework.http.HttpStatus;
@@ -21,10 +22,13 @@ public class LabOrderCancellationController {
 
     private final LabOrderCancellationService labOrderCancellationService;
     private final CurrentUserService currentUserService;
+    private final PhiAccessAuditService phiAccessAuditService;
 
-    public LabOrderCancellationController(LabOrderCancellationService labOrderCancellationService, CurrentUserService currentUserService) {
+    public LabOrderCancellationController(
+            LabOrderCancellationService labOrderCancellationService, CurrentUserService currentUserService, PhiAccessAuditService phiAccessAuditService) {
         this.labOrderCancellationService = labOrderCancellationService;
         this.currentUserService = currentUserService;
+        this.phiAccessAuditService = phiAccessAuditService;
     }
 
     @PostMapping("/api/lab-orders/{id}/cancel")
@@ -32,7 +36,10 @@ public class LabOrderCancellationController {
     public LabOrderWithTests cancel(@PathVariable UUID id, @RequestBody(required = false) CancelLabOrderRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID cancelledByUserId = currentUserService.resolveInternalUserId(jwt);
         String reason = request != null ? request.reason() : null;
-        return labOrderCancellationService.cancel(id, TenantContext.require(), cancelledByUserId, reason);
+        UUID tenantId = TenantContext.require();
+        LabOrderWithTests result = labOrderCancellationService.cancel(id, tenantId, cancelledByUserId, reason);
+        phiAccessAuditService.logWrite(tenantId, jwt, "lab_order", id, result.order().getPatientId(), "/api/lab-orders/{id}/cancel");
+        return result;
     }
 
     @ExceptionHandler(InvalidLabOrderStatusException.class)
