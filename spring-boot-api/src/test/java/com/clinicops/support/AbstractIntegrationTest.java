@@ -15,6 +15,8 @@ import com.clinicops.feepolicy.FeePolicy;
 import com.clinicops.feepolicy.FeePolicyRepository;
 import com.clinicops.labrate.LabTestRate;
 import com.clinicops.labrate.LabTestRateRepository;
+import com.clinicops.medicalhistory.MedicalHistory;
+import com.clinicops.medicalhistory.MedicalHistoryRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
 import com.clinicops.provider.Provider;
@@ -169,6 +171,9 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected VitalsRepository vitalsRepository;
 
+    @Autowired
+    protected MedicalHistoryRepository medicalHistoryRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -276,6 +281,13 @@ public abstract class AbstractIntegrationTest {
         vitals.setTenantId(tenantId);
         vitals.setAppointmentId(appointmentId);
         return vitalsRepository.save(vitals);
+    }
+
+    protected MedicalHistory createMedicalHistory(UUID tenantId, UUID patientId) {
+        MedicalHistory history = new MedicalHistory();
+        history.setTenantId(tenantId);
+        history.setPatientId(patientId);
+        return medicalHistoryRepository.save(history);
     }
 
     protected LabTestRate createLabTestRate(UUID tenantId, String testCode, String baseCharge, String collectionFee) {

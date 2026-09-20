@@ -258,6 +258,24 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void medicalHistoryIsNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("history");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000008");
+        createMedicalHistory(a.getId(), patient.getId());
+
+        Clinic b = clinicB("history");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/patients/" + patient.getId() + "/medical-history").with(asFrontDesk("fd", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/patients/" + patient.getId() + "/medical-history").with(asFrontDesk("fd", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.medicalhistory.UpsertMedicalHistoryRequest(
+                                "x", null, null, null, null))))
+                .andExpect(status().isNotFound());
+    }
+
     /**
      * The other half of the tenancy invariant: not just "clinic B can't see
      * clinic A's rows" but "a deactivated clinic's own staff are locked out

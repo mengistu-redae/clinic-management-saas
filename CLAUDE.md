@@ -317,6 +317,27 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   than a specific clinical encounter, the same way demographics do, so the
   same three roles that already manage `Patient` rows manage `Allergy`
   rows. No strong existing-codebase precedent forces this either way.
+- **Medical history: single evolving row per patient, not a versioned
+  log** (decided 2026-09-20, phase 9 plan mode) - mirrors `ClinicSettings`'
+  own "singleton row, updated in place" pattern (`patientId` as the
+  primary key itself, no separate `id`). No other clinical entity in this
+  app keeps version history - even Encounter's own future sign-and-lock
+  treatment (phase 12 sketch) was flagged as a deliberate special case,
+  not the default this app reaches for. The PHI audit log already records
+  that a write happened without needing a field-level diff table.
+- **Medical history: writable by `front_desk`+`clinic_admin`+`provider`**
+  (decided 2026-09-20) - same three-role gate as Vitals (phase 8) and for
+  the same reasoning: this is typically collected as intake/registration
+  paperwork (patient self-report transcribed by whoever hands them the
+  form), not a clinical judgment call the way an Encounter's own
+  assessment is - so front_desk isn't excluded the way it is from
+  `EncounterController`.
+- **File storage for future EHR phases: local disk + a Docker volume, not
+  S3/cloud** (decided 2026-09-20, specified directly by the user ahead of
+  the phase that will actually need it) - applies to phase 10 (consent
+  e-signatures) and phase 13 (provider digital signatures) once either is
+  built; mount a named volume in `docker-compose.yml` matching the
+  existing `postgres`/`redis` pattern.
 
 ## Phase plan
 
@@ -376,12 +397,12 @@ built so far:
    persistent, patient-level allergy records and per-appointment vitals.
    Smallest-footprint, highest-real-world-value item from the sketch,
    deliberately chosen first. See "Phase 8: allergies + vitals" below.
-9. Persistent medical history (past conditions, home medications, family/
-   social history) - sketched, not built.
+9. **Persistent medical history** (built 2026-09-20) - past conditions,
+   home medications, family/social history. See "Phase 9: medical
+   history" below.
 10. Consent & compliance records - sketched, not built; pairs with the PHI
-    audit log (see "Post-phase-7 backend additions"). Blocked on a
-    file-storage decision if real e-signature capture is wanted (this app
-    has zero file-upload infrastructure today).
+    audit log (see "Post-phase-7 backend additions"). Real e-signature
+    capture needs the file-storage decision below.
 11. Prescription + coding depth (route/frequency/duration/refills; ICD-10
     tagging) - sketched, not built.
 12. **Sign-and-lock clinical notes - reverses a pinned decision.** Today:
@@ -391,7 +412,17 @@ built so far:
     sign-off before touching, not just a normal next phase - other code
     and tests currently assume free editability.
 13. Provider profile hardening (license number/expiry, employment status,
-    digital signature) - sketched, not built; also blocked on file storage.
+    digital signature) - sketched, not built; also needs the file-storage
+    decision below.
+
+**File storage, decided ahead of need (2026-09-20)** - phases 10 and 13
+above were flagged as blocked on a file-storage decision when first
+sketched. The user has since specified **local disk + a Docker volume**
+(not S3/cloud object storage) for whenever a phase actually needs real
+file uploads - no longer an open question, just not yet implemented since
+no phase needing it has been built. Mount a named volume in
+`docker-compose.yml` (matching the existing `postgres`/`redis` pattern)
+when that phase is built.
 14. Referrals (internal + external) - sketched, not built.
 15. Real billing build-out against the `invoices` table (unused since
     `V1__init.sql`) - sketched, not built.
@@ -978,6 +1009,65 @@ flagged as revisitable. New migration `V7__allergies_and_vitals.sql`.
   scope boundary the PHI audit log used. Reachable via `fetch(...,
   {credentials:'include'})` from the browser console today; a real
   intake/vitals-entry UI is a natural next frontend phase, not scoped here.
+
+## Phase 9: medical history
+
+Second phase of the revised (EHR-leaning) phase plan. Two design questions
+were put to the user before writing code (storage shape, write-access
+gate) - see "Domain decisions pinned so far" for the answers and
+reasoning; both went with the recommended option. New migration
+`V8__medical_history.sql`.
+
+- **`com.clinicops.medicalhistory`** (new package) - `MedicalHistory`
+  (`patientId` as the primary key itself, no separate `id` - same
+  singleton shape as `ClinicSettings`; `pastConditions`/`pastSurgeries`/
+  `currentMedications`/`familyHistory`/`socialHistory`, all free text;
+  `recordedBy`/`updatedAt`). Deliberately does **not** duplicate
+  `known_allergies` from the reference clinical-forms doc's own "Medical
+  History Form" - `Allergy` (phase 8) is already the real, structured
+  record for that; also does not duplicate `chief_complaint`, which stays
+  on `Encounter` as a per-visit field, not a standing one.
+- **`MedicalHistoryService`** - `upsert`/`get`, mirroring
+  `EncounterService`/`VitalsService`'s own find-or-create shape exactly,
+  with `PatientRepository.findByIdAndTenantId` as the ownership check (no
+  separate "provider owns this" concept the way Encounter has one - any of
+  the three gated roles can write regardless of who else has touched it).
+  `upsert` is a genuine **full-replace** on every call (all five fields
+  overwritten, `null` clears a field that isn't resent) - same "no
+  partial-update semantics for a singleton clinical record" shape
+  `UpsertVitalsRequest` already established, confirmed live this session
+  (see below), not just documented.
+- **`MedicalHistoryController`** - `GET`/`POST /api/patients/{patientId}/medical-history`,
+  `hasAnyRole('CLINIC_ADMIN','FRONT_DESK','PROVIDER')` on both - the same
+  three-role gate as `VitalsController`, for the same reasoning (intake
+  -collected, not a clinical-judgment call the way an encounter is).
+  PHI-audited exactly like Patient/Encounter/Vitals/Allergy
+  (`resourceType = "medical_history"`, `resourceId`/`patientId` both the
+  patient's own id since there's no separate row id to log).
+- **`TenantIsolationIntegrationTest`** gained
+  `medicalHistoryIsNotReadableOrWritableFromAnotherTenant`, matching that
+  file's own "one canonical cross-tenant check per staff-scoped resource,
+  added the moment the resource exists" convention.
+  `MedicalHistoryControllerIntegrationTest` covers upsert (create-then-
+  full-replace, confirming a later call's omitted fields actually clear
+  the earlier call's values - not just overwrite the ones resent), the
+  three-role gate (patient token forbidden), get-before-any-recorded 404,
+  and cross-tenant 404. Compiles clean, confirmed to fail only via the
+  pre-existing Testcontainers/Windows-npipe wall (`Failures: 0` in the
+  surefire report) - not a regression.
+- **Live-verified against the real running stack**: rebuilt
+  `spring-boot-api`, confirmed Flyway applied V8 cleanly in the
+  container's own startup log, then as a real `demo-front-desk` browser
+  login (in-page `fetch`, cookies included): recorded medical history for
+  a real patient, then called it again omitting three of the five fields
+  and confirmed the response actually came back with those three as
+  `null` (not silently retaining the old values) - the full-replace
+  semantics working live, not just passing a unit assertion. Confirmed
+  directly in Postgres that exactly one `medical_history` row exists for
+  that patient after both calls (upsert, not a duplicate insert), and that
+  both writes landed in `phi_access_log` with `resource_type =
+  'medical_history'`.
+- **No frontend yet** - same scope boundary as phase 8.
 
 ## Frontend
 
@@ -1893,6 +1983,11 @@ rewritten accordingly.
   404, role gate, cross-tenant 404. `TenantIsolationIntegrationTest` grew
   one case per resource. Same Testcontainers wall as every other
   `AbstractIntegrationTest` subclass - confirmed via the surefire report.
+- `MedicalHistoryControllerIntegrationTest` (phase 9) - upsert (create,
+  then full-replace confirming omitted fields clear rather than persist),
+  three-role gate (patient token forbidden), get-before-any-recorded 404,
+  cross-tenant 404. `TenantIsolationIntegrationTest` grew one more case.
+  Same Testcontainers wall - confirmed via the surefire report.
 
 ## Verified-session logs
 
