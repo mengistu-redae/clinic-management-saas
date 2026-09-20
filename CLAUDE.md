@@ -279,6 +279,44 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   never creates a user either). A real gap - a freshly onboarded clinic
   has nobody who can log in until someone creates/assigns a `clinic_admin`
   user by hand - deliberately left there, not solved differently here.
+- **Vitals: writable by `front_desk` too, not just clinical staff**
+  (decided 2026-09-20, phase 8 plan mode) - the one deliberate exception to
+  this app's "front_desk has zero clinical access" boundary
+  (`EncounterController`'s own convention since phase 4). Made because this
+  app has no "nurse" role and vitals are typically taken by front-desk/
+  nursing staff before a provider ever sees the patient - opening this one
+  narrow door felt more honest than pretending front_desk could route
+  vitals through a provider-only endpoint. Revisit if this turns out too
+  permissive; there's no existing-codebase precedent forcing it either way.
+- **Vitals: no appointment-status gate** (decided 2026-09-20) - unlike
+  `EncounterController`'s `with_provider`/`checked_out` gate, vitals can be
+  recorded at any non-cancelled status. Vitals are typically taken at
+  check-in/roomed, well before a clinical note could even legally exist
+  under Encounter's own gate - gating vitals the same way would block the
+  real workflow. Same "no status gate" precedent `AppointmentPaymentController`
+  already set.
+- **Vitals hang off `Appointment`, not `Encounter`** (decided 2026-09-20) -
+  a fresh design call, not mirrored from anywhere: tying vitals to
+  Encounter would either require granting front_desk access to clinical
+  note content (a bigger boundary change than intended) or duplicating
+  data across two tables. One `Vitals` row per appointment
+  (`appointment_id` unique, same "exactly one per visit" shape as
+  `encounters.appointment_id`) sidesteps both.
+- **Allergies: patient-level, no delete - status transitions only**
+  (decided 2026-09-20) - an allergy is part of the patient's standing
+  health record, not tied to one visit, so it lives on `patients.id`, not
+  an appointment/encounter. `AllergyController` has no delete endpoint;
+  correcting a mistaken entry means adding a new row and marking the old
+  one `resolved`/`unconfirmed` via its `status` field - matches this app's
+  own precedent for safety/history data (providers/rooms soft-deactivate
+  rather than hard-delete).
+- **Allergies: access gate mirrors `PatientController` exactly** (decided
+  2026-09-20, the one call made without an explicit question to the user -
+  flagged as revisitable) - `front_desk`+`clinic_admin` write, `+provider`
+  read. Reasoned as: allergies extend the patient record itself rather
+  than a specific clinical encounter, the same way demographics do, so the
+  same three roles that already manage `Patient` rows manage `Allergy`
+  rows. No strong existing-codebase precedent forces this either way.
 
 ## Phase plan
 
@@ -324,9 +362,44 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
    `cancelled`), a patient-initiated request -> staff confirm-and-order
    flow, public two-factor order tracking, and a shared `Payment` entity
    covering both appointments and lab orders (closing a gap left open since
-   phase 1). This is the last phase named in the kickoff spec's own phase
-   plan. See "Phase 7: lab orders module" below and "Verified this session
-   - phase 7".
+   phase 1). This was the last phase named in the kickoff spec's own
+   original phase plan. See "Phase 7: lab orders module" below and
+   "Verified this session - phase 7".
+
+**Revised phase plan (2026-09-20)** - after the kickoff spec's own 7 phases
+shipped, the user asked what a pivot toward a fuller EHR (vs. this app's
+original booking/scheduling-centric scope) would look like. Sketched in
+chat as phases 8+, not yet all committed to - phase 8 is the only one
+built so far:
+
+8. **Patient-safety fundamentals: allergies + vitals** (built 2026-09-20) -
+   persistent, patient-level allergy records and per-appointment vitals.
+   Smallest-footprint, highest-real-world-value item from the sketch,
+   deliberately chosen first. See "Phase 8: allergies + vitals" below.
+9. Persistent medical history (past conditions, home medications, family/
+   social history) - sketched, not built.
+10. Consent & compliance records - sketched, not built; pairs with the PHI
+    audit log (see "Post-phase-7 backend additions"). Blocked on a
+    file-storage decision if real e-signature capture is wanted (this app
+    has zero file-upload infrastructure today).
+11. Prescription + coding depth (route/frequency/duration/refills; ICD-10
+    tagging) - sketched, not built.
+12. **Sign-and-lock clinical notes - reverses a pinned decision.** Today:
+    "Encounters/prescriptions stay editable indefinitely... no freeze/lock
+    concept" (see "Domain decisions pinned so far"). A real EHR needs
+    amendments-not-edits once a note is signed. Flagged as needing explicit
+    sign-off before touching, not just a normal next phase - other code
+    and tests currently assume free editability.
+13. Provider profile hardening (license number/expiry, employment status,
+    digital signature) - sketched, not built; also blocked on file storage.
+14. Referrals (internal + external) - sketched, not built.
+15. Real billing build-out against the `invoices` table (unused since
+    `V1__init.sql`) - sketched, not built.
+
+Lower priority / only if the product genuinely wants full-EHR breadth:
+immunizations, structured physical-exam findings, discharge summaries -
+these fit an inpatient/full-EHR shape more than this app's outpatient-
+scheduling core, not pulled forward by default.
 
 Each phase gets its own `TenantIsolationIntegrationTest` coverage extension
 and a `CLAUDE.md` update recording what was verified live against the
@@ -831,6 +904,80 @@ silently changes the other.
   `front_desk`/`clinic_admin`/`provider` read, `front_desk`/`clinic_admin`
   record; `POST` (create) + `GET` (list) only, no delete - a payment is a
   financial record, not config.
+
+## Phase 8: allergies + vitals
+
+First phase of the revised (EHR-leaning) phase plan sketched with the user
+2026-09-20 - no reference-project precedent at all (bus-ticketing-saas has
+no clinical-safety analog), a fresh design built directly against this
+app's own conventions. Three design questions were put to the user before
+writing any code (vitals write access, vitals status gate, allergy
+deletion) - see "Domain decisions pinned so far" for the answers and
+reasoning; a fourth call (allergies' access gate) was made without asking,
+flagged as revisitable. New migration `V7__allergies_and_vitals.sql`.
+
+- **`com.clinicops.allergy`** (new package) - `Allergy` (extends
+  `BaseTenantEntity`, `patientId` FK, `allergen`/`reactionType`/`severity`
+  /`status`/`identifiedAt`/`recordedBy`, own `updatedAt` same convention as
+  `Encounter`). `AllergyController` - `GET`/`POST /api/patients/{patientId}/allergies`
+  (`front_desk`+`clinic_admin` write, `+provider` read, mirroring
+  `PatientController`'s own gate exactly) and `POST .../{id}/update`
+  (partial - `reactionType`/`severity`/`status` only, `allergen`/`patientId`
+  fixed at creation; no delete endpoint at all - see the pinned decision).
+  `severity`/`status` are allow-listed the same way `RoomController`'s own
+  `status` field is.
+- **`com.clinicops.vitals`** (new package) - `Vitals` (extends
+  `BaseTenantEntity`, `appointmentId` unique - exactly one vitals row per
+  visit, enforced at the DB level, same shape as `encounters.appointment_id`
+  - height/weight/temperature/pulse/respiratory-rate/BP/O2-sat/pain-score,
+  `recordedBy` referencing `app_users` directly rather than `providers`
+  since front_desk can record these too). `getBmi()` is a derived,
+  non-persisted getter (computed from height/weight on every read, so it
+  can never drift from the source measurements) - covered by its own pure
+  -unit `VitalsTest` (4 cases: normal computation, missing height, missing
+  weight, height of zero returns null rather than dividing by zero).
+  `VitalsService.upsert` mirrors `EncounterService.upsert`'s find-or-create
+  shape exactly, but with no ownership check (any of provider/clinic_admin/
+  front_desk can record vitals regardless of which provider the
+  appointment is assigned to) and a much looser status gate (rejects only
+  `cancelled`, where Encounter requires `with_provider`/`checked_out`).
+  `VitalsController` - `GET`/`POST /api/appointments/{id}/vitals`,
+  `hasAnyRole('PROVIDER','CLINIC_ADMIN','FRONT_DESK')` on both.
+- **PHI audit wiring** - both new controllers call `PhiAccessAuditService`
+  exactly like `PatientController`/`EncounterController` already do
+  (`resourceType` `"allergy"`/`"allergy_list"`/`"vitals"`) - confirmed live
+  this session that a fresh write from each shows up correctly scoped by
+  patient in the audit trail, not just added to satisfy the pattern by
+  rote.
+- **`TenantIsolationIntegrationTest`** gained one case per new resource
+  (`allergiesAreNotReadableOrWritableFromAnotherTenant`,
+  `vitalsAreNotReadableOrWritableFromAnotherTenant`), matching that file's
+  own "one canonical cross-tenant check per staff-scoped resource"
+  convention from the moment these resources were added, not bolted on
+  later. `AllergyControllerIntegrationTest`/`VitalsControllerIntegrationTest`
+  cover CRUD, validation, role gates, and the cross-tenant/cross-patient
+  edges each own controller adds beyond that canonical check. All new
+  tests compile clean and were confirmed to fail only via the pre-existing
+  Testcontainers/Windows-npipe wall (`Failures: 0` in every surefire
+  report, same as every other `AbstractIntegrationTest` subclass on this
+  machine) - not a regression.
+- **Live-verified against the real running stack**: rebuilt
+  `spring-boot-api` (`docker compose up --build -d spring-boot-api`),
+  confirmed Flyway applied V7 cleanly in the container's own startup log,
+  then as a real `demo-front-desk` browser login (via an in-page `fetch`,
+  cookies included): recorded vitals on a genuinely plain-`booked`
+  appointment (proving the "no status gate" decision actually works, not
+  just compiles - `EncounterController`'s own gate would have rejected
+  this exact call with a 409) with BMI computed correctly (170cm/70kg ->
+  24.2), then recorded a real allergy for that appointment's patient.
+  Confirmed directly in Postgres that both writes landed in
+  `phi_access_log` with the correct `resource_type`/`patient_id`/
+  `actor_role` - the PHI-audit wiring added this same session actually
+  fires for these two new resources, not just the ones it launched with.
+- **No frontend yet** - backend only, same "no dedicated UI this phase"
+  scope boundary the PHI audit log used. Reachable via `fetch(...,
+  {credentials:'include'})` from the browser console today; a real
+  intake/vitals-entry UI is a natural next frontend phase, not scoped here.
 
 ## Frontend
 
@@ -1732,6 +1879,20 @@ rewritten accordingly.
   my-lab-orders` unioning both ownership paths. Same Testcontainers/
   Windows-npipe wall as every prior phase - confirmed via the surefire
   report, not a regression from this phase's code.
+- `VitalsTest` (phase 8, pure unit) - BMI computed correctly from height/
+  weight; null when either input is missing; null (not a divide-by-zero
+  throw) when height is zero.
+- `AllergyControllerIntegrationTest`/`VitalsControllerIntegrationTest`
+  (phase 8) - allergy create/list/partial-update, default severity when
+  omitted, invalid severity/status 400, role gate (front_desk+clinic_admin
+  write, +provider read), cross-tenant 404, updating an allergy under the
+  wrong patientId 404; vitals upsert (create-then-update the same row),
+  BMI round-tripped through the API, front_desk write despite no other
+  clinical access, no status gate even at plain `booked`, cancelled-
+  appointment 409, pain-score-out-of-range 400, get-before-any-recorded
+  404, role gate, cross-tenant 404. `TenantIsolationIntegrationTest` grew
+  one case per resource. Same Testcontainers wall as every other
+  `AbstractIntegrationTest` subclass - confirmed via the surefire report.
 
 ## Verified-session logs
 

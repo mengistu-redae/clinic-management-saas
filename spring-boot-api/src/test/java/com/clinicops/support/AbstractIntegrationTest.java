@@ -1,5 +1,7 @@
 package com.clinicops.support;
 
+import com.clinicops.allergy.Allergy;
+import com.clinicops.allergy.AllergyRepository;
 import com.clinicops.appointment.Appointment;
 import com.clinicops.appointment.AppointmentRepository;
 import com.clinicops.appointmenttype.AppointmentType;
@@ -25,6 +27,8 @@ import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
 import com.clinicops.user.AppUser;
 import com.clinicops.user.AppUserRepository;
+import com.clinicops.vitals.Vitals;
+import com.clinicops.vitals.VitalsRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -159,6 +163,12 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected LabTestRateRepository labTestRateRepository;
 
+    @Autowired
+    protected AllergyRepository allergyRepository;
+
+    @Autowired
+    protected VitalsRepository vitalsRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -251,6 +261,21 @@ public abstract class AbstractIntegrationTest {
         encounter.setAppointmentId(appointmentId);
         encounter.setProviderId(providerId);
         return encounterRepository.save(encounter);
+    }
+
+    protected Allergy createAllergy(UUID tenantId, UUID patientId, String allergen) {
+        Allergy allergy = new Allergy();
+        allergy.setTenantId(tenantId);
+        allergy.setPatientId(patientId);
+        allergy.setAllergen(allergen);
+        return allergyRepository.save(allergy);
+    }
+
+    protected Vitals createVitals(UUID tenantId, UUID appointmentId) {
+        Vitals vitals = new Vitals();
+        vitals.setTenantId(tenantId);
+        vitals.setAppointmentId(appointmentId);
+        return vitalsRepository.save(vitals);
     }
 
     protected LabTestRate createLabTestRate(UUID tenantId, String testCode, String baseCharge, String collectionFee) {

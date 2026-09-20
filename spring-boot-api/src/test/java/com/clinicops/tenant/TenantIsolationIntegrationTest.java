@@ -220,6 +220,44 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void allergiesAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("allergy");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000006");
+        createAllergy(a.getId(), patient.getId(), "Penicillin");
+
+        Clinic b = clinicB("allergy");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/patients/" + patient.getId() + "/allergies").with(asFrontDesk("fd", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/patients/" + patient.getId() + "/allergies").with(asFrontDesk("fd", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.allergy.CreateAllergyRequest("Latex", null, null, null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void vitalsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("vitals");
+        Provider provider = createProvider(a.getId(), "Dr. A");
+        AppointmentType type = createAppointmentType(a.getId(), "Visit", 30, "50.00");
+        Slot slot = createSlot(a.getId(), provider.getId(), type.getId(), Instant.now().minusSeconds(3600), Instant.now().minusSeconds(1800));
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000007");
+        Appointment appointment = createBookedAppointment(a.getId(), slot.getId(), patient.getId(), provider.getId(), type.getId(), null);
+
+        Clinic b = clinicB("vitals");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/appointments/" + appointment.getId() + "/vitals").with(asFrontDesk("fd", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/vitals").with(asFrontDesk("fd", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.vitals.UpsertVitalsRequest(
+                                null, null, null, 70, null, null, null, null, null))))
+                .andExpect(status().isNotFound());
+    }
+
     /**
      * The other half of the tenancy invariant: not just "clinic B can't see
      * clinic A's rows" but "a deactivated clinic's own staff are locked out
