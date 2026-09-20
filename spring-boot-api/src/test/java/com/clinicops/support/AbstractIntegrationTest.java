@@ -9,6 +9,8 @@ import com.clinicops.appointmenttype.AppointmentTypeRepository;
 import com.clinicops.clinic.Clinic;
 import com.clinicops.clinic.ClinicRepository;
 import com.clinicops.clinicsettings.ClinicSettingsRepository;
+import com.clinicops.consent.ConsentRecord;
+import com.clinicops.consent.ConsentRecordRepository;
 import com.clinicops.encounter.Encounter;
 import com.clinicops.encounter.EncounterRepository;
 import com.clinicops.feepolicy.FeePolicy;
@@ -174,6 +176,9 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected MedicalHistoryRepository medicalHistoryRepository;
 
+    @Autowired
+    protected ConsentRecordRepository consentRecordRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -288,6 +293,15 @@ public abstract class AbstractIntegrationTest {
         history.setTenantId(tenantId);
         history.setPatientId(patientId);
         return medicalHistoryRepository.save(history);
+    }
+
+    protected ConsentRecord createConsentRecord(UUID tenantId, UUID patientId, String consentType) {
+        ConsentRecord record = new ConsentRecord();
+        record.setTenantId(tenantId);
+        record.setPatientId(patientId);
+        record.setConsentType(consentType);
+        record.setPolicyVersion("v1");
+        return consentRecordRepository.save(record);
     }
 
     protected LabTestRate createLabTestRate(UUID tenantId, String testCode, String baseCharge, String collectionFee) {

@@ -334,10 +334,44 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   `EncounterController`.
 - **File storage for future EHR phases: local disk + a Docker volume, not
   S3/cloud** (decided 2026-09-20, specified directly by the user ahead of
-  the phase that will actually need it) - applies to phase 10 (consent
-  e-signatures) and phase 13 (provider digital signatures) once either is
-  built; mount a named volume in `docker-compose.yml` matching the
-  existing `postgres`/`redis` pattern.
+  the phase that will actually need it) - not consumed by phase 10 after
+  all (see below, consent stayed deliberately lightweight/imageless);
+  still applies whenever phase 13 (provider digital signatures) or any
+  future real e-signature-capture refinement of phase 10 gets built. Mount
+  a named volume in `docker-compose.yml` matching the existing `postgres`/
+  `redis` pattern when that day comes.
+- **Consent: general-treatment + privacy consent only, no procedure
+  -specific consent** (decided 2026-09-20, phase 10 plan mode) - covers
+  the reference clinical-forms doc's Forms 4 & 6 (both simple
+  acknowledgment-style records: consent given, policy version, timestamp).
+  Form 5 (procedure-specific - risks explained, alternatives discussed, a
+  specific physician) is a genuinely different shape, deferred rather than
+  folded into the same entity via awkward nullable fields.
+- **Consent: no signature image, even though file storage is now
+  available** (decided 2026-09-20) - stays a lightweight acknowledgment
+  record (`consentGiven` bool + `policyVersion` + `signedAt` + who
+  recorded it). Real signature-image capture (a genuinely separate chunk
+  of work - multipart upload, disk read/write, validation) deferred to a
+  later refinement if ever needed, not built speculatively now that the
+  storage prerequisite happens to be resolved.
+- **No "nurse" realm role introduced for consent** (decided 2026-09-20) -
+  the user explicitly authorized adding one if the phase needed it, but
+  consent recording doesn't: it's intake-collected, not a clinical
+  -judgment call, so `front_desk`+`clinic_admin` (matching `Allergy`'s own
+  gate) covers it the same way phases 8/9 already covered vitals/allergies/
+  medical-history without a nurse role. The underlying gap (no role
+  precisely matching "clinical support staff who aren't the provider") is
+  still real and unaddressed - just not one this phase happened to need
+  solved.
+- **Consent records are genuinely immutable - no update/delete endpoint at
+  all** (decided 2026-09-20, a fresh design call, not something the user
+  was asked about directly) - matches this app's own existing audit-only
+  tables (`AppointmentCancellation`, `AppointmentReschedule`,
+  `PhiAccessLog`) and the reference doc's own "this matters for legal
+  defensibility" reasoning for consent specifically. A patient can
+  accumulate multiple rows of the same `consentType` over time (e.g.
+  re-consenting after a policy version change) - `GET` returns the full
+  list, not a singleton, unlike Allergy/Vitals/MedicalHistory.
 
 ## Phase plan
 
@@ -400,9 +434,10 @@ built so far:
 9. **Persistent medical history** (built 2026-09-20) - past conditions,
    home medications, family/social history. See "Phase 9: medical
    history" below.
-10. Consent & compliance records - sketched, not built; pairs with the PHI
-    audit log (see "Post-phase-7 backend additions"). Real e-signature
-    capture needs the file-storage decision below.
+10. **Consent & compliance records** (built 2026-09-20) - general
+    -treatment and privacy/data-protection consent, no signature image
+    (deliberately kept lightweight even with file storage now available).
+    See "Phase 10: consent & compliance records" below.
 11. Prescription + coding depth (route/frequency/duration/refills; ICD-10
     tagging) - sketched, not built.
 12. **Sign-and-lock clinical notes - reverses a pinned decision.** Today:
@@ -1068,6 +1103,59 @@ reasoning; both went with the recommended option. New migration
   both writes landed in `phi_access_log` with `resource_type =
   'medical_history'`.
 - **No frontend yet** - same scope boundary as phase 8.
+
+## Phase 10: consent & compliance records
+
+Third phase of the revised (EHR-leaning) phase plan. Three scoping
+questions were put to the user before writing code (consent-type breadth,
+signature capture, whether to introduce a "nurse" role) - all three
+resolved with the recommended/simplest option, see "Domain decisions
+pinned so far" for the full reasoning. New migration
+`V9__consent_records.sql`.
+
+- **`com.clinicops.consent`** (new package) - `ConsentRecord` (extends
+  `BaseTenantEntity`, `patientId` FK, `consentType` allow-listed to
+  `general_treatment`/`privacy_data`, `policyVersion`, `consentGiven`
+  bool, optional `witnessName`/`languagePresented`/`dataSharingPreferences`,
+  `signedAt`/`recordedBy`). Unlike Allergy/Vitals/MedicalHistory, this is
+  **not** a singleton-per-owner entity - a patient can accumulate multiple
+  rows over time (e.g. re-consenting after a policy version change), and
+  genuinely has **no update/delete endpoint at all**, matching this app's
+  own existing audit-only tables and the reference doc's "legal
+  defensibility" reasoning for consent specifically.
+- **`ConsentController`** - `GET`/`POST /api/patients/{patientId}/consent-records`.
+  Access gate mirrors `AllergyController`/`PatientController` exactly
+  (`front_desk`+`clinic_admin` write, `+provider` read) - the "don't add a
+  nurse role" decision reinforces this being the same non-clinical-intake
+  gate those two already use, not a new pattern. `consentType` is allow
+  -listed the same way `Allergy.severity`/`Room.status` are.
+  `consentGiven` defaults to `true` when omitted, but can be explicitly
+  `false` - staff can record a genuine decline, not just an acceptance.
+  PHI-audited like every other resource this session
+  (`resourceType = "consent_record"`/`"consent_record_list"`).
+- **`TenantIsolationIntegrationTest`** gained
+  `consentRecordsAreNotReadableOrWritableFromAnotherTenant`.
+  `ConsentControllerIntegrationTest` covers create+list (confirming two
+  records for different types **accumulate**, the second never replacing
+  the first - the one behavior genuinely distinct from every other phase
+  -8/9 entity), the explicit-decline path, invalid-`consentType` 400, the
+  role gate, and cross-tenant 404. Compiles clean, confirmed to fail only
+  via the pre-existing Testcontainers/Windows-npipe wall (`Failures: 0` in
+  the surefire report) - not a regression.
+- **Live-verified against the real running stack**: rebuilt
+  `spring-boot-api` (one transient Docker build failure on the first
+  attempt, succeeded cleanly on retry with no code changes - not
+  reproducible, not investigated further), confirmed Flyway applied V9
+  cleanly in the container's own startup log, then as a real
+  `demo-front-desk` browser login recorded two consent records
+  (`general_treatment`/`v1` and `privacy_data`/`v2`) for the same real
+  patient used in phases 8/9's own verification, and confirmed via `GET`
+  that **both** rows come back - not just the most recent one, proving the
+  accumulate-not-replace design actually holds against a real request, not
+  just a mocked test. Confirmed directly in Postgres: exactly 2 rows for
+  that patient, and `phi_access_log` correctly recorded both writes plus
+  the list read.
+- **No frontend yet** - same scope boundary as phases 8/9.
 
 ## Frontend
 
@@ -1988,6 +2076,13 @@ rewritten accordingly.
   three-role gate (patient token forbidden), get-before-any-recorded 404,
   cross-tenant 404. `TenantIsolationIntegrationTest` grew one more case.
   Same Testcontainers wall - confirmed via the surefire report.
+- `ConsentControllerIntegrationTest` (phase 10) - create+list accumulating
+  rather than replacing (two different consent types both persist and
+  both come back), explicit-decline (`consentGiven: false`),
+  invalid-`consentType` 400, role gate (front_desk+clinic_admin write,
+  +provider read, patient token forbidden), cross-tenant 404.
+  `TenantIsolationIntegrationTest` grew one more case. Same Testcontainers
+  wall - confirmed via the surefire report.
 
 ## Verified-session logs
 

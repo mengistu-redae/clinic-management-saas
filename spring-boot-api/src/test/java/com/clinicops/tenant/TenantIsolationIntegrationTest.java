@@ -276,6 +276,24 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void consentRecordsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("consent");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000009");
+        createConsentRecord(a.getId(), patient.getId(), "general_treatment");
+
+        Clinic b = clinicB("consent");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/patients/" + patient.getId() + "/consent-records").with(asFrontDesk("fd", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/patients/" + patient.getId() + "/consent-records").with(asFrontDesk("fd", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.consent.CreateConsentRecordRequest(
+                                "general_treatment", "v1", null, null, null, null))))
+                .andExpect(status().isNotFound());
+    }
+
     /**
      * The other half of the tenancy invariant: not just "clinic B can't see
      * clinic A's rows" but "a deactivated clinic's own staff are locked out
