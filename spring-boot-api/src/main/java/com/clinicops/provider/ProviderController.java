@@ -1,11 +1,14 @@
 package com.clinicops.provider;
 
+import com.clinicops.filestorage.FileStorageService;
 import com.clinicops.room.RoomRepository;
 import com.clinicops.tenant.TenantContext;
 import com.clinicops.user.AppUser;
 import com.clinicops.user.AppUserRepository;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,9 +18,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
@@ -33,15 +40,26 @@ import java.util.UUID;
 public class ProviderController {
 
     private static final Set<String> VALID_STATUSES = Set.of("active", "inactive");
+    private static final Set<String> VALID_EMPLOYMENT_STATUSES = Set.of("full_time", "part_time", "locum");
+
+    /** Content types accepted for a signature upload, mapped to the extension actually written to disk - never the client-supplied filename's own extension, to avoid an unexpected extension reaching disk. */
+    private static final Map<String, String> VALID_SIGNATURE_TYPES = Map.of("image/png", ".png", "image/jpeg", ".jpg");
+    private static final String SIGNATURE_SUBDIRECTORY = "provider-signatures";
 
     private final ProviderRepository providerRepository;
     private final RoomRepository roomRepository;
     private final AppUserRepository appUserRepository;
+    private final FileStorageService fileStorageService;
 
-    public ProviderController(ProviderRepository providerRepository, RoomRepository roomRepository, AppUserRepository appUserRepository) {
+    public ProviderController(
+            ProviderRepository providerRepository,
+            RoomRepository roomRepository,
+            AppUserRepository appUserRepository,
+            FileStorageService fileStorageService) {
         this.providerRepository = providerRepository;
         this.roomRepository = roomRepository;
         this.appUserRepository = appUserRepository;
+        this.fileStorageService = fileStorageService;
     }
 
     @GetMapping("/api/providers")
@@ -65,12 +83,18 @@ public class ProviderController {
     public Provider createProvider(@Valid @RequestBody CreateProviderRequest request) {
         UUID tenantId = TenantContext.require();
         requireOwnedRoomOrNull(request.roomId(), tenantId);
+        if (request.employmentStatus() != null) {
+            requireValidEmploymentStatus(request.employmentStatus());
+        }
 
         Provider provider = new Provider();
         provider.setTenantId(tenantId);
         provider.setFullName(request.fullName());
         provider.setSpecialty(request.specialty());
         provider.setRoomId(request.roomId());
+        provider.setLicenseNumber(request.licenseNumber());
+        provider.setLicenseExpiry(request.licenseExpiry());
+        provider.setEmploymentStatus(request.employmentStatus());
         return providerRepository.save(provider);
     }
 
@@ -96,6 +120,16 @@ public class ProviderController {
             requireValidStatus(request.status());
             provider.setStatus(request.status());
         }
+        if (request.licenseNumber() != null) {
+            provider.setLicenseNumber(request.licenseNumber());
+        }
+        if (request.licenseExpiry() != null) {
+            provider.setLicenseExpiry(request.licenseExpiry());
+        }
+        if (request.employmentStatus() != null) {
+            requireValidEmploymentStatus(request.employmentStatus());
+            provider.setEmploymentStatus(request.employmentStatus());
+        }
         return providerRepository.save(provider);
     }
 
@@ -119,6 +153,76 @@ public class ProviderController {
                 .orElseThrow(() -> new NoSuchElementException("Provider not found: " + id));
         provider.setAppUserId(null);
         return providerRepository.save(provider);
+    }
+
+    /**
+     * The first file-upload feature in this app - see FileStorageService's
+     * own javadoc for the local-disk+volume storage decision. The stored
+     * filename is always {@code <providerId><extension>}, the extension
+     * derived from the validated content type, never from the
+     * client-supplied original filename - deliberately, to keep an
+     * unexpected extension (or a path-traversal attempt hidden in a
+     * filename) from ever reaching disk. Overwrites any previous
+     * signature for this provider - no history kept, matching this app's
+     * own "current value only" convention for singleton-per-owner data.
+     */
+    @PostMapping("/api/providers/{id}/signature")
+    @PreAuthorize("hasRole('CLINIC_ADMIN')")
+    public Provider uploadSignature(@PathVariable UUID id, @RequestParam("file") MultipartFile file) {
+        UUID tenantId = TenantContext.require();
+        Provider provider = providerRepository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Provider not found: " + id));
+
+        String contentType = file.getContentType();
+        String extension = VALID_SIGNATURE_TYPES.get(contentType);
+        if (extension == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "file must be one of " + VALID_SIGNATURE_TYPES.keySet());
+        }
+        if (file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "file must not be empty");
+        }
+
+        String filename;
+        try {
+            filename = fileStorageService.store(SIGNATURE_SUBDIRECTORY, id, extension, file.getInputStream());
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read the uploaded file");
+        }
+        provider.setSignatureFilename(filename);
+        provider.setSignatureContentType(contentType);
+        return providerRepository.save(provider);
+    }
+
+    /** Same 3-role read gate as the provider resource itself. Raw image bytes, not wrapped in JSON. */
+    @GetMapping("/api/providers/{id}/signature")
+    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'PROVIDER')")
+    public ResponseEntity<byte[]> getSignature(@PathVariable UUID id) {
+        Provider provider = providerRepository.findByIdAndTenantId(id, TenantContext.require())
+                .orElseThrow(() -> new NoSuchElementException("Provider not found: " + id));
+        if (provider.getSignatureFilename() == null) {
+            throw new NoSuchElementException("No signature uploaded for provider: " + id);
+        }
+        byte[] bytes = fileStorageService.read(SIGNATURE_SUBDIRECTORY, provider.getSignatureFilename());
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(provider.getSignatureContentType()))
+                .body(bytes);
+    }
+
+    /** Hard delete of the file itself (FileStorageService.delete) - no soft-remove concept for an uploaded file the way status/severity fields elsewhere in this app use. Idempotent - a provider with no signature returns unchanged. */
+    @PostMapping("/api/providers/{id}/signature/remove")
+    @PreAuthorize("hasRole('CLINIC_ADMIN')")
+    public Provider removeSignature(@PathVariable UUID id) {
+        UUID tenantId = TenantContext.require();
+        Provider provider = providerRepository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Provider not found: " + id));
+        if (provider.getSignatureFilename() != null) {
+            fileStorageService.delete(SIGNATURE_SUBDIRECTORY, provider.getSignatureFilename());
+            provider.setSignatureFilename(null);
+            provider.setSignatureContentType(null);
+            provider = providerRepository.save(provider);
+        }
+        return provider;
     }
 
     /**
@@ -148,9 +252,22 @@ public class ProviderController {
         }
     }
 
+    private void requireValidEmploymentStatus(String employmentStatus) {
+        if (!VALID_EMPLOYMENT_STATUSES.contains(employmentStatus)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "employmentStatus must be one of " + VALID_EMPLOYMENT_STATUSES);
+        }
+    }
+
     @ExceptionHandler(NoSuchElementException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public String handleNotFound(NoSuchElementException e) {
         return e.getMessage();
+    }
+
+    /** Spring's own multipart resolver rejects an oversized request before this controller ever sees it - mapped to 400 rather than the default 500, matching every other validation failure here. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public String handleTooLarge(MaxUploadSizeExceededException e) {
+        return "Uploaded file is too large";
     }
 }

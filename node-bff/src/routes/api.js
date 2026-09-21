@@ -105,6 +105,11 @@ function shouldForwardBody(method, body) {
   return !['GET', 'HEAD'].includes(method) && body !== undefined && Object.keys(body).length > 0;
 }
 
+/** A multipart request (file upload) needs the raw-stream forwarding path in forwardToApi, not the JSON-re-serialize one - see its own comment for why. */
+function isMultipartRequest(contentType) {
+  return (contentType || '').startsWith('multipart/form-data');
+}
+
 async function forwardToApi(req, res, next) {
   try {
     const targetUrl = `${process.env.API_BASE_URL}${req.originalUrl}`;
@@ -112,8 +117,7 @@ async function forwardToApi(req, res, next) {
     const headers = { ...req.headers };
     delete headers.host; // let fetch set the right Host for API_BASE_URL
     delete headers.cookie; // this BFF's session cookie is ours, not the API's
-    delete headers['content-length']; // body is about to be re-serialized below, length would be stale
-    delete headers['content-type']; // set explicitly below, only when there's an actual body - see shouldForwardBody's comment
+    delete headers['content-length']; // body is about to be re-serialized (or re-streamed) below, length would be stale
     // Only a PUBLIC_ROUTES path (mounted ahead of requireSession above) can
     // reach here with no session at all - spring-boot-api's permitAll() on
     // each of those routes doesn't need a Bearer token either.
@@ -121,6 +125,26 @@ async function forwardToApi(req, res, next) {
       headers.authorization = `Bearer ${req.session.tokenSet.access_token}`;
     }
 
+    // A multipart request (e.g. ProviderController's signature upload,
+    // phase 13 - the first file upload anywhere in this app) can't go
+    // through the generic JSON-forwarding path below: index.js's global
+    // express.json() only parses an application/json body, so req.body
+    // stays {} here for any other content type and the actual file bytes
+    // would otherwise just be dropped. express.json() also never touches
+    // req's own stream for a non-matching content type (body-parser checks
+    // the content-type before ever reading anything), so the raw request
+    // is still fully intact here - stream it straight through unchanged
+    // instead of re-serializing. duplex: 'half' is Node's own requirement
+    // for fetch when body is a stream, not something spring-boot-api needs
+    // to know about.
+    const contentType = req.headers['content-type'] || '';
+    if (isMultipartRequest(contentType)) {
+      headers['content-type'] = contentType; // keep the boundary parameter fetch needs to parse the parts
+      const upstream = await fetch(targetUrl, { method: req.method, headers, body: req, duplex: 'half' });
+      return relayUpstreamResponse(upstream, res);
+    }
+
+    delete headers['content-type']; // set explicitly below, only when there's an actual JSON body - see shouldForwardBody's comment
     const hasBody = shouldForwardBody(req.method, req.body);
     if (hasBody) {
       headers['content-type'] = 'application/json';
@@ -131,17 +155,20 @@ async function forwardToApi(req, res, next) {
       headers,
       body: hasBody ? JSON.stringify(req.body) : undefined,
     });
-
-    res.status(upstream.status);
-    upstream.headers.forEach((value, key) => {
-      if (key.toLowerCase() !== 'transfer-encoding') {
-        res.setHeader(key, value);
-      }
-    });
-    res.send(Buffer.from(await upstream.arrayBuffer()));
+    return relayUpstreamResponse(upstream, res);
   } catch (err) {
     next(err);
   }
 }
 
-module.exports = { buildApiRouter, requireSession, refreshIfExpired, shouldForwardBody };
+async function relayUpstreamResponse(upstream, res) {
+  res.status(upstream.status);
+  upstream.headers.forEach((value, key) => {
+    if (key.toLowerCase() !== 'transfer-encoding') {
+      res.setHeader(key, value);
+    }
+  });
+  res.send(Buffer.from(await upstream.arrayBuffer()));
+}
+
+module.exports = { buildApiRouter, requireSession, refreshIfExpired, shouldForwardBody, isMultipartRequest };

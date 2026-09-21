@@ -49,6 +49,14 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
 
+  servlet:
+    multipart:
+      # Matches ProviderController's own signature-upload size check -
+      # both need to agree, since Spring's own multipart resolver rejects
+      # an oversized request before the controller ever sees it.
+      max-file-size: 2MB
+      max-request-size: 2MB
+
 # Custom app settings.
 clinicops:
   keycloak:
@@ -88,6 +96,12 @@ clinicops:
       # Bounds a recurring-appointment series (phase 2) to prevent abuse -
       # half a year weekly, or a year biweekly. See AppointmentSeriesService.
       max-occurrences: 26
+  file-storage:
+    # Local disk + a Docker volume, not S3/cloud (decided 2026-09-20,
+    # phase 9 plan mode) - see FileStorageService's own javadoc.
+    # docker-compose.yml points this at a named volume; local dev
+    # (start-local.ps1) gets a plain relative directory instead.
+    uploads-root: ${CLINICOPS_UPLOADS_ROOT:./uploads}
   keycloak-admin:
     # Used only by PlatformController's "create clinic" endpoint
     # (platform_admin, phase 6) to provision a new Keycloak Organization via

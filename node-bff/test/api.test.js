@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { requireSession, refreshIfExpired, shouldForwardBody } = require('../src/routes/api');
+const { requireSession, refreshIfExpired, shouldForwardBody, isMultipartRequest } = require('../src/routes/api');
 
 function mockReqRes(session) {
   session.destroy = session.destroy || ((cb) => cb());
@@ -217,5 +217,28 @@ test('shouldForwardBody', async (t) => {
 
   await t.test('is true for DELETE with real content', () => {
     assert.equal(shouldForwardBody('DELETE', { reason: 'x' }), true);
+  });
+});
+
+test('isMultipartRequest', async (t) => {
+  // Regression test for a real bug: forwardToApi used to always
+  // JSON-serialize req.body, but express.json() (index.js's global
+  // middleware) never populates req.body for a multipart request - it
+  // stayed {} and the actual uploaded file bytes were silently dropped
+  // before ever reaching spring-boot-api. First hit by ProviderController's
+  // signature-upload endpoint (phase 13), the first file upload anywhere
+  // in this app. isMultipartRequest is what forwardToApi now checks to
+  // decide whether to stream the raw request through instead.
+  await t.test('is true for a real multipart content-type with a boundary', () => {
+    assert.equal(isMultipartRequest('multipart/form-data; boundary=----WebKitFormBoundaryabc123'), true);
+  });
+
+  await t.test('is false for a JSON content-type', () => {
+    assert.equal(isMultipartRequest('application/json'), false);
+  });
+
+  await t.test('is false for no content-type at all', () => {
+    assert.equal(isMultipartRequest(undefined), false);
+    assert.equal(isMultipartRequest(''), false);
   });
 });
