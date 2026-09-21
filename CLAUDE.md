@@ -10,8 +10,7 @@ rather than rewriting wholesale.
 A multi-tenant clinic management SaaS. Tenants are **clinics**. Each clinic
 manages its providers, rooms, and appointment calendar. Patients book through
 a patient portal; front-desk staff book/reschedule/check-in walk-in patients
-at the counter; providers document visits. A lab-orders module is planned as
-a later, separately-scoped addition (see "Phase plan" below).
+at the counter; providers document visits and order labs (see "Phase plan").
 
 Modeled deliberately on the architecture and working conventions of a prior
 bus-ticketing SaaS at `D:\git-mengistu\SpringBoot\bus-ticketing-saas` -
@@ -203,9 +202,10 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   from `com.clinicops.appointment` rather than inventing a parallel
   exception type for the same "wrong status for this action" shape.
 - **Encounters/prescriptions stay editable indefinitely** (decided
-  2026-09-13) - no freeze/lock concept once `checked_out`, since nothing in
-  the schema or kickoff spec asks for one and providers commonly need to
-  amend a note after the fact.
+  2026-09-13; **superseded 2026-09-20** by phase 12 - now editable freely
+  only until explicitly signed) - no freeze/lock concept once
+  `checked_out`, since nothing in the schema or kickoff spec asks for one
+  and providers commonly need to amend a note after the fact.
 - **Encounter authorship: assigned provider (by their own resolved
   `Provider.id`) or `clinic_admin` only** (decided 2026-09-13) -
   `front_desk` gets no access to encounter endpoints at all (clinical
@@ -372,6 +372,61 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
   accumulate multiple rows of the same `consentType` over time (e.g.
   re-consenting after a policy version change) - `GET` returns the full
   list, not a singleton, unlike Allergy/Vitals/MedicalHistory.
+- **Prescription stays encounter-scoped, full-replace-list, no per-item
+  CRUD** (decided 2026-09-20, phase 11 plan mode) - the new `status` field
+  (active/completed/discontinued) describes one specific prescription
+  instance within its own encounter's list, not a cross-encounter ongoing
+  -medication concept (this table has no `patientId`, only `encounterId` -
+  it structurally can't represent "a medication from 3 visits ago"). Kept
+  the existing full-replace mechanism rather than inventing per-item
+  create/update endpoints just because `status` was added.
+- **ICD-10 on Encounter is free text, not a real coded lookup** (decided
+  2026-09-20) - staged as a plain `TEXT` column (`icd10Codes`), never
+  validated against an actual ICD-10 dataset. Importing/maintaining tens
+  of thousands of real codes is a separate, much bigger later decision
+  than this phase's own "keep minimal" scope.
+- **Prescription `route` is an allow-listed string, not free text** (decided
+  2026-09-20, a call made without an explicit question to the user) -
+  oral/iv/im/subcutaneous/topical/inhaled/rectal/sublingual/other, same
+  "backend-defined bounded set validated in code, not a DB enum type"
+  convention as `Allergy.severity`/`Room.status`. `other` is the escape
+  hatch for a route this list doesn't name.
+- **Sign-and-lock: an explicit `sign` action, not automatic on
+  `checked_out`** (decided 2026-09-20, phase 12) - matches this app's
+  existing convention of dedicated action endpoints for consequential
+  transitions (deactivate/reactivate, check-in's own states) rather than
+  an implicit side effect. Idempotent re-call, same convention as
+  `CheckInService` - but unlike those, **no unsign/reopen endpoint exists
+  anywhere**; once signed, always signed.
+- **Locking cascades to prescriptions, not to vitals** (decided
+  2026-09-20) - prescriptions were part of that visit's documentation;
+  `Vitals` (phase 8) is a structurally separate, `Appointment`-scoped
+  table writable by `front_desk` too, and measured values don't need the
+  same amendment-vs-edit treatment as clinical narrative.
+- **Addenda require the encounter already signed** (decided 2026-09-20) -
+  before signing, a provider just edits directly; addenda are the
+  post-signing correction case specifically, not a general-purpose
+  comment feature.
+- **`EncounterLockedException` is its own type, not a reuse of
+  `InvalidAppointmentStatusException`** (decided 2026-09-20) - this is the
+  *encounter's* lock state, not the *appointment's* status; an appointment
+  can be `with_provider`/`checked_out` while its encounter is separately
+  locked.
+- **Referrals: one entity, not two** (decided 2026-09-20, phase 14) -
+  internal vs. external derived from which nullable field group is
+  populated, matching `Payment`'s own `appointmentId`/`labOrderId`
+  precedent.
+- **Referrals: provider + clinic_admin only, no front_desk** (decided
+  2026-09-20) - matches `Encounter`'s gate; a clinical judgment, not
+  front-desk logistics.
+- **Invoices: extended to lab orders, manual generation, immutable once
+  issued** (decided 2026-09-21, phase 15) - `invoices` gained `payments`'
+  own dual nullable-FK + exactly-one-owner CHECK; `POST .../invoice` is a
+  deliberate `front_desk`/`clinic_admin` action with no status gate (not
+  an automatic side effect of `checked_out`/`reviewed`), and a repeat
+  call 409s rather than replacing - unlike Encounter's upsert-in-place.
+  `ClinicSettings.taxRatePercent` (dormant since phase 5) is finally
+  consumed here via `ClinicSettingsService.resolve`.
 
 ## Phase plan
 
@@ -438,17 +493,18 @@ built so far:
     -treatment and privacy/data-protection consent, no signature image
     (deliberately kept lightweight even with file storage now available).
     See "Phase 10: consent & compliance records" below.
-11. Prescription + coding depth (route/frequency/duration/refills; ICD-10
-    tagging) - sketched, not built.
-12. **Sign-and-lock clinical notes - reverses a pinned decision.** Today:
-    "Encounters/prescriptions stay editable indefinitely... no freeze/lock
-    concept" (see "Domain decisions pinned so far"). A real EHR needs
-    amendments-not-edits once a note is signed. Flagged as needing explicit
-    sign-off before touching, not just a normal next phase - other code
-    and tests currently assume free editability.
-13. Provider profile hardening (license number/expiry, employment status,
-    digital signature) - sketched, not built; also needs the file-storage
-    decision below.
+11. **Prescription + coding depth** (built 2026-09-20) -
+    route/frequency/duration/quantity/refills/status on `Prescription`,
+    free-text ICD-10 tags on `Encounter`. See "Phase 11: prescription +
+    coding depth" below.
+12. **Sign-and-lock clinical notes** (built 2026-09-20, explicit user
+    sign-off obtained first via a direct question) - reverses the phase-4
+    "editable indefinitely" decision. Once signed, an encounter and its
+    prescriptions lock; corrections go through a new append-only
+    `EncounterAddendum` instead. See "Phase 12" below.
+13. **Provider profile hardening** (built 2026-09-20) - license number/
+    expiry, employment status, digital signature - the first feature to
+    use the file-storage decision below. See "Phase 13" below.
 
 **File storage, decided ahead of need (2026-09-20)** - phases 10 and 13
 above were flagged as blocked on a file-storage decision when first
@@ -458,9 +514,11 @@ file uploads - no longer an open question, just not yet implemented since
 no phase needing it has been built. Mount a named volume in
 `docker-compose.yml` (matching the existing `postgres`/`redis` pattern)
 when that phase is built.
-14. Referrals (internal + external) - sketched, not built.
-15. Real billing build-out against the `invoices` table (unused since
-    `V1__init.sql`) - sketched, not built.
+14. **Referrals** (built 2026-09-20) - internal (provider-to-provider) and
+    external, one entity. See "Phase 14" below.
+15. **Real billing build-out** (built 2026-09-21) - `invoices` extended to
+    cover lab orders too, staff-triggered generation, real tax-rate wiring.
+    See "Phase 15" below.
 
 Lower priority / only if the product genuinely wants full-EHR breadth:
 immunizations, structured physical-exam findings, discharge summaries -
@@ -1027,19 +1085,11 @@ flagged as revisitable. New migration `V7__allergies_and_vitals.sql`.
   Testcontainers/Windows-npipe wall (`Failures: 0` in every surefire
   report, same as every other `AbstractIntegrationTest` subclass on this
   machine) - not a regression.
-- **Live-verified against the real running stack**: rebuilt
-  `spring-boot-api` (`docker compose up --build -d spring-boot-api`),
-  confirmed Flyway applied V7 cleanly in the container's own startup log,
-  then as a real `demo-front-desk` browser login (via an in-page `fetch`,
-  cookies included): recorded vitals on a genuinely plain-`booked`
-  appointment (proving the "no status gate" decision actually works, not
-  just compiles - `EncounterController`'s own gate would have rejected
-  this exact call with a 409) with BMI computed correctly (170cm/70kg ->
-  24.2), then recorded a real allergy for that appointment's patient.
-  Confirmed directly in Postgres that both writes landed in
-  `phi_access_log` with the correct `resource_type`/`patient_id`/
-  `actor_role` - the PHI-audit wiring added this same session actually
-  fires for these two new resources, not just the ones it launched with.
+- **Live-verified against the real running stack** - see CLAUDE-history.md's
+  "Verified this session - phase 8: allergies + vitals" for the full
+  write-up (rebuilt the container, confirmed V7 applied, real
+  `demo-front-desk` browser login exercising both the no-status-gate
+  decision and BMI computation, both writes confirmed in `phi_access_log`).
 - **No frontend yet** - backend only, same "no dedicated UI this phase"
   scope boundary the PHI audit log used. Reachable via `fetch(...,
   {credentials:'include'})` from the browser console today; a real
@@ -1090,18 +1140,11 @@ reasoning; both went with the recommended option. New migration
   and cross-tenant 404. Compiles clean, confirmed to fail only via the
   pre-existing Testcontainers/Windows-npipe wall (`Failures: 0` in the
   surefire report) - not a regression.
-- **Live-verified against the real running stack**: rebuilt
-  `spring-boot-api`, confirmed Flyway applied V8 cleanly in the
-  container's own startup log, then as a real `demo-front-desk` browser
-  login (in-page `fetch`, cookies included): recorded medical history for
-  a real patient, then called it again omitting three of the five fields
-  and confirmed the response actually came back with those three as
-  `null` (not silently retaining the old values) - the full-replace
-  semantics working live, not just passing a unit assertion. Confirmed
-  directly in Postgres that exactly one `medical_history` row exists for
-  that patient after both calls (upsert, not a duplicate insert), and that
-  both writes landed in `phi_access_log` with `resource_type =
-  'medical_history'`.
+- **Live-verified against the real running stack** - see CLAUDE-history.md's
+  "Verified this session - phase 9: medical history" (real `demo-front-desk`
+  login, confirmed the full-replace semantics actually null out omitted
+  fields rather than retaining them, exactly one row in Postgres after
+  two calls).
 - **No frontend yet** - same scope boundary as phase 8.
 
 ## Phase 10: consent & compliance records
@@ -1142,20 +1185,189 @@ pinned so far" for the full reasoning. New migration
   role gate, and cross-tenant 404. Compiles clean, confirmed to fail only
   via the pre-existing Testcontainers/Windows-npipe wall (`Failures: 0` in
   the surefire report) - not a regression.
-- **Live-verified against the real running stack**: rebuilt
-  `spring-boot-api` (one transient Docker build failure on the first
-  attempt, succeeded cleanly on retry with no code changes - not
-  reproducible, not investigated further), confirmed Flyway applied V9
-  cleanly in the container's own startup log, then as a real
-  `demo-front-desk` browser login recorded two consent records
-  (`general_treatment`/`v1` and `privacy_data`/`v2`) for the same real
-  patient used in phases 8/9's own verification, and confirmed via `GET`
-  that **both** rows come back - not just the most recent one, proving the
-  accumulate-not-replace design actually holds against a real request, not
-  just a mocked test. Confirmed directly in Postgres: exactly 2 rows for
-  that patient, and `phi_access_log` correctly recorded both writes plus
-  the list read.
+- **Live-verified against the real running stack** - see CLAUDE-history.md's
+  "Verified this session - phase 10: consent & compliance records" (real
+  `demo-front-desk` login, confirmed two different consent types both
+  persist and both come back on GET - the accumulate-not-replace design
+  holding against a real request).
 - **No frontend yet** - same scope boundary as phases 8/9.
+
+## Phase 11: prescription + coding depth
+
+Fourth phase of the revised (EHR-leaning) phase plan. No user questions
+this time - a straightforward extension of two existing entities
+(`Prescription`, `Encounter`) rather than a new resource with its own
+access-gate/shape forks to resolve; three design calls made and pinned
+directly (see "Domain decisions pinned so far"). New migration
+`V10__prescription_and_coding_depth.sql` (`ALTER TABLE`, not new tables).
+
+- **`Prescription`** gained `route` (allow-listed), `frequency`/`duration`
+  (free text), `quantityDispensed`/`refillsAllowed` (integers), `status`
+  (allow-listed, defaults `"active"`) - all optional except `status`.
+  Validated in `EncounterService.replacePrescriptions` before the
+  delete-and-reinsert, same `ResponseStatusException`-on-invalid-value
+  shape `RoomController`'s own status check uses.
+- **`Encounter`** gained `icd10Codes` (free-text `TEXT`, e.g. `"J20.9,
+  R05"`) - threaded through `UpsertEncounterRequest` ->
+  `EncounterService.upsert` -> the entity, no validation against a real
+  code set (see the pinned decision).
+- **Existing frontend page untouched, deliberately** -
+  `provider/Encounter.jsx` (frontend phase E) still only reads/writes the
+  original fields; confirmed live it keeps working unchanged against the
+  wider backend shape (new columns all nullable/defaulted). The new
+  fields aren't surfaced in any UI yet - same "backend first" pattern
+  phases 8-10 used, applied to an existing page instead of a new one.
+- **`EncounterIntegrationTest`** extended in place (call sites updated for
+  the new constructor arity) plus `anInvalidRouteOrStatusIsRejected`. No
+  `TenantIsolationIntegrationTest` addition - fields, not a new resource.
+  `Failures: 0`, 11/11 - not a regression.
+- **Live-verified against the real running stack** - see CLAUDE-history.md's
+  "Verified this session - phase 11: prescription + coding depth" (real
+  `demo-provider` login, all six new prescription fields plus `icd10Codes`
+  round-tripped through Postgres, the route allow-list rejecting a bad
+  value live, and the existing provider encounter UI confirmed unaffected).
+
+## Phase 12: sign-and-lock clinical notes
+
+Fifth phase of the revised (EHR-leaning) phase plan - the one flagged from
+the first sketch as reversing existing behavior, not just adding to it.
+Explicit sign-off was obtained via a direct question before writing any
+code, not just a generic "proceed" - see the four pinned decisions above.
+New migration `V11__encounter_sign_and_lock.sql`.
+
+- **`Encounter`** gained `signedAt`/`signedBy` (both null until signed).
+  **`EncounterAddendum`** (new entity, `com.clinicops.encounter` package) -
+  genuinely immutable once created, same "no update/delete anywhere"
+  precedent as `ConsentRecord`/`PhiAccessLog`; only creatable once the
+  parent encounter is signed.
+- **`EncounterService`** - `upsert`/`replacePrescriptions` both call a new
+  `requireUnlocked` check (throws `EncounterLockedException`, 409, once
+  `signedAt` is set); `sign` (idempotent, mirrors `CheckInService`'s own
+  transition shape); `addAddendum` (requires the encounter already
+  signed; deliberately skips the documentable-status gate - a correction
+  applies regardless of what the appointment's status has done since).
+  `get` now bundles `addenda` (oldest-first) alongside encounter/
+  prescriptions.
+- **`EncounterController`** - two new no-body POST endpoints,
+  `.../encounter/sign` and `.../encounter/addenda` (same role gate as
+  every other encounter endpoint), plus an `EncounterLockedException` ->
+  409 handler. Both PHI-audited.
+- **`EncounterIntegrationTest`** gained six cases: sign locks both the
+  encounter and its prescriptions (original content confirmed unchanged
+  after a rejected edit, not just the call rejected); re-sign is
+  idempotent; sign-before-encounter-exists rejected; addendum rejected
+  pre-signing, accepted post-signing and shown in the bundled GET;
+  clinic_admin signs on behalf of any provider; a different provider
+  can't sign someone else's encounter. `Failures: 0`, 17/17 - not a
+  regression.
+- **Live-verified against the real running stack, with extra care given
+  this phase's behavior-reversing nature** - see CLAUDE-history.md's
+  "Verified this session - phase 12: sign-and-lock clinical notes" for the
+  full write-up (a real `demo-provider` login signing a real encounter,
+  the lock genuinely rejecting a direct edit and prescription change, an
+  addendum confirmed both via the API and in Postgres, and the *existing*
+  `provider/Encounter.jsx` page - not just raw API calls - confirmed to
+  surface the real 409 message rather than fail silently).
+- **A real, honestly-documented UX gap**: `provider/Encounter.jsx`
+  (frontend phase E) has no dedicated "locked"/"signed" UI, no sign
+  button, and no addendum form - a real frontend refinement, not scoped
+  to this backend-only phase.
+
+## Phase 13: provider profile hardening
+
+Sixth phase - license number/expiry, employment status (allow-listed:
+full_time/part_time/locum), and a digital signature image on `Provider`.
+New migration `V12__provider_profile_hardening.sql`. First feature needing
+real file storage - `com.clinicops.filestorage.FileStorageService` (local
+disk + a Docker volume, per the phase-9 decision): one file per
+`(subdirectory, ownerId)`, filename always `<ownerId><extension>` derived
+from a validated content type (`image/png`/`image/jpeg` only, 2MB cap),
+never the client-supplied filename - avoids an unexpected extension or a
+path-traversal attempt reaching disk. `docker-compose.yml` gained a named
+`uploads_data` volume, same pattern as `postgres_data`.
+
+`ProviderController` gained `POST .../signature` (multipart, `clinic_admin`
+only), `GET .../signature` (raw bytes, same 3-role gate as the resource),
+`POST .../signature/remove` (hard delete, idempotent).
+`ProviderControllerIntegrationTest` gained 7 cases - `Failures: 0`, 12/12.
+
+**A real, previously-latent bug found and fixed**: the first live upload
+through the browser 500'd, "Current request is not a multipart request."
+`node-bff`'s `forwardToApi` always JSON-re-serialized `req.body`, but
+`express.json()` never populates `req.body` for a multipart request - the
+file bytes were silently discarded before reaching spring-boot-api. Fixed
+by streaming the raw request through for a multipart content-type instead
+(`body: req, duplex: 'half'`), preserving the original boundary. Detection
+is now `isMultipartRequest` (exported, unit-tested, 3 new cases,
+mirroring `shouldForwardBody`'s convention) - latent since node-bff's
+proxy layer was first built, never exercised until this phase's own
+upload.
+
+**Live-verified against the real running stack** - see CLAUDE-history.md's
+"Verified this session - phase 13" (a real PNG through the actual
+browser->node-bff->spring-boot-api path, byte-for-byte round trip, and
+the file's real presence/absence confirmed directly on the mounted Docker
+volume via `docker exec`, not just the API's own claim).
+
+No frontend UI for any of this yet (license/employment fields, signature
+upload/preview) - same "backend first" scope boundary as every EHR-leaning
+phase before it.
+
+## Phase 14: referrals
+
+Seventh phase - internal and external referrals, one `Referral` entity
+(reference doc's Forms 21 and 12 - see pinned decisions above). New
+migration `V13__referrals.sql`.
+
+`ReferralService.create` enforces the internal-xor-external rule as a
+cross-field check (400 otherwise) - a validation annotation on the record
+can't express it. `referringProviderId` is explicit in the request, same
+pattern as `LabOrder.orderingProviderId`. `status`/`priority` allow-listed;
+`completedAt` auto-set on a terminal status. `ReferralController` mirrors
+`LabOrderController`'s CRUD shape, PHI-audited.
+
+`ReferralControllerIntegrationTest` (6 cases) + one `TenantIsolationIntegrationTest`
+case - `Failures: 0` throughout. **Live-verified** - see CLAUDE-history.md's
+"Verified this session - phase 14" (real internal+external referrals as
+`demo-provider`, the neither-nor validation rejected live, a status
+transition confirmed setting `completedAt`, all writes confirmed in
+Postgres and `phi_access_log`).
+
+No frontend UI yet - same "backend first" scope boundary as before.
+
+## Phase 15: real billing build-out
+
+Eighth and last phase of the revised plan - closes "Invoicing/billing
+deferred" (pinned 2026-09-12). Three questions resolved before writing
+code (owner scope, generation trigger, `taxRatePercent` wiring) - see
+"Domain decisions pinned so far". New migration `V14__invoices_billing.sql`.
+
+- **`com.clinicops.invoice`** - `Invoice` extends `BaseTenantEntity`,
+  `appointmentId`/`labOrderId` nullable, one set per
+  `chk_invoices_exactly_one_owner` - `Payment`'s phase-7 shape, finally
+  applied to the table it was originally meant for. `InvoiceService` (a
+  dedicated bean - spans `AppointmentType`/`LabOrder` pricing plus
+  `ClinicSettingsService.resolve`, same reasoning as `ClinicSettingsService`
+  itself): prices from `AppointmentType.priceAmount` or `LabOrder.
+  totalCost` (already snapshotted, phase 7); `tax = subtotal * taxRate /
+  100` (HALF_UP, scale 2). A second generate for the same owner throws
+  `InvoiceAlreadyExistsException` (409) - immutable once issued, unlike
+  Encounter's upsert-in-place.
+- **`AppointmentInvoiceController`**/**`LabOrderInvoiceController`** -
+  mirrors the Payment controllers' split-by-owner shape and role gate
+  (`front_desk`+`clinic_admin`+`provider` read, `front_desk`+
+  `clinic_admin` generate); no status gate.
+- **`InvoiceControllerIntegrationTest`** (7 cases) - untaxed default,
+  overridden tax rate applied, duplicate-generate 409, pre-generation
+  404, provider read-only, lab-order pricing from snapshotted
+  `totalCost`, cross-tenant 404. `Failures: 0`.
+- **Live-verified** - see CLAUDE-history.md's "Verified this session -
+  phase 15" (both owner types generated live via real staff logins, a
+  real non-zero tax override applied correctly, both rows confirmed in
+  Postgres).
+
+No frontend UI yet - same "backend first" scope boundary as every
+EHR-leaning phase before it.
 
 ## Frontend
 
@@ -1272,29 +1484,13 @@ phase 3), so nothing server-side needed to change:
   (the page they came from), `provider` keeps "Back to Today's Schedule" ->
   `/provider` unchanged.
 
-**Verified live this session**: as `demo-clinic-admin`, reached
-`/front-desk/appointments` (no redirect - the widened gate works), opened a
-real `with_provider` appointment ("Encounter Test Patient") and saw the new
-"Document encounter" link, followed it to the shared encounter page (no
-redirect to `/`), and **edited the existing note** - confirmed via Postgres
-exactly one `encounters` row for that appointment both before and after (id
-unchanged, `updated_at` bumped), same "editable indefinitely, upsert never
-duplicates" guarantee phase 4 already proved for `provider`. Confirmed the
-"Document encounter" link is correctly absent on a `booked` appointment, and
-that navigating there directly renders the existing "not ready to document
-yet" empty state with the new "Back to appointment" link, which correctly
-lands back on `/front-desk/appointments/:id` (not a loop). Logged out
-(app's own "Log out" button - one step, confirmed clean per the frontend
--phase-A finding) and back in as `demo-front-desk`: the same `with_provider`
-appointment's detail page shows no "Document encounter" section at all, and
-navigating directly to the encounter URL redirects cleanly back to `/` -
-`front_desk` still has zero access, both by omission (no link) and by the
-route gate (direct URL doesn't work either). `front_desk` still lists/opens
-appointments on the now-shared route normally. Logged in as `demo-provider`
-and reached the same encounter page directly - unaffected, and it correctly
-showed the note `demo-clinic-admin` had just edited (chief complaint "Sore
-throat, documented by clinic_admin"), proving the shared-editing path works
-across roles, not just per-role in isolation.
+**Verified live this session** - see CLAUDE-history.md's "Verified this
+session - clinic_admin encounter-access fix" (as `demo-clinic-admin`,
+reached the shared appointments list, opened a real `with_provider`
+appointment, edited the note via the shared encounter page, confirmed
+exactly one `encounters` row before/after; confirmed `front_desk` still
+has zero access by both omission and route gate; confirmed `demo-provider`
+sees the same edited note - the shared-editing path working across roles).
 
 **Frontend phase B** (built 2026-09-13, same session) is that next phase for
 the patient side specifically: the booking flow (patient + guest, full
@@ -1729,113 +1925,58 @@ this second consumer).
   discarded, now captured), and set a random 16-character temporary
   password (`setTemporaryPassword`, `temporary: true` so the user must
   change it at first login).
-  - **No real email delivery** - no SMTP is configured for this realm in
-    local dev (see "Known gaps" - there's no real sender anywhere in this
-    app, `LoggingEmailSender` above included), so Keycloak's own
-    reset-password-email flow isn't used. Instead the generated temporary
-    password is returned once, directly in the create response
-    (`ClinicProvisioningResult { clinic, initialAdminTemporaryPassword }`
-    - same "wrapper record bundling just-created extras" shape as
-    `EncounterWithPrescriptions`/`LabOrderWithTests`), never persisted or
-    logged anywhere. A platform_admin hands it to the new clinic's admin
-    out of band (phone, Slack, whatever) - a deliberately low-tech answer
-    matching this app's actual state (no notification sender existed
-    before this same session), not a permanent design.
-  - **Same no-rollback caveat as clinic creation itself** - if the role
-    assignment/membership/password step fails after the Keycloak user was
-    already created, that user is left orphaned (no role, no org
-    membership), recoverable by hand via the Admin Console. Not solved
-    differently here; this whole flow already accepted that class of risk
-    for the org-vs-local-row case.
+  - **No real email delivery** - the generated temporary password is
+    returned once in the create response
+    (`ClinicProvisioningResult { clinic, initialAdminTemporaryPassword }`),
+    never persisted/logged - a platform_admin hands it over out of band.
+    Same no-rollback caveat as clinic creation itself (a mid-sequence
+    Keycloak failure leaves an orphaned user, recoverable by hand).
   - `PlatformController.createClinic` now returns `ClinicProvisioningResult`
-    unconditionally (not just when an admin was requested) - the response
-    shape changed for every create call, so `PlatformControllerIntegrationTest`'s
-    existing `jsonPath` assertions were updated to `$.clinic.*` and a new
-    `creatingWithAnAdminEmailProvisionsARealClinicAdminLogin` test added
-    (mocks `KeycloakUserProvisioningClient`, asserts the create/assign
-    -role/add-member/set-password call sequence and a non-empty temporary
-    password in the response). `ClinicProvisioningServiceTest` gained two
-    more pure-unit cases (no-admin-email skips the user-provisioning
-    client entirely; admin-email drives the full sequence) - all 5 cases
-    confirmed passing locally.
+    unconditionally - `PlatformControllerIntegrationTest`'s assertions
+    updated to `$.clinic.*`, plus a new test mocking the full create/
+    assign-role/add-member/set-password sequence. `ClinicProvisioningServiceTest`
+    gained two more pure-unit cases - all 5 passing locally.
   - **Frontend**: `pages/platform-admin/Clinics.jsx`'s create form gained
-    optional "Initial admin email"/"Initial admin name" fields and a
-    one-time amber banner showing the returned temporary password with a
-    dismiss button (never stored beyond component state - a page refresh
-    loses it, matching "shown once" by construction, not just by policy).
-    The page's own copy ("No initial clinic_admin login is created here -
-    assign one in Keycloak afterward") was rewritten to describe the new,
-    real option.
-  - **Both features live-verified end to end against the real stack**
-    (`docker compose up --build`, a real `demo-platform-admin` browser
-    login, direct Keycloak admin-API checks, and a real guest booking) -
-    not just `npm run build`/the mocked test suites. See
-    CLAUDE-history.md's "Verified this session - post-phase-7 backend
-    additions" for the full write-up: the provisioned account's temporary
-    password was actually used to log in (Keycloak correctly forced a
-    password change first), landed on a `clinic_admin` dashboard
-    correctly scoped to the new clinic; a real booking's outbox row was
-    confirmed flipping from `pending` to `sent` in Postgres within the
-    worker's own poll window, with the stub send visible in
-    `spring-boot-api`'s container logs.
+    optional admin email/name fields and a one-time amber banner showing
+    the temporary password (component state only, never persisted).
+  - **Both features live-verified end to end** - see CLAUDE-history.md's
+    "Verified this session - post-phase-7 backend additions" (the
+    temporary password actually logged in with Keycloak forcing a
+    password change first; a real booking's outbox row confirmed flipping
+    `pending` -> `sent` in Postgres within the worker's own poll window).
 
-**Test-coverage gaps closed (built 2026-09-20)** - three items, chosen after
-an audit found `PatientController` and `AppointmentPaymentController` had
-**zero** dedicated test coverage (not just missing tenant-isolation cases -
-no test file existed at all), and confirmed the consolidated
-`TenantIsolationIntegrationTest` was still genuinely unbuilt (11 of 19
-resource test classes already had their own inline cross-tenant case; the
-rest - Patient, AppointmentPayment, ProviderWorkingHours - had none).
-ClinicSettings/branding and `my-schedule`/`my-appointments` were confirmed
-to have no cross-tenant vector to even test (they resolve entirely from the
-caller's own token, no `{id}` path parameter naming another tenant's row),
-and `PlatformController` is cross-tenant by design - all three excluded
-with a comment explaining why, not silently skipped.
+**Test-coverage gaps closed (built 2026-09-20)** - an audit found
+`PatientController`/`AppointmentPaymentController` had **zero** dedicated
+tests, and the consolidated `TenantIsolationIntegrationTest` was still
+genuinely unbuilt (11 of 19 resource classes had their own inline
+cross-tenant case; Patient/AppointmentPayment/ProviderWorkingHours had
+none). ClinicSettings/branding and `my-schedule`/`my-appointments` have no
+cross-tenant vector to test (resolve entirely from the caller's own
+token); `PlatformController` is cross-tenant by design - all three
+excluded with a comment, not silently skipped.
 
 - **`PatientControllerIntegrationTest`** (new) - create/list/get/search,
   required-field validation, role checks (`front_desk`/`clinic_admin`
-  write, `+provider` read, `patient` refused entirely), and cross-tenant
-  404 on get/list/search alike (a clinic B search never returns clinic A's
-  patients, not just a direct id lookup).
-- **`AppointmentPaymentIntegrationTest`** (new) - `LabOrderPaymentIntegrationTest`
-  already exercised this controller's happy path incidentally
-  (`appointmentAndLabOrderPaymentsAreScopedPerOwner`) but never its own
-  role/validation/cross-tenant edges. Covers `front_desk`/`clinic_admin`
-  -only recording vs. `+provider` read, a non-positive amount and a blank
-  method both 400, and cross-tenant 404 on both the list and the record
-  action.
-- **`TenantIsolationIntegrationTest`** (new, `com.clinicops.tenant` package)
-  - one method per staff-scoped resource (appointment, patient, provider,
-  provider working hours, room, appointment type, fee policy, lab test
-  rate, encounter, lab order, and both payment owners), each seeding in
-  clinic A and asserting clinic B's staff get 404 on every path checked
-  (not just GET - working-hours and payments also assert the POST/write
-  path), plus one deactivated-clinic lockout case. Deliberately narrower
-  than the existing per-resource tests, not a replacement for them - see
-  the class's own javadoc for the reasoning.
+  write, `+provider` read, `patient` refused), cross-tenant 404 on get/
+  list/search alike.
+- **`AppointmentPaymentIntegrationTest`** (new) - role gate
+  (`front_desk`/`clinic_admin` record, `+provider` read), a non-positive
+  amount and a blank method both 400, cross-tenant 404 on list and record.
+- **`TenantIsolationIntegrationTest`** (new, `com.clinicops.tenant`) - one
+  method per staff-scoped resource, each seeding in clinic A and asserting
+  clinic B's staff get 404 on every path checked (working-hours/payments
+  also assert the write path), plus one deactivated-clinic lockout case.
+  Narrower than the existing per-resource tests, not a replacement.
 - All three compile clean and were confirmed to fail **only** via the
-  pre-existing, documented Testcontainers/Windows-npipe wall (same
-  `ExceptionInInitializerError` every other `AbstractIntegrationTest`
-  -based class already hits on this machine, `Failures: 0` in every
-  surefire report) - not a new regression. A `DOCKER_HOST=npipe:////./pipe/docker_engine`
-  override was tried as a quick check in case Docker Desktop (confirmed
-  running and otherwise fully working via plain `docker`/`docker compose`
-  all session) just wasn't being auto-detected - made no difference,
-  consistent with this being the same already-diagnosed incompatibility,
-  not a fresh environment issue worth chasing further here.
+  pre-existing, documented Testcontainers/Windows-npipe wall (`Failures:
+  0` in every surefire report) - not a new regression.
 
 **PHI access audit log** (built 2026-09-20) - closes the "PHI-access audit:
-deferred" gap pinned 2026-09-12. No reference-project precedent at all (a
-fresh design, same situation as the clinic_admin-provisioning work above) -
-two scoping questions were put to the user before writing any code, since
-this is genuinely compliance-flavored and the answers change how invasive
-the change is: **what counts as PHI worth logging** (patient demographics
-only vs. + clinical records vs. clinical-only - answered "patient +
-clinical records", i.e. `PatientController` plus encounters/prescriptions/
-lab orders, explicitly not `fee_policies`/payments, which are financial,
-not health, records) and **reads, writes, or both** (answered "both" - a
-real audit trail has to answer "who looked at this" as well as "who
-changed it").
+deferred" gap pinned 2026-09-12. No reference-project precedent - two
+scoping questions were put to the user before writing code: **what counts
+as PHI** (answered "patient + clinical records" - `PatientController` plus
+encounters/prescriptions/lab orders, explicitly not `fee_policies`/
+payments) and **reads, writes, or both** (answered "both").
 
 - **`com.clinicops.phiaudit`** (new package) - `PhiAccessLog` (extends
   `BaseTenantEntity`; `patientId` nullable for a guest-channel appointment/
@@ -1848,22 +1989,14 @@ changed it").
   `clinic_admin` only, optional `?patientId=`, most-recent-200, no
   pagination framework - same simplicity as every other list endpoint in
   this app). New migration `V6__phi_access_log.sql`.
-- **Explicit call sites, not AOP/an annotation** - every other cross
-  -cutting concern in this codebase (the Notification outbox, `TenantContext`)
-  is a plain injected bean called by name, not an aspect; this follows the
-  same style. Wired into `PatientController` (create/get/list-or-search),
-  `EncounterController` (upsert/get/replace-prescriptions - Encounter has
-  no `patientId` of its own, resolved via the appointment it belongs to,
-  a new `AppointmentRepository` dependency added just for this), and the
-  `laborder` package's staff-facing controllers
-  (`LabOrderController`/`LabOrderStatusController`/`LabOrderCancellationController`/
-  `PatientLabRequestController.confirmAndOrder` - every method already
-  returns or fetches a `LabOrderWithTests`/`LabOrder`, so `patientId` was
-  already in hand at each call site with no extra query). Deliberately
-  **not** wired into `PatientLabRequestController`'s own patient-facing
-  endpoints (`createRequest`/`myLabOrders`) - scoped to staff-initiated
-  access only, matching most audit regimes' own distinction between "staff
-  looked at this" and "the patient checked their own record."
+- **Explicit call sites, not AOP/an annotation** - a plain injected bean
+  called by name (matches the Notification outbox/`TenantContext` style).
+  Wired into `PatientController`, `EncounterController` (`patientId`
+  resolved via the appointment - a new `AppointmentRepository` dependency),
+  and the `laborder` package's staff-facing controllers. Deliberately
+  **not** wired into `PatientLabRequestController`'s patient-facing
+  endpoints - scoped to staff-initiated access only ("staff looked at
+  this" vs. "the patient checked their own record").
   - **List/search endpoints log one row per call, not one per result row**
     (`PatientController.patients`/`LabOrderController.labOrders`) - a
     search touches many patients at once, not one specific chart;
@@ -1871,91 +2004,46 @@ changed it").
     `patientId`/`resourceId` for these.
   - **Best-effort, not transactional with the domain write it accounts
     for** - `PhiAccessAuditService.log` catches and logs a warning on any
-    repository failure rather than propagating it (same "a flaky provider
-    never fails the primary action" reasoning as `NotificationWorker`),
-    and since it's called from the controller after the audited service
-    method has already returned/committed, a domain write can in principle
-    succeed while its audit row fails to write. Not solved differently
-    here - a genuine, documented limitation, not an oversight.
-- **`PhiAccessAuditServiceTest`** (new, pure Mockito - no Spring context,
-  no Testcontainers, actually runs on this dev machine) - role extraction
-  from a real `realm_access.roles` claim shape, a null patientId allowed
-  through, an unrecognized role falling back to `"unknown"` rather than
-  throwing, and a repository failure being swallowed, not propagated; all
-  5 cases confirmed passing. `PhiAccessLogIntegrationTest` (new,
-  Testcontainers-based, blocked on this machine the same way every
-  `AbstractIntegrationTest` subclass is - see the note above) covers the
-  real-request wiring: a patient create+read each write their own row, an
-  encounter read resolves `patientId` through the appointment correctly,
-  and the review endpoint is both `clinic_admin`-only and tenant-scoped
-  (clinic B's admin sees none of clinic A's rows).
-- **Live-verified against the real running stack** (`docker compose up
-  --build -d spring-boot-api` - Flyway applied V6 cleanly, confirmed in
-  the container's own startup log) as real `demo-front-desk`/
-  `demo-clinic-admin` browser logins, not just the test suites: registered
-  a genuinely new patient through the front-desk walk-in UI, confirmed via
-  direct Postgres query that both a `write` row (the registration) and a
-  `read` row (the booking flow's own follow-up patient fetch) landed with
-  the correct `patient_id`; then, as `demo-clinic-admin`, called
-  `GET /api/clinic/phi-access-log?patientId=...` for real (via an
-  in-page `fetch`, cookies included) and got back both rows with the
-  actor's real email/role/internal-user-id correctly resolved from the
-  actual Keycloak-issued token - not a fabricated/mocked identity.
+    repository failure rather than propagating it (same reasoning as
+    `NotificationWorker`); a domain write can in principle succeed while
+    its audit row fails - a documented limitation, not an oversight.
+- **`PhiAccessAuditServiceTest`** (pure Mockito, runs locally) - role
+  extraction, null patientId allowed, unrecognized role -> `"unknown"`,
+  repository failure swallowed; 5/5 passing. `PhiAccessLogIntegrationTest`
+  (Testcontainers, blocked here same as every other) covers the
+  real-request wiring: patient create+read each write their own row, an
+  encounter read resolves `patientId` through the appointment, review is
+  `clinic_admin`-only and tenant-scoped.
+- **Live-verified against the real running stack** - see CLAUDE-history.md's
+  "Verified this session - PHI access audit log" (real `demo-front-desk`/
+  `demo-clinic-admin` logins, both a write and read row confirmed in
+  Postgres with the correct patient id, and the review endpoint's actor
+  identity confirmed resolved from a real Keycloak token, not mocked).
 
 **Payment auto-charge** (built 2026-09-20) - closes "nothing auto-creates a
-payment from a cancellation/reschedule fee" from the phase-7 known gaps.
-One scoping question was put to the user first, since this app has no real
-payment gateway and "auto-charge" can't literally mean "we charged a
-card": auto-create a real `Payment` row for the fee (chosen) vs. just flag
-it as owed and leave a human to record it (would have left the gap
-functionally unclosed). `Payment`'s own javadoc previously stated flatly
-that "creating/cancelling an appointment or lab order never creates or
-voids one" - that line is now the exception, not the rule, and was
-rewritten accordingly.
+payment from a cancellation/reschedule fee." Scoped with the user first
+(this app has no real payment gateway, so "auto-charge" means auto
+-creating a real `Payment` row for the fee, not literally charging a
+card). `Payment`'s own javadoc previously claimed cancelling never creates
+one - now the documented exception, not the rule.
 
-- **`Payment.FEE_AUTO_CHARGE_METHOD`** (`"fee_auto_charged"`) - the new
-  method value auto-charged fees are recorded under, so they're
-  distinguishable at a glance from a genuine staff-entered cash/card/etc.
-  payment in the same list. A zero fee never creates a row - matches
-  `FeeCalculator`'s own "missing/zero = no charge" fallback exactly, so a
-  clinic with no fee policy configured sees no behavior change at all.
-- **All three fee-computing services** now create one when the computed
-  fee is non-zero: `CancellationService` (both `cancel` and
-  `cancelAsCustomer`), `RescheduleService` (both `reschedule` and
-  `rescheduleAsCustomer`), `LabOrderCancellationService.cancel`. Each
-  already had the fee amount and the appointment/lab-order id in hand at
-  exactly the point its own audit row (`AppointmentCancellation`/
-  `AppointmentReschedule`/`LabOrderCancellation`) gets saved - the `Payment`
-  save sits right next to it, same transaction.
-- **Self-service fees are attributed to the patient's own account, not left
-  unattributed** - `CancellationService`/`RescheduleService` each gained a
-  second actor parameter (`payerUserId`), deliberately kept separate from
-  the existing `cancelledByUserId`/`actingUserId` (which stays staff
-  -attribution-only, null for self-service - an existing signal this
-  doesn't change): for the staff path both params carry the same value,
-  but for a patient's own self-cancel/self-reschedule, `payerUserId` is
-  the patient's own resolved `AppUser` id (already available in the
-  controller from the ownership lookup, just not previously threaded
-  through) while `cancelledByUserId`/`actingUserId` stays null exactly as
-  before.
-- **Live-verified against the real running stack**, not just the test
-  suite: booked a real guest appointment (no `Patient` row at all) ~10.5
-  hours out against Demo Clinic's real fee policy (50% under 2h notice,
-  100% under 0h, 0% beyond 24h - so this notice window lands in the 50%
-  tier), cancelled it as `demo-clinic-admin` through the actual front-desk
-  UI, and confirmed directly in Postgres: one `payments` row,
-  `amount = 25.00` (50% of the $50.00 appointment type), `method =
-  'fee_auto_charged'`, `recorded_by` populated with the acting
-  `clinic_admin`'s real `AppUser` id - including the guest-booking edge
-  case (`appointment.patientId IS NULL`) working correctly, not just a
-  patient-linked booking.
-- Extended `CancellationIntegrationTest`/`RescheduleIntegrationTest`/
-  `LabOrderIntegrationTest` (a non-zero fee creates the right
-  `fee_auto_charged` payment; a zero fee creates none; a self-service fee's
-  `recordedBy` is non-empty) - all compile clean and fail only via the
-  same pre-existing Testcontainers wall as every other `AbstractIntegrationTest`
-  subclass (`Failures: 0` in every surefire report, confirmed via a full
-  suite run before and after).
+- **`Payment.FEE_AUTO_CHARGE_METHOD`** (`"fee_auto_charged"`) distinguishes
+  these from a genuine staff-entered payment. A zero fee creates nothing -
+  matches `FeeCalculator`'s own fallback, so an unconfigured clinic sees
+  no behavior change.
+- All three fee-computing services (`CancellationService`,
+  `RescheduleService`, `LabOrderCancellationService.cancel`) create one
+  alongside their existing audit row, same transaction.
+- **Self-service fees attribute to the patient's own account** - a new,
+  separate `payerUserId` param on `CancellationService`/`RescheduleService`,
+  kept distinct from the existing staff-only `cancelledByUserId`/
+  `actingUserId` (whose "null = self-service" signal is unchanged).
+- **Live-verified** - see CLAUDE-history.md's "Verified this session -
+  payment auto-charge" (a real guest booking with no `Patient` row
+  cancelled through the actual front-desk UI, confirmed in Postgres as a
+  `fee_auto_charged` payment for the right amount). Extended
+  `CancellationIntegrationTest`/`RescheduleIntegrationTest`/
+  `LabOrderIntegrationTest` accordingly - `Failures: 0` throughout.
 
 ## Testing
 
@@ -2083,6 +2171,29 @@ rewritten accordingly.
   +provider read, patient token forbidden), cross-tenant 404.
   `TenantIsolationIntegrationTest` grew one more case. Same Testcontainers
   wall - confirmed via the surefire report.
+- `EncounterIntegrationTest` extended (phase 11) - the new prescription
+  fields/`icd10Codes` round-trip through the existing upsert/replace
+  endpoints, plus a new invalid-route/invalid-status 400 case. No new
+  test class - existing coverage widened in place since this phase only
+  added fields, not a new resource. Same Testcontainers wall.
+- `EncounterIntegrationTest` extended again (phase 12) - sign locks the
+  encounter+prescriptions (content confirmed unchanged after a rejected
+  edit); idempotent re-sign; sign-before-encounter-exists 400; addendum
+  gated on already-signed; clinic_admin sign-on-behalf-of; cross-provider
+  sign 403. Same Testcontainers wall.
+- `ProviderControllerIntegrationTest` extended (phase 13) - signature
+  upload/get/remove round trip, invalid content type 400, get-before
+  -upload 404, role gate, cross-tenant 404, invalid employment-status 400.
+  `node-bff` gained `isMultipartRequest` (3 cases) - both suites clean.
+- `ReferralControllerIntegrationTest` (phase 14) - internal/external
+  create, completedAt-on-completion, internal-xor-external 400, invalid
+  priority/status 400, role gate, cross-tenant 404. Same Testcontainers
+  wall.
+- `InvoiceControllerIntegrationTest` (phase 15) - untaxed-by-default
+  generation, the clinic's tax-rate override actually applied, duplicate
+  -generate 409, get-before-generation 404, provider read-only (403 on
+  generate), lab-order invoice prices from its snapshotted `totalCost`,
+  cross-tenant 404. Same Testcontainers wall.
 
 ## Verified-session logs
 
@@ -2151,8 +2262,13 @@ append new ones there too, not here.
   only means "this fee was assessed," not "cash/a card was actually
   collected" - there's still no real gateway behind it, and no refund
   concept exists for the opposite direction.
-- `invoices` (as opposed to `payments`) still exists in `V1__init.sql`,
-  unused by any code - no invoice-generation concept anywhere yet.
+- ~~`invoices` still exists in `V1__init.sql`, unused by any code~~
+  **closed 2026-09-21** - see "Phase 15: real billing build-out".
+  `com.clinicops.invoice` generates one on staff request (appointment or
+  lab order), with `ClinicSettings.taxRatePercent` finally wired up to
+  compute a real `tax_amount`. Still no invoice PDF/printable view and no
+  link from a payment back to the invoice it's paying down (the two stay
+  entirely separate financial records) - not solved here.
 - ~~Email/notifications: the `notifications` outbox table is written to but
   there's no `NotificationWorker`/real sender yet~~ **partially closed
   2026-09-19** - see "Post-phase-7 backend additions".

@@ -856,3 +856,281 @@ holding `:5432` as documented, no conflict since compose maps to `5433`.
   full outbox lifecycle working against the real scheduler, not just the
   pure-Mockito unit test's simulated call sequence.
 
+## Verified this session - PHI access audit log (2026-09-20)
+
+Live-verified against the real running stack (`docker compose up --build
+-d spring-boot-api` - Flyway applied V6 cleanly, confirmed in the
+container's own startup log) as real `demo-front-desk`/`demo-clinic-admin`
+browser logins, not just the test suites: registered a genuinely new
+patient through the front-desk walk-in UI, confirmed via direct Postgres
+query that both a `write` row (the registration) and a `read` row (the
+booking flow's own follow-up patient fetch) landed with the correct
+`patient_id`; then, as `demo-clinic-admin`, called `GET /api/clinic/
+phi-access-log?patientId=...` for real (via an in-page `fetch`, cookies
+included) and got back both rows with the actor's real email/role/
+internal-user-id correctly resolved from the actual Keycloak-issued token -
+not a fabricated/mocked identity.
+
+## Verified this session - payment auto-charge (2026-09-20)
+
+Live-verified against the real running stack, not just the test suite:
+booked a real guest appointment (no `Patient` row at all) ~10.5 hours out
+against Demo Clinic's real fee policy (50% under 2h notice, 100% under 0h,
+0% beyond 24h - so this notice window lands in the 50% tier), cancelled it
+as `demo-clinic-admin` through the actual front-desk UI, and confirmed
+directly in Postgres: one `payments` row, `amount = 25.00` (50% of the
+$50.00 appointment type), `method = 'fee_auto_charged'`, `recorded_by`
+populated with the acting `clinic_admin`'s real `AppUser` id - including
+the guest-booking edge case (`appointment.patientId IS NULL`) working
+correctly, not just a patient-linked booking. Extended
+`CancellationIntegrationTest`/`RescheduleIntegrationTest`/
+`LabOrderIntegrationTest` accordingly - all compile clean and fail only via
+the same pre-existing Testcontainers wall as every other
+`AbstractIntegrationTest` subclass (`Failures: 0` in every surefire report,
+confirmed via a full suite run before and after).
+
+## Verified this session - phase 8: allergies + vitals (2026-09-20)
+
+Rebuilt `spring-boot-api` (`docker compose up --build -d spring-boot-api`),
+confirmed Flyway applied V7 cleanly in the container's own startup log,
+then as a real `demo-front-desk` browser login (via an in-page `fetch`,
+cookies included): recorded vitals on a genuinely plain-`booked`
+appointment (proving the "no status gate" decision actually works, not
+just compiles - `EncounterController`'s own gate would have rejected this
+exact call with a 409) with BMI computed correctly (170cm/70kg -> 24.2),
+then recorded a real allergy for that appointment's patient. Confirmed
+directly in Postgres that both writes landed in `phi_access_log` with the
+correct `resource_type`/`patient_id`/`actor_role` - the PHI-audit wiring
+added this same session actually fires for these two new resources, not
+just the ones it launched with.
+
+## Verified this session - phase 9: medical history (2026-09-20)
+
+Rebuilt `spring-boot-api`, confirmed Flyway applied V8 cleanly in the
+container's own startup log, then as a real `demo-front-desk` browser
+login (in-page `fetch`, cookies included): recorded medical history for a
+real patient, then called it again omitting three of the five fields and
+confirmed the response actually came back with those three as `null` (not
+silently retaining the old values) - the full-replace semantics working
+live, not just passing a unit assertion. Confirmed directly in Postgres
+that exactly one `medical_history` row exists for that patient after both
+calls (upsert, not a duplicate insert), and that both writes landed in
+`phi_access_log` with `resource_type = 'medical_history'`.
+
+## Verified this session - phase 10: consent & compliance records (2026-09-20)
+
+Rebuilt `spring-boot-api` (one transient Docker build failure on the first
+attempt, succeeded cleanly on retry with no code changes - not
+reproducible, not investigated further), confirmed Flyway applied V9
+cleanly in the container's own startup log, then as a real
+`demo-front-desk` browser login recorded two consent records
+(`general_treatment`/`v1` and `privacy_data`/`v2`) for the same real
+patient used in phases 8/9's own verification, and confirmed via `GET`
+that **both** rows come back - not just the most recent one, proving the
+accumulate-not-replace design actually holds against a real request, not
+just a mocked test. Confirmed directly in Postgres: exactly 2 rows for
+that patient, and `phi_access_log` correctly recorded both writes plus the
+list read.
+
+## Verified this session - phase 11: prescription + coding depth (2026-09-20)
+
+Rebuilt `spring-boot-api`, confirmed Flyway applied V10 cleanly, then as a
+real `demo-provider` browser login wrote an encounter with `icd10Codes:
+"J02.0"` and a prescription with all six new fields populated against a
+real `checked_out` appointment - confirmed both round-tripped correctly
+via direct Postgres query. Confirmed the route allow-list actually rejects
+a bad value live (`"nasal"` -> 400 with the real allow-list message, not a
+generic error). Then loaded the existing provider encounter UI for that
+same appointment and confirmed every pre-existing field still rendered its
+real value correctly - proving the wider backend shape didn't disturb the
+page that already exists against it.
+
+## Verified this session - phase 12: sign-and-lock clinical notes (2026-09-20)
+
+Rebuilt `spring-boot-api`, confirmed Flyway applied V11 cleanly, then as a
+real `demo-provider` login against the same real encounter written in
+phase 11's own verification: signed it, confirmed a direct edit attempt
+genuinely fails with the real 409 lock message (not just returns 200
+silently), confirmed prescriptions are locked too, added a real addendum
+and confirmed it appears in the bundled GET response, and confirmed
+directly in Postgres that the original note content never changed (still
+"Sore throat", not the rejected edit's text) and exactly one addendum row
+exists.
+
+Extra care given this phase's behavior-reversing nature: also drove the
+*existing* `provider/Encounter.jsx` page (not just raw API calls) against
+the now-locked encounter. It has no dedicated "locked"/"signed" UI, no
+sign button, and no addendum form - but clicking "Update note" through the
+real page does correctly surface the raw backend 409 message via that
+page's own generic error-handling, confirmed via the actual network
+request (a real POST returning 409) and the resulting page text showing
+the exact backend message - not a silent failure, just an unpolished one.
+A first click via the browser-automation tool's coordinate-based click
+appeared to do nothing (no network request fired at all); dispatching a
+real `.click()` on the button element via JavaScript did fire the request
+correctly, so that first attempt was a tool-interaction quirk, not a page
+bug - worth noting so this finding isn't misread as "the button doesn't
+work."
+
+## Verified this session - phase 13: provider profile hardening (2026-09-20)
+
+Rebuilt `spring-boot-api`, confirmed Flyway applied V12 cleanly and the new
+`uploads_data` Docker volume was created. Updated a real provider's
+license/employment fields as `demo-clinic-admin` via an in-page `fetch` and
+confirmed they round-tripped correctly.
+
+Then attempted a real signature upload through the actual browser path
+(node-bff, not a direct curl to spring-boot-api) - got a **real 500**,
+`"Current request is not a multipart request"`. Traced it to `node-bff`'s
+`forwardToApi`: it always JSON-re-serialized `req.body`, but
+`express.json()` (mounted globally in `index.js`) only parses an
+`application/json` body, leaving `req.body` as `{}` for a multipart
+request - the actual file bytes were never captured at all. Confirmed via
+reading `body-parser`'s own behavior that it never touches the request
+stream for a non-matching content type (checks the content-type first,
+calls `next()` immediately if it doesn't match), so the raw stream was
+still fully intact and available - fixed by detecting a multipart
+content-type and forwarding `req` itself as a streaming body
+(`duplex: 'half'`, Node's own requirement for a streaming fetch body),
+preserving the original `content-type` header including its boundary
+parameter, instead of trying to re-serialize a `req.body` that was never
+populated for this content type in the first place.
+
+Rebuilt `node-bff` with the fix and retried the exact same upload - 200,
+with the correct `signatureFilename`/`signatureContentType` in the
+response. Confirmed via `GET` that the downloaded bytes were byte-for-byte
+identical to the uploaded PNG (including the real PNG magic-number byte
+sequence `89 50 4E 47 0D 0A 1A 0A`) and the `Content-Type` header came back
+as `image/png`. Confirmed the file's real presence on disk via
+`docker exec ... ls /app/uploads/provider-signatures/` (using
+`MSYS_NO_PATHCONV=1` to stop Git Bash mangling the absolute container
+path) - not just trusting the API's own claim that it stored something.
+Removed the signature via the real endpoint and confirmed via the same
+`docker exec` check that the file was genuinely deleted from the volume,
+not just the database reference cleared, and that a subsequent `GET`
+correctly 404s. Finally confirmed the content-type allow-list rejects a
+`text/plain` upload with a real 400 through the now-fixed proxy path,
+not just directly against spring-boot-api.
+
+## Verified this session - phase 14: referrals (2026-09-20)
+
+Rebuilt `spring-boot-api`, confirmed Flyway applied V13 cleanly. As a real
+`demo-provider` browser login (in-page `fetch`, cookies included):
+created a real internal referral (a real patient, real referring/receiving
+`Provider` ids, `priority: "urgent"`) and confirmed the response came back
+with `status: "pending"`, the right `receivingProviderId`, and no external
+fields populated. Created a real external referral (external provider/
+clinic name, no receiving provider) and confirmed the mirror-image shape.
+Attempted a referral with neither `receivingProviderId` nor any external
+field and got a real 400 with the exact message
+`ReferralService.create` throws, not a generic validation error.
+
+Transitioned the internal referral's status to `completed` and confirmed
+the response included a non-null `completedAt` - the automatic-on
+-terminal-status logic firing on a real request, not just a unit
+assertion. Confirmed directly in Postgres: the internal row has
+`receiving_provider_id` set and `external_provider_name` null, the
+external row is the mirror image, and the completed row's
+`completed_at` is non-null while the still-pending external row's is
+null. Confirmed all three writes (two creates, one update) landed in
+`phi_access_log` with `resource_type = 'referral'` and
+`actor_role = 'provider'`.
+
+## Verified this session - clinic_admin encounter-access fix (2026-09-15)
+
+As `demo-clinic-admin`, reached `/front-desk/appointments` (no redirect -
+the widened gate works), opened a real `with_provider` appointment
+("Encounter Test Patient") and saw the new "Document encounter" link,
+followed it to the shared encounter page (no redirect to `/`), and
+**edited the existing note** - confirmed via Postgres exactly one
+`encounters` row for that appointment both before and after (id
+unchanged, `updated_at` bumped), same "editable indefinitely, upsert
+never duplicates" guarantee phase 4 already proved for `provider`.
+Confirmed the "Document encounter" link is correctly absent on a `booked`
+appointment, and that navigating there directly renders the existing "not
+ready to document yet" empty state with the new "Back to appointment"
+link, which correctly lands back on `/front-desk/appointments/:id` (not a
+loop). Logged out (app's own "Log out" button - one step, confirmed clean
+per the frontend-phase-A finding) and back in as `demo-front-desk`: the
+same `with_provider` appointment's detail page shows no "Document
+encounter" section at all, and navigating directly to the encounter URL
+redirects cleanly back to `/` - `front_desk` still has zero access, both
+by omission (no link) and by the route gate (direct URL doesn't work
+either). `front_desk` still lists/opens appointments on the now-shared
+route normally. Logged in as `demo-provider` and reached the same
+encounter page directly - unaffected, and it correctly showed the note
+`demo-clinic-admin` had just edited (chief complaint "Sore throat,
+documented by clinic_admin"), proving the shared-editing path works
+across roles, not just per-role in isolation.
+
+
+## Verified this session - phase 15: real billing build-out
+
+Rebuilt the `spring-boot-api` container (`docker compose up -d --build
+spring-boot-api`, transient TLS handshake failure on the first attempt
+against Maven Central, succeeded on retry) and confirmed `V14__invoices_
+billing.sql` applied (`flyway_schema_history` shows version 14, `\d
+invoices` shows `appointment_id` now nullable, a new `lab_order_id`
+column + `invoices_lab_order_id_key` UNIQUE constraint, and the
+`chk_invoices_exactly_one_owner` CHECK).
+
+Logged in as a real `demo-front-desk` user through the actual browser
+(`http://localhost/front-desk/appointments`), opened a genuine
+`checked_out` appointment (ref `F6A604`, id
+`583d8fbb-f0fa-4eae-8609-18726b5724f0`, with an existing $35 cash
+payment already recorded against it from an earlier session) and drove
+the new endpoints via authenticated `fetch(..., {credentials:'include'})`
+calls in the browser console (same technique every backend-only EHR
+phase this session has used, since none of them have a frontend yet):
+
+- `GET .../invoice` before any invoice existed correctly 404'd
+  (`"No invoice generated yet for appointment ..."`).
+- `POST .../invoice` returned 200 with `subtotalAmount: 35.00,
+  taxAmount: 0.00, totalAmount: 35.00` - `subtotalAmount` pulled from the
+  appointment's own `AppointmentType.priceAmount` (not the unrelated
+  $35 payment already on file, which is a coincidence of this fixture's
+  numbers, not the source of the figure - confirmed by reading
+  `InvoiceService.generateForAppointment`'s actual code path, not
+  inferred from the number matching).
+- A second `GET` returned the same row; a second `POST` correctly 409'd
+  (`"An invoice already exists for appointment ..."`), confirming the
+  immutable-once-generated design holds against a real duplicate
+  request, not just the test suite's mocked one.
+- Confirmed directly in Postgres: exactly one `invoices` row,
+  `appointment_id` set, `lab_order_id` null, amounts matching the API
+  response exactly.
+
+Then switched identity (the app's own "Log out" button, then signed in
+as `demo-clinic-admin` - the same one-step SSO logout this session's own
+memory already documents) and reached the real `/clinic-admin/settings`
+page. Rather than fight a temporarily-unresponsive screenshot channel
+(the page itself was confirmed live and interactive via
+`document.readyState === "complete"` and successful `fetch` calls
+throughout - only the CDP screenshot RPC hung once, unrelated to the
+app), verified the settings save path the same way: read the current
+`GET /api/clinic/settings` response, then `POST` it back with
+`taxRatePercent: 8.25` - the exact request body `clinic-admin/
+Settings.jsx`'s own form submits, just issued directly rather than via
+simulated clicks. Confirmed the response's `effective.taxRatePercent`
+came back `8.25`, not just the override being accepted.
+
+Fetched `GET /api/lab-orders` as `demo-clinic-admin` and picked a real
+`reviewed` order (id `81fc88e0-c77b-4334-a242-1fae92b716b6`,
+`totalCost: 55`) left over from phase 7's own live verification.
+`POST .../invoice` returned `subtotalAmount: 55.00, taxAmount: 4.54,
+totalAmount: 59.54` - `55.00 * 8.25% = 4.5375`, HALF_UP-rounded to
+`4.54`, exactly matching `InvoiceService`'s own rounding mode, proving
+the `ClinicSettingsService.resolve(tenantId)` wiring is genuinely live,
+not just present in the code. `appointmentId` was `null` and
+`labOrderId` was set on this row - confirmed both the appointment
+-owned and lab-order-owned rows side by side directly in Postgres
+afterward (`SELECT ... FROM invoices`), each satisfying the
+exactly-one-owner CHECK visibly, not just by the app's own claim.
+
+Reverted the clinic's `taxRatePercent` override back to `null` via the
+same `POST /api/clinic/settings` endpoint immediately afterward (full
+request body with every field `null`, confirmed `effective.
+taxRatePercent` back to the platform default `0.0`) - a deliberate
+cleanup so this verification pass doesn't leave a surprise non-zero tax
+rate sitting on the shared demo clinic for the next session to trip
+over.
