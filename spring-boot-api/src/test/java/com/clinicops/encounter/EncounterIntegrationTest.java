@@ -51,16 +51,18 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + id + "/encounter")
                         .with(asProvider("enc-upsert-provider", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("Cough", "Bronchitis", "Rest + fluids"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("Cough", "Bronchitis", "Rest + fluids", "J20.9"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.chiefComplaint").value("Cough"));
+                .andExpect(jsonPath("$.chiefComplaint").value("Cough"))
+                .andExpect(jsonPath("$.icd10Codes").value("J20.9"));
 
         mockMvc.perform(post("/api/appointments/" + id + "/encounter")
                         .with(asProvider("enc-upsert-provider", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("Cough, worse", "Bronchitis", "Antibiotics"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("Cough, worse", "Bronchitis", "Antibiotics", "J20.9, R05"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.chiefComplaint").value("Cough, worse"));
+                .andExpect(jsonPath("$.chiefComplaint").value("Cough, worse"))
+                .andExpect(jsonPath("$.icd10Codes").value("J20.9, R05"));
 
         assertThat(encounterRepository.findByAppointmentIdAndTenantId(f.appointment().getId(), f.clinic().getId()))
                 .isPresent();
@@ -81,7 +83,7 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/encounter")
                         .with(asProvider("enc-gate-provider", clinic.getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
                 .andExpect(status().isConflict());
     }
 
@@ -94,7 +96,7 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + f.appointment().getId() + "/encounter")
                         .with(asProvider("enc-checkedout-provider", f.clinic().getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
                 .andExpect(status().isOk());
     }
 
@@ -107,7 +109,7 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + id + "/encounter")
                         .with(asProvider("enc-editafter-provider", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("v1", "v1", "v1"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("v1", "v1", "v1", null))))
                 .andExpect(status().isOk());
 
         f.appointment().setStatus("checked_out");
@@ -116,7 +118,7 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + id + "/encounter")
                         .with(asProvider("enc-editafter-provider", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("v2", "v2", "v2"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("v2", "v2", "v2", null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.chiefComplaint").value("v2"));
     }
@@ -129,7 +131,7 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + f.appointment().getId() + "/encounter")
                         .with(asProvider("enc-mismatch-other", f.clinic().getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
                 .andExpect(status().isForbidden());
     }
 
@@ -140,7 +142,7 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + f.appointment().getId() + "/encounter")
                         .with(asClinicAdmin("admin", f.clinic().getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
                 .andExpect(status().isOk());
     }
 
@@ -162,26 +164,30 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + id + "/encounter")
                         .with(asProvider("enc-rx-provider", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/appointments/" + id + "/encounter/prescriptions")
                         .with(asProvider("enc-rx-provider", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(List.of(
-                                new PrescriptionInput("Amoxicillin", "500mg", "3x daily"),
-                                new PrescriptionInput("Ibuprofen", "200mg", "as needed")))))
+                                new PrescriptionInput("Amoxicillin", "500mg", "3x daily", "oral", "3x daily", "7 days", 21, 0, null),
+                                new PrescriptionInput("Ibuprofen", "200mg", "as needed", null, null, null, null, null, null)))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].route").value("oral"))
+                .andExpect(jsonPath("$[0].quantityDispensed").value(21))
+                .andExpect(jsonPath("$[0].status").value("active"));
 
         mockMvc.perform(post("/api/appointments/" + id + "/encounter/prescriptions")
                         .with(asProvider("enc-rx-provider", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(List.of(
-                                new PrescriptionInput("Azithromycin", "250mg", "1x daily")))))
+                                new PrescriptionInput("Azithromycin", "250mg", "1x daily", null, null, null, null, null, "completed")))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].medicationName").value("Azithromycin"));
+                .andExpect(jsonPath("$[0].medicationName").value("Azithromycin"))
+                .andExpect(jsonPath("$[0].status").value("completed"));
 
         var encounter = encounterRepository.findByAppointmentIdAndTenantId(f.appointment().getId(), f.clinic().getId()).orElseThrow();
         assertThat(prescriptionRepository.findAllByEncounterId(encounter.getId()))
@@ -196,7 +202,34 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + f.appointment().getId() + "/encounter/prescriptions")
                         .with(asProvider("enc-rx-noenc-provider", f.clinic().getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(List.of(new PrescriptionInput("Amoxicillin", "500mg", "3x daily")))))
+                        .content(objectMapper.writeValueAsString(List.of(new PrescriptionInput("Amoxicillin", "500mg", "3x daily", null, null, null, null, null, null)))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anInvalidRouteOrStatusIsRejected() throws Exception {
+        Fixture f = seedWithProviderAppointment("enc-rx-invalid-" + UUID.randomUUID(), "enc-rx-invalid-provider");
+        String orgAlias = f.clinic().getKeycloakOrgId();
+        String id = f.appointment().getId().toString();
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter")
+                        .with(asProvider("enc-rx-invalid-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/prescriptions")
+                        .with(asProvider("enc-rx-invalid-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(List.of(
+                                new PrescriptionInput("Amoxicillin", "500mg", "3x daily", "nasal", null, null, null, null, null)))))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/prescriptions")
+                        .with(asProvider("enc-rx-invalid-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(List.of(
+                                new PrescriptionInput("Amoxicillin", "500mg", "3x daily", null, null, null, null, null, "expired")))))
                 .andExpect(status().isBadRequest());
     }
 
@@ -209,7 +242,153 @@ class EncounterIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/appointments/" + f.appointment().getId() + "/encounter")
                         .with(asProvider("enc-tenant-b-provider", otherClinic.getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z"))))
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void signingLocksTheEncounterAndItsPrescriptions() throws Exception {
+        Fixture f = seedWithProviderAppointment("enc-sign-" + UUID.randomUUID(), "enc-sign-provider");
+        String orgAlias = f.clinic().getKeycloakOrgId();
+        String id = f.appointment().getId().toString();
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter")
+                        .with(asProvider("enc-sign-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("Cough", "Bronchitis", "Rest", null))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/sign")
+                        .with(asProvider("enc-sign-provider", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.signedAt").exists())
+                .andExpect(jsonPath("$.signedBy").isNotEmpty());
+
+        // Further direct edits are rejected once signed.
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter")
+                        .with(asProvider("enc-sign-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("Cough, worse", "Bronchitis", "Antibiotics", null))))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/prescriptions")
+                        .with(asProvider("enc-sign-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(List.of(
+                                new PrescriptionInput("Amoxicillin", "500mg", "3x daily", null, null, null, null, null, null)))))
+                .andExpect(status().isConflict());
+
+        // The original note is unchanged - still "Cough"/"Rest", not the rejected edit.
+        mockMvc.perform(get("/api/appointments/" + id + "/encounter")
+                        .with(asProvider("enc-sign-provider", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.encounter.chiefComplaint").value("Cough"));
+    }
+
+    @Test
+    void reSigningAnAlreadySignedEncounterIsIdempotent() throws Exception {
+        Fixture f = seedWithProviderAppointment("enc-resign-" + UUID.randomUUID(), "enc-resign-provider");
+        String orgAlias = f.clinic().getKeycloakOrgId();
+        String id = f.appointment().getId().toString();
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter")
+                        .with(asProvider("enc-resign-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
+                .andExpect(status().isOk());
+
+        String firstSignBody = mockMvc.perform(post("/api/appointments/" + id + "/encounter/sign")
+                        .with(asProvider("enc-resign-provider", orgAlias)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String firstSignedAt = objectMapper.readTree(firstSignBody).get("signedAt").asText();
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/sign")
+                        .with(asProvider("enc-resign-provider", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.signedAt").value(firstSignedAt));
+    }
+
+    @Test
+    void cannotSignBeforeAnEncounterExists() throws Exception {
+        Fixture f = seedWithProviderAppointment("enc-sign-noenc-" + UUID.randomUUID(), "enc-sign-noenc-provider");
+
+        mockMvc.perform(post("/api/appointments/" + f.appointment().getId() + "/encounter/sign")
+                        .with(asProvider("enc-sign-noenc-provider", f.clinic().getKeycloakOrgId())))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void addendumRequiresTheEncounterToAlreadyBeSigned() throws Exception {
+        Fixture f = seedWithProviderAppointment("enc-addendum-gate-" + UUID.randomUUID(), "enc-addendum-provider");
+        String orgAlias = f.clinic().getKeycloakOrgId();
+        String id = f.appointment().getId().toString();
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter")
+                        .with(asProvider("enc-addendum-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
+                .andExpect(status().isOk());
+
+        // Not yet signed - addendum rejected, should edit directly instead.
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/addenda")
+                        .with(asProvider("enc-addendum-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new AddendumInput("Correction"))))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/sign")
+                        .with(asProvider("enc-addendum-provider", orgAlias)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/addenda")
+                        .with(asProvider("enc-addendum-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new AddendumInput("Patient called back, symptoms improved"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.text").value("Patient called back, symptoms improved"))
+                .andExpect(jsonPath("$.authorId").isNotEmpty());
+
+        mockMvc.perform(get("/api/appointments/" + id + "/encounter")
+                        .with(asProvider("enc-addendum-provider", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.addenda.length()").value(1))
+                .andExpect(jsonPath("$.addenda[0].text").value("Patient called back, symptoms improved"));
+    }
+
+    @Test
+    void clinicAdminCanSignOnBehalfOfAnyProvider() throws Exception {
+        Fixture f = seedWithProviderAppointment("enc-sign-admin-" + UUID.randomUUID(), "enc-sign-admin-provider");
+        String orgAlias = f.clinic().getKeycloakOrgId();
+        String id = f.appointment().getId().toString();
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter")
+                        .with(asProvider("enc-sign-admin-provider", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/sign")
+                        .with(asClinicAdmin("admin", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.signedAt").exists());
+    }
+
+    @Test
+    void aDifferentProviderCannotSignSomeoneElsesEncounter() throws Exception {
+        Fixture f = seedWithProviderAppointment("enc-sign-mismatch-" + UUID.randomUUID(), "enc-sign-mismatch-owner");
+        createProviderLinkedToAppUser(f.clinic().getId(), "Dr. Other", "enc-sign-mismatch-other");
+        String orgAlias = f.clinic().getKeycloakOrgId();
+        String id = f.appointment().getId().toString();
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter")
+                        .with(asProvider("enc-sign-mismatch-owner", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpsertEncounterRequest("x", "y", "z", null))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/appointments/" + id + "/encounter/sign")
+                        .with(asProvider("enc-sign-mismatch-other", orgAlias)))
+                .andExpect(status().isForbidden());
     }
 }
