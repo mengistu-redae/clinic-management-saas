@@ -25,6 +25,8 @@ import com.clinicops.provider.Provider;
 import com.clinicops.provider.ProviderRepository;
 import com.clinicops.provider.ProviderWorkingHours;
 import com.clinicops.provider.ProviderWorkingHoursRepository;
+import com.clinicops.referral.Referral;
+import com.clinicops.referral.ReferralRepository;
 import com.clinicops.room.Room;
 import com.clinicops.room.RoomRepository;
 import com.clinicops.scheduling.Slot;
@@ -179,6 +181,9 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected ConsentRecordRepository consentRecordRepository;
 
+    @Autowired
+    protected ReferralRepository referralRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -302,6 +307,17 @@ public abstract class AbstractIntegrationTest {
         record.setConsentType(consentType);
         record.setPolicyVersion("v1");
         return consentRecordRepository.save(record);
+    }
+
+    /** Internal referral (receivingProviderId set) - callers seeding an external one set the external fields directly on the returned entity before further use. */
+    protected Referral createReferral(UUID tenantId, UUID patientId, UUID referringProviderId, UUID receivingProviderId) {
+        Referral referral = new Referral();
+        referral.setTenantId(tenantId);
+        referral.setPatientId(patientId);
+        referral.setReferringProviderId(referringProviderId);
+        referral.setReceivingProviderId(receivingProviderId);
+        referral.setReason("Specialist consult");
+        return referralRepository.save(referral);
     }
 
     protected LabTestRate createLabTestRate(UUID tenantId, String testCode, String baseCharge, String collectionFee) {

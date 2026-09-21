@@ -10,6 +10,7 @@ import com.clinicops.labrate.LabTestRate;
 import com.clinicops.patient.Patient;
 import com.clinicops.payment.CreatePaymentRequest;
 import com.clinicops.provider.Provider;
+import com.clinicops.referral.Referral;
 import com.clinicops.room.Room;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.support.AbstractIntegrationTest;
@@ -291,6 +292,25 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new com.clinicops.consent.CreateConsentRecordRequest(
                                 "general_treatment", "v1", null, null, null, null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void referralsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("referral");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000010");
+        Provider referring = createProvider(a.getId(), "Dr. A");
+        Referral referral = createReferral(a.getId(), patient.getId(), referring.getId(), referring.getId());
+
+        Clinic b = clinicB("referral");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/referrals/" + referral.getId()).with(asProvider("prov", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/referrals/" + referral.getId() + "/update").with(asProvider("prov", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.referral.UpdateReferralRequest(
+                                "accepted", null, null, null))))
                 .andExpect(status().isNotFound());
     }
 
