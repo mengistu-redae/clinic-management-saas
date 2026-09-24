@@ -1,9 +1,12 @@
 package com.clinicops.laborder;
 
+import com.clinicops.notification.LabResultReadyPayload;
 import com.clinicops.notification.Notification;
+import com.clinicops.notification.NotificationPayloadWriter;
 import com.clinicops.notification.NotificationRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,16 +33,19 @@ public class LabOrderStatusService {
     private final LabOrderTestRepository labOrderTestRepository;
     private final PatientRepository patientRepository;
     private final NotificationRepository notificationRepository;
+    private final ObjectMapper objectMapper;
 
     public LabOrderStatusService(
             LabOrderRepository labOrderRepository,
             LabOrderTestRepository labOrderTestRepository,
             PatientRepository patientRepository,
-            NotificationRepository notificationRepository) {
+            NotificationRepository notificationRepository,
+            ObjectMapper objectMapper) {
         this.labOrderRepository = labOrderRepository;
         this.labOrderTestRepository = labOrderTestRepository;
         this.patientRepository = patientRepository;
         this.notificationRepository = notificationRepository;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -149,6 +155,7 @@ public class LabOrderStatusService {
             notification.setTenantId(tenantId);
             notification.setRecipient(recipientEmail);
             notification.setType("lab_result_ready");
+            notification.setPayload(NotificationPayloadWriter.toJson(objectMapper, new LabResultReadyPayload(order.getOrderRef())));
             notificationRepository.save(notification);
         }
 

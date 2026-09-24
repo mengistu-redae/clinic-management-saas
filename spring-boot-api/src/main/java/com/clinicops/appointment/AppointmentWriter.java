@@ -1,10 +1,13 @@
 package com.clinicops.appointment;
 
 import com.clinicops.clinic.Clinic;
+import com.clinicops.notification.AppointmentConfirmedPayload;
 import com.clinicops.notification.Notification;
+import com.clinicops.notification.NotificationPayloadWriter;
 import com.clinicops.notification.NotificationRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,16 +27,19 @@ public class AppointmentWriter {
     private final AppointmentRepository appointmentRepository;
     private final NotificationRepository notificationRepository;
     private final AppointmentRefGenerator refGenerator;
+    private final ObjectMapper objectMapper;
 
     public AppointmentWriter(
             SlotRepository slotRepository,
             AppointmentRepository appointmentRepository,
             NotificationRepository notificationRepository,
-            AppointmentRefGenerator refGenerator) {
+            AppointmentRefGenerator refGenerator,
+            ObjectMapper objectMapper) {
         this.slotRepository = slotRepository;
         this.appointmentRepository = appointmentRepository;
         this.notificationRepository = notificationRepository;
         this.refGenerator = refGenerator;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -79,6 +85,8 @@ public class AppointmentWriter {
             notification.setTenantId(slot.getTenantId());
             notification.setRecipient(command.recipientEmail());
             notification.setType("appointment_confirmed");
+            notification.setPayload(NotificationPayloadWriter.toJson(objectMapper,
+                    new AppointmentConfirmedPayload(appointment.getAppointmentRef(), clinic.getName(), slot.getStartTime())));
             notificationRepository.save(notification);
         }
 

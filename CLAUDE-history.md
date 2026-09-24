@@ -1345,3 +1345,49 @@ No frontend UI exists for any of this yet (deliberately scoped out this
 phase, per CLAUDE.md's own phase-16 write-up) - every check above went
 through a raw authenticated `fetch()` from the browser console, the same
 verification shape phase 8 used for its own backend-only endpoints.
+
+## Verified this session - phase 17: real email delivery
+
+Rebuilt `spring-boot-api` (`docker compose up -d --build spring-boot-api
+mailpit`, then `--force-recreate` once the image finished) - the
+`pom.xml` change (new `spring-boot-starter-mail` dependency) invalidated
+the Dockerfile's cached `mvn dependency:go-offline` layer, so this build
+took noticeably longer than a source-only rebuild; confirmed both
+containers came up healthy (`mailpit` has its own healthcheck, reached it
+within a few seconds).
+
+Confirmed Mailpit's own REST API was reachable and genuinely empty first
+(`GET :8025/api/v1/messages` -> `"total":0`) before doing anything, so the
+message that showed up afterward couldn't be left over from an earlier
+session. Booked a real **guest** appointment through the full nginx ->
+node-bff -> spring-boot-api chain (`POST /api/appointments/guest`, a
+`permitAll` endpoint, so a plain `curl` already exercises the real
+end-to-end path with no session needed) with a genuine `contactEmail`,
+reference `01AEA4` at a real 09:00 UTC slot.
+
+Queried Postgres directly and confirmed the outbox row
+`NotificationWorker` would pick up already carried a real, correctly
+-populated payload - `{"startTime":"2026-09-25T09:00:00Z","clinicName":"Demo
+Clinic","appointmentRef":"01AEA4"}` - and had already flipped to
+`status = 'sent'` well within the worker's own 10-second poll interval.
+
+Queried Mailpit's REST API again and found exactly one message, genuinely
+delivered via real SMTP (not inspected via a mock or a log line):
+`From: no-reply@clinicops.local`, `To: phase17-tester@example.test`,
+`Subject: "Your appointment is confirmed - 01AEA4"`, body rendering as
+`"Your appointment at Demo Clinic is confirmed for Sep 25, 2026, 9:00:00
+AM UTC. Reference: 01AEA4"` - every dynamic value (clinic name, formatted
+date/time, reference) correctly substituted from the real payload, not a
+placeholder. Delivered end to end in under 4 seconds
+(`Created: 17:14:24.295Z` against a `bookedAt` of `17:14:20.537Z`).
+
+Did not separately re-verify the cancellation/reschedule/lab-result
+-ready templates live this session (each needs a real `Patient` row with
+an email on file - a guest booking's `contactEmail` is deliberately never
+persisted, so cancelling a guest appointment sends nothing, by existing
+design predating this phase) - those three render through the exact same
+`SmtpEmailSender.send` code path already exercised live above, and are
+each covered by their own passing `SmtpEmailSenderTest` case (real
+Jackson serialize/deserialize round-trip, not a hand-built payload
+string) - judged sufficient rather than standing up a full staff-login
+browser flow purely to re-prove the same rendering method a fourth time.

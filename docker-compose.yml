@@ -34,6 +34,17 @@ services:
       timeout: 5s
       retries: 10
 
+  mailpit:
+    # Local, open-source SMTP catcher (phase 17) - no real SendGrid/Twilio
+    # account available, so email is delivered here instead of a real
+    # inbox; still genuine SMTP delivery from the app's own point of view
+    # (SmtpEmailSender), not a stub. Web UI at :8025 shows every message
+    # sent by the app; :1025 is the SMTP port spring-boot-api talks to.
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     command: start-dev --import-realm
@@ -77,6 +88,9 @@ services:
       # not S3/cloud, so an uploaded provider signature survives a
       # container recreate.
       CLINICOPS_UPLOADS_ROOT: /app/uploads
+      # SmtpEmailSender (phase 17) - the local Mailpit catcher above.
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
     volumes:
       - uploads_data:/app/uploads
     ports:
@@ -87,6 +101,8 @@ services:
       redis:
         condition: service_healthy
       keycloak:
+        condition: service_started
+      mailpit:
         condition: service_started
     healthcheck:
       # Spring Boot's resource-server autoconfig resolves the JWK set lazily

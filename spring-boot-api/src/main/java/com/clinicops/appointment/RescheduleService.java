@@ -2,7 +2,9 @@ package com.clinicops.appointment;
 
 import com.clinicops.clinicsettings.ClinicSettingsService;
 import com.clinicops.clinicsettings.EffectiveClinicSettings;
+import com.clinicops.notification.AppointmentRescheduledPayload;
 import com.clinicops.notification.Notification;
+import com.clinicops.notification.NotificationPayloadWriter;
 import com.clinicops.notification.NotificationRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
@@ -10,6 +12,7 @@ import com.clinicops.payment.Payment;
 import com.clinicops.payment.PaymentRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +49,7 @@ public class RescheduleService {
     private final NotificationRepository notificationRepository;
     private final ClinicSettingsService clinicSettingsService;
     private final PaymentRepository paymentRepository;
+    private final ObjectMapper objectMapper;
 
     public RescheduleService(
             AppointmentRepository appointmentRepository,
@@ -55,7 +59,8 @@ public class RescheduleService {
             PatientRepository patientRepository,
             NotificationRepository notificationRepository,
             ClinicSettingsService clinicSettingsService,
-            PaymentRepository paymentRepository) {
+            PaymentRepository paymentRepository,
+            ObjectMapper objectMapper) {
         this.appointmentRepository = appointmentRepository;
         this.slotRepository = slotRepository;
         this.slotLockService = slotLockService;
@@ -64,6 +69,7 @@ public class RescheduleService {
         this.notificationRepository = notificationRepository;
         this.clinicSettingsService = clinicSettingsService;
         this.paymentRepository = paymentRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -166,6 +172,8 @@ public class RescheduleService {
                 notification.setTenantId(appointment.getTenantId());
                 notification.setRecipient(recipientEmail);
                 notification.setType("appointment_rescheduled");
+                notification.setPayload(NotificationPayloadWriter.toJson(objectMapper,
+                        new AppointmentRescheduledPayload(appointment.getAppointmentRef(), newSlot.getStartTime(), fee)));
                 notificationRepository.save(notification);
             }
 

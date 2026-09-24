@@ -15,12 +15,15 @@ import java.time.Instant;
  * Outbox pattern: written in the same transaction as the triggering write
  * (e.g. AppointmentWriter) so a flaky email provider never fails a booking.
  * NotificationWorker drains this table (fixed-delay poll, retry with a max
- * attempt count) via whatever NotificationSender bean is wired - only
- * LoggingEmailSender (a stub) exists so far, see its own javadoc; `payload`
- * stays a placeholder "{}" until an actual email template is built. Stored
- * as jsonb via Hibernate's native JSON type mapping
- * (@JdbcTypeCode(SqlTypes.JSON)) rather than a plain VARCHAR, so the column
- * stays real jsonb for whenever payload content is added.
+ * attempt count) via whatever NotificationSender bean is wired -
+ * {@link SmtpEmailSender} (phase 17) is the only bean today, real SMTP
+ * delivery against a local Mailpit catcher (no SendGrid/Twilio account
+ * available - see CLAUDE.md's phase-17 write-up). `payload` is one of the
+ * typed *Payload records in this package (e.g. {@link AppointmentConfirmedPayload}),
+ * written via {@link NotificationPayloadWriter#toJson} and keyed by
+ * {@code type} for {@link SmtpEmailSender} to deserialize and render.
+ * Stored as jsonb via Hibernate's native JSON type mapping
+ * (@JdbcTypeCode(SqlTypes.JSON)) rather than a plain VARCHAR.
  */
 @Entity
 @Table(name = "notifications")

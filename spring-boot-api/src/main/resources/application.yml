@@ -57,6 +57,22 @@ spring:
       max-file-size: 2MB
       max-request-size: 2MB
 
+  # Phase 17 - real SMTP delivery (SmtpEmailSender), pointed at a local,
+  # open-source SMTP catcher (Mailpit, docker-compose) rather than a real
+  # vendor - no SendGrid/Twilio account available, and the user asked for
+  # a locally-installed open-source mail service instead. Mailpit accepts
+  # unauthenticated, unencrypted SMTP by default - auth/starttls disabled
+  # explicitly rather than left to a JVM-default guess.
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+
 # Custom app settings.
 clinicops:
   keycloak:
@@ -109,6 +125,12 @@ clinicops:
     # docker-compose.yml points this at a named volume; local dev
     # (start-local.ps1) gets a plain relative directory instead.
     uploads-root: ${CLINICOPS_UPLOADS_ROOT:./uploads}
+  notification:
+    email:
+      # Not a real deliverable address anywhere - Mailpit accepts any
+      # From/To and just displays them, same as every real SMTP server
+      # would for a From address it doesn't itself own.
+      from: ${NOTIFICATION_FROM_EMAIL:no-reply@clinicops.local}
   keycloak-admin:
     # Used only by PlatformController's "create clinic" endpoint
     # (platform_admin, phase 6) to provision a new Keycloak Organization via

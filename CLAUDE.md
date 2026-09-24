@@ -523,18 +523,18 @@ when that phase is built.
 **Deferred phase plan (sketched 2026-09-21, not yet built)** - the user
 asked for these three "Known gaps" items to be planned ahead of time, with
 the key design forks pinned via direct questions rather than left as
-assumptions. Phases 16 and 18 are now both built (backend-only), leaving
-17 (email/SMS) the one still purely sketched - see "Phase 16"/"Phase 17"/
-"Phase 18" below for the full write-up of what's pinned and what's still
-genuinely open.
+assumptions. All three are now built (backend-only) - phase 17's own
+scope was revised when picked up (email-only via a local Mailpit
+catcher, SMS deferred - see its own write-up for why). See "Phase 16"/
+"Phase 17"/"Phase 18" below for the full write-up of what's pinned.
 
 16. **Real payment gateway + refund flow + invoice PDF + payment-invoice
     linking** (built 2026-09-24) - a pluggable `PaymentGatewayClient`
     (mock-only for now, real vendor deferred), full+partial refunds, and
     an on-demand invoice PDF. See "Phase 16" below.
-17. **Real email + SMS delivery** - `NotificationSender`'s existing
-    interface gets two real implementations (SendGrid email, Twilio SMS).
-    See "Phase 17" below.
+17. **Real email delivery** (built 2026-09-24, scope revised to email-only
+    via a real local Mailpit SMTP catcher - no SendGrid/Twilio account
+    available; SMS deferred entirely). See "Phase 17" below.
 18. **Per-clinic timezone** (built 2026-09-24) - a `ClinicSettings.timezone`
     override, consumed by slot generation and day-boundary math; existing
     slots are left untouched. See "Phase 18" below.
@@ -1641,49 +1641,76 @@ sketch and the build. New migration `V16__payment_gateway_and_refunds.sql`.
   `<a href=".../pdf">` download link, and the Payments panels gaining a
   "Refund" action per row and a running refunded-amount indicator.
 
-## Phase 17: real email + SMS delivery (sketched, not yet built)
+## Phase 17: real email delivery
 
-Sketched 2026-09-21. `com.clinicops.notification.NotificationSender` is
-already an interface (`send(Notification)`) with exactly one
-implementation, `LoggingEmailSender` - this phase fills that existing seam,
-it doesn't need to create one.
+Sketched 2026-09-21 as "real email + SMS delivery" via SendGrid+Twilio;
+picked up and built 2026-09-24 with a materially revised scope, pinned via
+two direct questions rather than assumed: the user has no SendGrid/Twilio
+accounts and asked for a locally-installed open-source mail service
+instead, and asked to scope this phase to **email only** - SMS/Twilio
+deferred entirely, not just deprioritized. `com.clinicops.notification.NotificationSender`
+was already an interface (`send(Notification)`) with exactly one
+implementation, `LoggingEmailSender` - this phase fills that existing seam
+with a real one rather than creating a new mechanism.
 
-- **Email via SendGrid, SMS via Twilio** - a single-vendor pairing
-  (Twilio owns SendGrid) so one account/API-key setup covers both
-  channels, rather than mixing a raw-SMTP email sender with Twilio's own
-  API client for SMS. **This specific email-transport choice was a call
-  made in this planning session, not put to the user directly - flagged
-  as revisitable** if plain SMTP (no SendGrid account needed, works
-  against Gmail/Mailgun/a local Mailhog for dev) is preferred instead.
-- **The real work here is recipient plumbing, not just two new HTTP
-  clients**: `Notification.channel` already exists (defaults `"email"`)
-  but nothing today ever sets it to `"sms"`, and every existing call site
-  (`AppointmentWriter`, `CancellationService`, `RescheduleService`,
-  `LabOrderStatusService`) resolves only an email recipient
-  (`command.recipientEmail()` etc.) even though `patients.phone`/
-  `contactPhone` already exist on the domain. Each call site needs to
-  decide - and likely write one `Notification` row per available channel,
-  not one row with a single "best" recipient - whether to notify by
-  email, SMS, or both.
-- **`NotificationWorker` needs to route by channel** - a
-  `Map<String, NotificationSender>` keyed by `"email"`/`"sms"` (or an
-  equivalent small dispatcher) instead of assuming a single sender for
-  everything, since it will now hold two real beans instead of one stub.
-- **Real message templates** - `Notification.payload` has stayed a
-  placeholder `"{}"` since phase 1; this is the natural point to also
-  write real content (booking confirmation, cancellation, reschedule,
-  lab-order status change) rather than shipping real delivery of an empty
-  payload.
-- **Hard external dependency**: this phase needs real SendGrid and Twilio
-  accounts/API keys/a from-number before it can be built and tested at
-  all - the one item of these three that can't be scoped further without
-  that.
-- New config: `clinicops.notification.sendgrid.api-key`,
-  `clinicops.notification.twilio.*` (account sid, auth token, from
-  number). `NotificationWorkerTest` (existing, pure Mockito) extends with
-  per-channel dispatch cases; new `SendGridEmailSenderTest`/
-  `TwilioSmsSenderTest`, both mocking the vendor SDK client so the test
-  suite makes no real network call.
+- **Real SMTP delivery via Mailpit, not a real vendor** - `SmtpEmailSender`
+  (new, replaces `LoggingEmailSender` outright - `NotificationWorker`
+  still takes exactly one `NotificationSender` bean, unchanged) uses
+  Spring's `JavaMailSender` (`spring-boot-starter-mail`, new dependency)
+  against a new `mailpit` service in `docker-compose.yml`
+  (`axllent/mailpit` - open-source, MIT-licensed, actively maintained; SMTP
+  on `:1025`, a web UI at `:8025` to see every message the app has ever
+  sent). This is genuinely real SMTP delivery from the app's own point of
+  view, not a stub - swapping in a real vendor later (SendGrid or
+  otherwise) is a config change (`spring.mail.host`/`port`, plus
+  `username`/`password` for one needing auth), not a rewrite of
+  `SmtpEmailSender` itself.
+- **SMS deliberately out of scope, not partially built** - `Notification.channel`
+  still only ever gets set to `"email"`, so `NotificationWorker` was
+  **not** changed to a per-channel dispatch map the original sketch
+  proposed - that abstraction has nothing to dispatch to yet and would
+  just be dead code; add it if/when a real second channel actually
+  exists, per this app's own "no premature abstraction" convention.
+- **Real message templates, not empty-payload delivery** - `Notification.payload`
+  had stayed `"{}"` since phase 1 `V1__init.sql`; now each of the four
+  existing call sites (`AppointmentWriter`, `CancellationService`,
+  `RescheduleService`, `LabOrderStatusService.review`) writes a small
+  typed record (`AppointmentConfirmedPayload`/`AppointmentCancelledPayload`/
+  `AppointmentRescheduledPayload`/`LabResultReadyPayload`, all new,
+  `com.clinicops.notification`) via a new `NotificationPayloadWriter.toJson`
+  helper (wraps Jackson's checked `JsonProcessingException` as unchecked -
+  a plain bundle of primitives/`Instant`/`BigDecimal` can't realistically
+  fail to serialize). `SmtpEmailSender` deserializes by `notification.type`
+  and renders real subject/body text per type - an unrecognized `type`
+  falls back to a generic message rather than throwing, so a future new
+  notification type added without an email-copy update never breaks
+  delivery. `Notification.getPayload()` values written before this phase
+  (`"{}"`) were confirmed already all `status = 'sent'` in the real
+  database before this was built, so `NotificationWorker` never re-reads
+  them against the new deserializer - no backfill needed, checked rather
+  than assumed.
+- **No hard external dependency after the scope revision** - the original
+  sketch's blocker ("needs real SendGrid and Twilio accounts before this
+  can be built and tested at all") no longer applies: Mailpit needs no
+  account, no API key, and no real inbox, so this phase was buildable and
+  fully live-verifiable end to end with zero external services.
+- **`node-bff`/frontend needed zero changes** - notification delivery has
+  always been entirely server-side (the outbox pattern's whole point);
+  nothing about this phase is reachable from or visible in the browser
+  except its real-world effect (an email actually arriving somewhere).
+- **Tests**: `SmtpEmailSenderTest` (new, pure Mockito - a mocked
+  `JavaMailSender`, real Jackson serialization/deserialization end to
+  end, one case per notification type plus a fee-omitted-when-zero case
+  and an unrecognized-type fallback case) and `NotificationPayloadWriterTest`
+  (new) both actually run locally, no Testcontainers involved -
+  `NotificationWorkerTest` (existing) needed no changes at all, since it
+  only ever mocks `NotificationSender` generically. 10/10 passing.
+- **Live-verified against the real running stack** - see CLAUDE-history.md's
+  "Verified this session - phase 17" for the full write-up (a real
+  booking's confirmation email actually arriving in Mailpit's own web UI,
+  with the real clinic name/appointment reference/time rendered into the
+  subject and body - not just a log line, and not just unit-tested
+  rendering).
 
 ## Phase 18: per-clinic timezone
 
@@ -2986,6 +3013,16 @@ one - now the documented exception, not the rule.
   and by checking every other, unrelated integration test class in the
   same run failed identically (`Could not find a valid Docker
   environment`), not just this phase's own new tests.
+- `SmtpEmailSenderTest`/`NotificationPayloadWriterTest` (phase 17, pure
+  Mockito - a mocked `JavaMailSender`, no real SMTP connection, genuinely
+  run locally) - one rendering case per notification type (confirmed real
+  values - clinic name, appointment ref, fee amount - land in the actual
+  `SimpleMailMessage` subject/body, not just that `send` was called), a
+  zero-fee/no-reason case omitting both from the cancellation email, and
+  an unrecognized `type` falling back to a generic message rather than
+  throwing. `NotificationWorkerTest` (existing) needed no changes - it
+  only ever mocks `NotificationSender` generically, unaffected by which
+  concrete implementation is wired. 10/10 passing locally.
 
 ## Verified-session logs
 
@@ -3053,16 +3090,14 @@ append new ones there too, not here.
   render a real PDF (OpenPDF) on demand, and `payments.invoice_id` links a
   genuine staff-entered payment back to the invoice it's paying down.
 - ~~Email/notifications: the `notifications` outbox table is written to but
-  there's no `NotificationWorker`/real sender yet~~ **partially closed
-  2026-09-19** - see "Post-phase-7 backend additions".
-  `com.clinicops.notification.NotificationWorker` now drains the outbox
-  (fixed-delay poll, retry with a max attempt count, marks
-  `sent`/`failed`), but `NotificationSender` is still only
-  `LoggingEmailSender` - a stub that logs instead of calling a real
-  provider. No real email/SMS delivery exists anywhere in this app yet;
-  rows now reliably end up `sent` (logged) or `failed` instead of
-  accumulating as `pending` forever, but nothing actually reaches an inbox.
-  **Sketched, not yet built** - see "Phase 17: real email + SMS delivery".
+  there's no `NotificationWorker`/real sender yet~~ **closed 2026-09-24** -
+  see "Phase 17: real email delivery". `SmtpEmailSender` now delivers real
+  email (with real per-type templates, not an empty payload) to a local
+  Mailpit catcher - genuinely real SMTP delivery, just not to a real
+  vendor/external inbox (no SendGrid/Twilio account available). **SMS is
+  still entirely unbuilt, by deliberate scope decision** - `Notification.channel`
+  never gets set to anything but `"email"`; revisit if/when a real SMS
+  need (and a Twilio account) exists.
 - ~~No per-clinic timezone~~ **closed 2026-09-24** - see "Phase 18:
   per-clinic timezone". `clinic_settings.timezone` is a real, validated
   override now, resolved through one shared
