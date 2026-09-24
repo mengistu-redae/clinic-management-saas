@@ -542,10 +542,9 @@ timezone-display/theme (light/dark/system) preferences, localStorage-only,
 no backend changes except a phase-18 timezone-exposure reconciliation
 (closed now that phase 18 itself is built - see below).
 **Theme built 2026-09-22. Language (i18n + English + Amharic, full
-per-page content sweep across all 32 relevant files) built 2026-09-22.**
-**Timezone-display still not built** - phase 18 (its one dependency) is
-now done, so nothing blocks it anymore; it just hasn't been picked up yet.
-See "Frontend phase N" under "## Frontend" below.
+per-page content sweep across all 32 relevant files) built 2026-09-22.
+Timezone display built 2026-09-24**, once phase 18 unblocked it. See
+"Frontend phase N" under "## Frontend" below.
 
 19. **Clinic-admin analytics dashboard** (built 2026-09-24) - a genuinely
     new backend aggregation endpoint (`GET /api/clinic/analytics`) plus
@@ -1669,10 +1668,11 @@ forks changed between the sketch and the build. New migration
   regardless of a clinic setting its own zone afterward.
 - **The frontend display question the original sketch flagged as
   genuinely open is resolved by construction, not by a decision made
-  here**: frontend phase N's own timezone-display picker (still not built
-  itself) is exactly the mechanism that answers "clinic's zone or the
-  viewer's own" - per-viewer, not a single app-wide default - so this
-  phase didn't need to pick one.
+  here**: frontend phase N's own timezone-display picker (built
+  2026-09-24, the same session, once this phase unblocked it) is exactly
+  the mechanism that answers "clinic's zone or the viewer's own" -
+  per-viewer, not a single app-wide default - so this phase didn't need to
+  pick one.
 - **The phase-N "reconciliation" is done**: `timezone` is now exposed
   everywhere that preference picker will need to read it, not just the
   `clinic_admin`-only settings endpoint - `ClinicBrandingView`
@@ -1703,10 +1703,10 @@ forks changed between the sketch and the build. New migration
   that every existing clinic now reports `"timezone":"UTC"` - the
   end-to-end resolve-and-serialize path working, not just unit-level
   logic. `npm test` (24/24) unaffected.
-- **Not done this phase**: the frontend timezone-display picker itself
-  (browser-local/clinic's/manual) - this phase only removed its one
-  backend dependency; building the picker is still open, see "Frontend
-  phase N" above.
+- **The frontend timezone-display picker itself (browser-local/clinic's/
+  manual)** - this phase only removed its one backend dependency; the
+  picker itself was built the same session, once this was done - see
+  "Frontend phase N" above.
 
 ## Frontend
 
@@ -2378,8 +2378,8 @@ controllers have covered this exact shape since phase 15.
     used only semantic tokens) - all confirmed correct in both themes via
     real screenshots, not just code review. `npm test` (24/24) confirmed
     unaffected.
-  - **Not done this pass**: the timezone-display picker remains exactly
-    as originally sketched below - no code yet.
+  - **Not done this pass**: the timezone-display picker (built later,
+    2026-09-24, once phase 18 unblocked it - see below).
 - **Language: i18n plumbing + English + Amharic - fully built 2026-09-22**
   (asked directly, answered - Amharic specifically chosen over Arabic/
   Spanish when asked as a follow-up). `react-i18next`/`i18next` added to
@@ -2488,40 +2488,103 @@ controllers have covered this exact shape since phase 15.
     state) and a full logout/login round trip. `npm test` (24/24)
     confirmed unaffected.
 - **Timezone display: browser-local, the clinic's own timezone, or any
-  manually-picked IANA zone** (asked directly, answered - the broader
-  3-way option over the simpler browser-vs-clinic toggle) - directly
-  resolves the open question the phase-18 sketch flagged and left
-  unresolved (does the UI show clinic-local or viewer-local time). Manual
-  picker uses `Intl.supportedValuesOf('timeZone')` (a real, standard JS
-  API) rather than bundling a static ~400-zone list as an asset.
-  - **Depends on phase 18** (still only sketched, not built) for the
-    "clinic's timezone" option specifically, and **reveals a mismatch
-    between the two sketches worth reconciling before either is built**:
-    phase 18 put `timezone` on `clinic_settings`' *settings* group,
-    readable only by `clinic_admin` today - too narrow here, since
-    `front_desk`/`provider` staff need to read it to select "clinic's
-    timezone" for themselves, and so does a logged-out patient/guest on
-    the public booking/tracking pages. **A design call made in this
-    planning session, not asked directly**: expose `timezone` on the
-    already-public clinic directory/branding response instead - it's
-    non-sensitive operational data (what timezone a clinic runs on isn't
-    confidential), and every consumer of this preference needs to read it
-    without an auth check.
-  - **Sequencing, not a hard block**: the "browser-local" and "manually
-    pick any zone" options need no backend work at all and are buildable
-    immediately; only "clinic's timezone" needs phase 18 (reconciled as
-    above) to exist first. Ship the first two now, wire the third once
-    phase 18 lands, rather than blocking this whole phase on that one.
-- **A settings surface has to be built from nothing** - this app has no
-  per-user settings page or menu of any kind today. Plan: a small
-  "Preferences" popover (gear icon) added to both `AppShell.jsx` (staff)
-  and `PublicShell.jsx` (public) headers, holding the three controls
-  (theme segmented control, language select, timezone select) - the
-  lowest-friction option given there's no existing settings surface to
-  extend.
-- **No backend changes for this phase** except the phase-18 timezone
-  -exposure-width reconciliation noted above - everything else is pure
-  frontend, consistent with the "localStorage only" storage decision.
+  manually-picked IANA zone - built 2026-09-24**, now that phase 18
+  unblocked the "clinic's timezone" option (asked directly when first
+  sketched, answered - the broader 3-way option over a simpler
+  browser-vs-clinic toggle). Directly resolves the question the phase-18
+  sketch flagged and left unresolved (does the UI show clinic-local or
+  viewer-local time). `lib/timezone.js` (new) is a plain module singleton,
+  not React state, storing `{mode, manualZone}` in `localStorage`
+  (`clinicops.timezone`) plus an ambient `activeClinicZone` - the same
+  "readable from ordinary non-component code" reasoning `i18n.language`
+  already needed, since `lib/format.js`'s formatters are called from
+  list-grouping code (`SlotPicker.jsx`), not only from component render.
+  `resolveTimezone(recordZone)` is the one seam every formatter now calls
+  through: `manual` mode always returns the picked zone; `browser` mode
+  returns `undefined` (Intl.DateTimeFormat already defers to the device's
+  own zone when `timeZone` is omitted - no special-casing needed); `clinic`
+  mode returns an explicit `recordZone` when the caller already knows one
+  (the public booking flow, scoped to one clinicId), falling back to the
+  ambient `activeClinicZone` otherwise. `formatDateTime`/`formatTime`/
+  `formatDayLabel` (`lib/format.js`) all gained an optional second `zone`
+  parameter wired to this.
+  - **The reconciliation the sketch predicted was already done in phase
+    18 itself**, not deferred here - `timezone` rides on `ClinicBrandingView`
+    (front_desk/provider/clinic_admin) and the public `ClinicDirectoryView`
+    (`GET /api/clinics`, no auth), not just the `clinic_admin`-only settings
+    endpoint, specifically so this phase wouldn't need any backend change
+    at all. Confirmed true - zero backend/BFF edits this phase.
+  - **`theme/TimezoneProvider.jsx`** (new) - same file-per-concern layout
+    and public shape (`{mode, ..., setMode}`) as `ThemeProvider.jsx`/
+    `LanguageProvider.jsx`, but bridges `lib/timezone.js`'s singleton into
+    React via `useSyncExternalStore` rather than owning `useState` itself,
+    since the underlying value has to be plain-JS-readable. Also exports
+    `useActiveClinicZone(zone)` - a small effect hook a page calls once
+    with the one clinic it's currently showing (registers on mount, clears
+    to `null` on unmount) - wired into `theme/BrandingProvider.jsx` (a
+    signed-in staff member's own clinic, from the branding response it
+    already fetches) and into the three patient/public pages that already
+    resolve a single clinic's identity from `useClinicsDirectory()`:
+    `pages/booking/BookingForm.jsx`, `pages/AppointmentDetail.jsx`,
+    `pages/Reschedule.jsx`. Deliberately **not** wired into pages whose
+    list can span multiple different clinics at once (`MyAppointments.jsx`,
+    `MyLabOrders`/`MyLabOrderDetail.jsx`, the two public tracking pages,
+    `RequestLabTest.jsx`'s clinic-picker step) - "clinic" mode on those
+    silently falls back to the browser's own zone, a known, deliberate
+    scope boundary, not a bug.
+  - **`components/TimezoneToggle.jsx`** (new) - same plain segmented
+    -button shape as `ThemeToggle.jsx`/`LanguageToggle.jsx` (Browser/
+    Clinic's/Choose...), dropped in next to them in both `AppShell.jsx`
+    and `PublicShell.jsx` - **not** the gear-icon popover the original
+    sketch proposed; matched what theme/language actually shipped as
+    instead (plain inline toggles, not a popover), for the same
+    consistency reason nothing here was over-built into a settings surface
+    that doesn't otherwise exist. "Choose..." reveals a native `<select>`
+    of every zone from `Intl.supportedValuesOf('timeZone')` (a real,
+    standard JS API - no bundled ~400-entry list); "Clinic's" with no
+    ambient zone known on the current page shows a small "(unknown on
+    this page)" hint rather than silently doing nothing.
+  - **A real reactivity bug found and fixed live, not just a missing
+    call site**: the first working version updated `localStorage` and
+    the toggle's own highlighted state correctly, but every
+    already-rendered date/time on the page stayed stale until something
+    unrelated caused a re-render - confirmed live (switching modes on an
+    open appointment detail page changed nothing until a manual reload).
+    Root cause: `ThemeProvider` gets app-wide reactivity for free (a CSS
+    class flip repaints instantly, no React re-render involved), and
+    `LanguageProvider` gets it because every page already calls
+    `useTranslation()` for its own text, which `react-i18next` re-renders
+    unconditionally on its own `languageChanged` event (confirmed by
+    reading `useTranslation()`'s own source - an internal revision counter
+    increments on every emission, regardless of whether the language value
+    actually changed) - but there's no equivalent existing subscription
+    for a timezone change, and the ~20 files calling
+    `formatDateTime`/`formatTime`/`formatDayLabel` weren't otherwise
+    re-rendering when only the timezone preference changed. Two fixes were
+    tried in order: first, subscribing to the timezone context directly
+    inside `AppShell.jsx`/`PublicShell.jsx` (reasoning: `<Outlet/>` is
+    created fresh in that component's own render, so it should cascade) -
+    tried, then confirmed *still* broken live, because React Router's
+    `Outlet` resolves the matched route's element from its own routing
+    context rather than re-deriving it from the layout's render, so a
+    layout re-render alone doesn't force the active page to re-render.
+    Reverted that attempt once disproven, rather than leaving dead code
+    behind. The fix that actually worked, verified live: `lib/timezone.js`'s
+    `commit()` re-emits the shared i18next instance's own `languageChanged`
+    event (language left unchanged) on every timezone-preference change,
+    piggybacking the identical, already-proven mechanism instead of adding
+    a new subscription to every consuming file.
+  - **Live-verified against the real running stack** - as `demo-front-desk`:
+    an open appointment's "Booked" timestamp confirmed changing correctly,
+    live and in place with no reload, across all three modes (Browser -
+    Africa/Nairobi in this environment; Clinic's - the demo clinic's own
+    UTC; Choose... - Pacific/Kiritimati), each value hand-checked against
+    the appointment's raw UTC `bookedAt` via a direct API call rather than
+    eyeballed; the public/staff-shared booking flow's `SlotPicker` slot
+    times shifted by exactly the clinic-vs-browser offset (3 hours here)
+    the instant "Clinic's" was selected, with no page reload; both fully
+    correct in Amharic + Light theme together, including the toggle's own
+    translated labels (`timezone.*`, new in `locales/en.json`/`am.json`).
 
 **Frontend phase O: clinic-admin analytics dashboard** (built 2026-09-24,
 out of order ahead of frontend phases tied to phases 16-18) - see "Phase
@@ -2914,9 +2977,9 @@ append new ones there too, not here.
   per-clinic timezone". `clinic_settings.timezone` is a real, validated
   override now, resolved through one shared
   `ClinicSettingsService.resolveTimezone` seam by every day-boundary/slot
-  -generation call site. The one piece still open is the *frontend*
-  display picker (browser-local/clinic's/manual) - see "Frontend phase
-  N"'s own still-not-built timezone-display item.
+  -generation call site. The *frontend* display picker (browser-local/
+  clinic's/manual) closed the same day - see "Frontend phase N"'s
+  timezone-display write-up.
 - Recurring-series cancellation isn't its own concept - cancelling one
   occurrence just cancels that one `Appointment` row via the normal cancel
   endpoint; there's no "cancel the rest of the series too" option. Not

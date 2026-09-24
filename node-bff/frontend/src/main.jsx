@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { ThemeProvider } from './theme/ThemeProvider.jsx';
 import { LanguageProvider } from './theme/LanguageProvider.jsx';
+import { TimezoneProvider } from './theme/TimezoneProvider.jsx';
 import { BrandingProvider } from './theme/BrandingProvider.jsx';
 import App from './App.jsx';
 import './i18n/index.js';
@@ -25,11 +26,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <BrowserRouter>
         <ThemeProvider>
           <LanguageProvider>
-            <AuthProvider>
-              <BrandingProvider>
-                <App />
-              </BrandingProvider>
-            </AuthProvider>
+            <TimezoneProvider>
+              <AuthProvider>
+                <BrandingProvider>
+                  <App />
+                </BrandingProvider>
+              </AuthProvider>
+            </TimezoneProvider>
           </LanguageProvider>
         </ThemeProvider>
       </BrowserRouter>

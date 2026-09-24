@@ -48,6 +48,15 @@
     "en": "English",
     "am": "Amharic"
   },
+  "timezone": {
+    "label": "Timezone",
+    "browser": "Browser",
+    "clinic": "Clinic's",
+    "manual": "Choose...",
+    "pickZoneLabel": "Pick a timezone",
+    "pickZonePlaceholder": "Pick a timezone",
+    "clinicUnknownHere": "(unknown on this page)"
+  },
   "publicHome": {
     "title": "Clinic Management",
     "subtitle": "Book an appointment as a guest, or sign in as clinic staff or a patient to continue."

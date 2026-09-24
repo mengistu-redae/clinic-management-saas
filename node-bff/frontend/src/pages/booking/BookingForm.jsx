@@ -14,6 +14,7 @@ import SlotPicker from '../../components/booking/SlotPicker.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import { formatCurrency } from '../../lib/format.js';
+import { useActiveClinicZone } from '../../theme/TimezoneProvider.jsx';
 
 const selectClass =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -27,7 +28,12 @@ export default function BookingForm() {
   const { authenticated } = useAuth();
 
   const { data: clinics } = useClinicsDirectory();
-  const clinicName = clinics?.find((c) => c.id === clinicId)?.name;
+  const clinic = clinics?.find((c) => c.id === clinicId);
+  const clinicName = clinic?.name;
+  // Registers this clinic's own timezone so the slot picker below shows
+  // times in it when the viewer's preference is "clinic" (see the
+  // phase-18/phase-N reconciliation write-up in CLAUDE.md).
+  useActiveClinicZone(clinic?.timezone);
 
   const typesQuery = useClinicAppointmentTypes(clinicId);
   const providersQuery = useClinicProviders(clinicId);

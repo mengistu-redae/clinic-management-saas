@@ -2,6 +2,7 @@ import { Link, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ThemeToggle from '../components/ThemeToggle.jsx';
 import LanguageToggle from '../components/LanguageToggle.jsx';
+import TimezoneToggle from '../components/TimezoneToggle.jsx';
 
 /**
  * Logged-out shell - a header with nav (booking/tracking are both public,
@@ -39,9 +40,10 @@ export default function PublicShell() {
               </Link>
             </nav>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <LanguageToggle />
             <ThemeToggle />
+            <TimezoneToggle />
             <a
               href="/auth/login"
               className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark"

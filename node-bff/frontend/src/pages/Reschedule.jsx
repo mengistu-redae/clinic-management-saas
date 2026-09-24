@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useMyAppointment, useClinicProviders, useRescheduleMyAppointment } from '../api/queries.js';
+import { useMyAppointment, useClinicProviders, useClinicsDirectory, useRescheduleMyAppointment } from '../api/queries.js';
 import { ApiError } from '../api/client.js';
 import SlotPicker from '../components/booking/SlotPicker.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
+import { useActiveClinicZone } from '../theme/TimezoneProvider.jsx';
 
 const selectClass =
   'w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -23,6 +24,8 @@ export default function Reschedule() {
 
   const { data: appointment, isLoading, isError, error, refetch } = useMyAppointment(id);
   const providersQuery = useClinicProviders(appointment?.tenantId);
+  const clinicsQuery = useClinicsDirectory();
+  useActiveClinicZone(clinicsQuery.data?.find((c) => c.id === appointment?.tenantId)?.timezone);
 
   const [providerId, setProviderId] = useState('');
   const [selectedSlot, setSelectedSlot] = useState(null);

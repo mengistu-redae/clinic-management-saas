@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { useClinicBranding } from '../api/queries.js';
 import { themeVars } from '../lib/color.js';
 import { useTheme } from './ThemeProvider.jsx';
+import { useActiveClinicZone } from './TimezoneProvider.jsx';
 
 const BrandingContext = createContext(null);
 
@@ -33,6 +34,12 @@ export function BrandingProvider({ children }) {
   // whichever card it's actually rendered on. Re-runs on every theme
   // switch, not just on branding load - see lib/color.js's deriveShades.
   const { resolvedTheme } = useTheme();
+
+  // A signed-in staff member only ever has one clinic - registers it as the
+  // ambient "current clinic" for the timezone preference's "clinic" mode
+  // (theme/TimezoneProvider.jsx), the same timezone this branding response
+  // already carries (phase 18).
+  useActiveClinicZone(isStaff ? data?.timezone : null);
 
   useEffect(() => {
     const root = document.documentElement;

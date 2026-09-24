@@ -48,6 +48,15 @@
     "en": "እንግሊዝኛ",
     "am": "አማርኛ"
   },
+  "timezone": {
+    "label": "የሰዓት ሰቅ",
+    "browser": "አሳሽ",
+    "clinic": "የክሊኒኩ",
+    "manual": "ይምረጡ...",
+    "pickZoneLabel": "የሰዓት ሰቅ ይምረጡ",
+    "pickZonePlaceholder": "የሰዓት ሰቅ ይምረጡ",
+    "clinicUnknownHere": "(በዚህ ገጽ ላይ አይታወቅም)"
+  },
   "publicHome": {
     "title": "የክሊኒክ አስተዳደር",
     "subtitle": "እንደ እንግዳ ቀጠሮ ይያዙ፣ ወይም ለመቀጠል እንደ ክሊኒክ ሰራተኛ ወይም ታካሚ ይግቡ።"

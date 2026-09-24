@@ -8,6 +8,7 @@ import StatusPill from '../components/StatusPill.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
 import { formatDateTime } from '../lib/format.js';
+import { useActiveClinicZone } from '../theme/TimezoneProvider.jsx';
 
 /**
  * Reachable logged-in or as a guest, mirroring the reference project's
@@ -33,10 +34,12 @@ export default function AppointmentDetail() {
   const providersQuery = useClinicProviders(clinicId);
   const typesQuery = useClinicAppointmentTypes(clinicId);
 
-  const clinicName = stateData?.clinicName || clinicsQuery.data?.find((c) => c.id === clinicId)?.name;
+  const clinic = clinicsQuery.data?.find((c) => c.id === clinicId);
+  const clinicName = stateData?.clinicName || clinic?.name;
   const providerName = stateData?.providerName || providersQuery.data?.find((p) => p.id === appointment?.providerId)?.fullName;
   const typeName = stateData?.typeName || typesQuery.data?.find((type) => type.id === appointment?.appointmentTypeId)?.name;
   const startTime = stateData?.slot?.startTime || appointment?.startTime;
+  useActiveClinicZone(clinic?.timezone);
 
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelError, setCancelError] = useState(null);
