@@ -5,7 +5,7 @@ import com.clinicops.provider.ProviderWorkingHours;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,9 +19,12 @@ import java.util.List;
  * A window that doesn't divide evenly by the duration drops its leftover
  * remainder rather than generating a short final slot (e.g. a 25-minute
  * tail on a 90-minute window with 30-minute slots is simply unused).
- * Working hours are interpreted in UTC - this app has no per-clinic
- * timezone concept yet (see CLAUDE.md's known gaps); a real deployment
- * spanning time zones would need one.
+ * Working hours are interpreted in the given {@code zone} (phase 18 -
+ * ClinicSettingsService.resolveTimezone(tenantId), UTC platform-wide
+ * default until a clinic sets its own) - resolved via {@code atZone(...)}
+ * rather than a plain {@code ZoneOffset}, so a region-based zone's own DST
+ * rules for that specific date are honored correctly, not just a fixed
+ * offset.
  */
 final class SlotGenerator {
 
@@ -34,13 +37,13 @@ final class SlotGenerator {
     }
 
     static List<Instant[]> generateForDay(
-            LocalDate date, List<ProviderWorkingHours> windowsForDay, int durationMinutes, Instant notBefore) {
+            LocalDate date, List<ProviderWorkingHours> windowsForDay, int durationMinutes, Instant notBefore, ZoneId zone) {
         List<Instant[]> slots = new ArrayList<>();
         Duration duration = Duration.ofMinutes(durationMinutes);
 
         for (ProviderWorkingHours window : windowsForDay) {
-            Instant windowStart = date.atTime(window.getStartTime()).toInstant(ZoneOffset.UTC);
-            Instant windowEnd = date.atTime(window.getEndTime()).toInstant(ZoneOffset.UTC);
+            Instant windowStart = date.atTime(window.getStartTime()).atZone(zone).toInstant();
+            Instant windowEnd = date.atTime(window.getEndTime()).atZone(zone).toInstant();
 
             Instant cursor = windowStart;
             while (!cursor.plus(duration).isAfter(windowEnd)) {

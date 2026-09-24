@@ -17,6 +17,8 @@ public record EffectiveClinicSettings(
         BigDecimal rescheduleFeeFrontDesk,
         long rescheduleMinNoticeHours,
         int appointmentReminderLeadHours,
+        /** Always non-null (an override coalesced with the platform default) - see phase 18. */
+        String timezone,
         String supportPhone,
         String supportEmail,
         String address,

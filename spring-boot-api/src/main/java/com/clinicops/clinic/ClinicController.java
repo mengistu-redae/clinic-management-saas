@@ -1,5 +1,6 @@
 package com.clinicops.clinic;
 
+import com.clinicops.clinicsettings.ClinicSettingsService;
 import com.clinicops.tenant.TenantContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,9 +21,11 @@ import java.util.List;
 public class ClinicController {
 
     private final ClinicRepository clinicRepository;
+    private final ClinicSettingsService clinicSettingsService;
 
-    public ClinicController(ClinicRepository clinicRepository) {
+    public ClinicController(ClinicRepository clinicRepository, ClinicSettingsService clinicSettingsService) {
         this.clinicRepository = clinicRepository;
+        this.clinicSettingsService = clinicSettingsService;
     }
 
     @GetMapping("/api/clinic/me")
@@ -43,7 +46,7 @@ public class ClinicController {
     @GetMapping("/api/clinics")
     public List<ClinicDirectoryView> clinics() {
         return clinicRepository.findAllByStatusOrderByName("active").stream()
-                .map(ClinicDirectoryView::from)
+                .map(clinic -> ClinicDirectoryView.from(clinic, clinicSettingsService.resolve(clinic.getId()).timezone()))
                 .toList();
     }
 

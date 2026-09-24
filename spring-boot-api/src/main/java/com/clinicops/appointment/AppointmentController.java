@@ -1,5 +1,6 @@
 package com.clinicops.appointment;
 
+import com.clinicops.clinicsettings.ClinicSettingsService;
 import com.clinicops.patient.PatientProvisioningService;
 import com.clinicops.provider.CurrentProviderService;
 import com.clinicops.scheduling.Slot;
@@ -25,7 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -49,6 +50,7 @@ public class AppointmentController {
     private final SlotRepository slotRepository;
     private final AppointmentSeriesService appointmentSeriesService;
     private final CurrentProviderService currentProviderService;
+    private final ClinicSettingsService clinicSettingsService;
 
     public AppointmentController(
             AppointmentService appointmentService,
@@ -57,7 +59,8 @@ public class AppointmentController {
             AppointmentRepository appointmentRepository,
             SlotRepository slotRepository,
             AppointmentSeriesService appointmentSeriesService,
-            CurrentProviderService currentProviderService) {
+            CurrentProviderService currentProviderService,
+            ClinicSettingsService clinicSettingsService) {
         this.appointmentService = appointmentService;
         this.currentUserService = currentUserService;
         this.patientProvisioningService = patientProvisioningService;
@@ -65,6 +68,7 @@ public class AppointmentController {
         this.slotRepository = slotRepository;
         this.appointmentSeriesService = appointmentSeriesService;
         this.currentProviderService = currentProviderService;
+        this.clinicSettingsService = clinicSettingsService;
     }
 
     @PostMapping("/api/appointments")
@@ -148,8 +152,10 @@ public class AppointmentController {
      * A provider's own worklist - scoped to the caller's own resolved
      * Provider.id (via CurrentProviderService), not the tenant-wide
      * GET /api/appointments front_desk/clinic_admin use. Day boundaries use
-     * ZoneOffset.UTC, matching AvailabilityController/SlotGenerationService's
-     * existing day-math convention - no new timezone concept introduced.
+     * the clinic's own resolved timezone (phase 18 -
+     * ClinicSettingsService.resolveTimezone) - UTC platform-wide default
+     * until a clinic sets its own, same shared lookup
+     * AvailabilityController/SlotGenerationService also use.
      */
     @GetMapping("/api/my-schedule")
     @PreAuthorize("hasRole('PROVIDER')")
@@ -158,9 +164,10 @@ public class AppointmentController {
             @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
         UUID providerId = currentProviderService.resolveProviderId(jwt, tenantId);
-        LocalDate scheduleDate = date != null ? date : LocalDate.now(ZoneOffset.UTC);
-        Instant dayStart = scheduleDate.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant dayEnd = scheduleDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        ZoneId zone = clinicSettingsService.resolveTimezone(tenantId);
+        LocalDate scheduleDate = date != null ? date : LocalDate.now(zone);
+        Instant dayStart = scheduleDate.atStartOfDay(zone).toInstant();
+        Instant dayEnd = scheduleDate.plusDays(1).atStartOfDay(zone).toInstant();
         return appointmentRepository.findProviderSchedule(tenantId, providerId, dayStart, dayEnd);
     }
 

@@ -2,6 +2,7 @@ package com.clinicops.scheduling;
 
 import com.clinicops.appointmenttype.AppointmentType;
 import com.clinicops.appointmenttype.AppointmentTypeRepository;
+import com.clinicops.clinicsettings.ClinicSettingsService;
 import com.clinicops.provider.ProviderWorkingHours;
 import com.clinicops.provider.ProviderWorkingHoursRepository;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -9,7 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -29,14 +30,17 @@ public class SlotGenerationService {
     private final ProviderWorkingHoursRepository workingHoursRepository;
     private final AppointmentTypeRepository appointmentTypeRepository;
     private final SlotRepository slotRepository;
+    private final ClinicSettingsService clinicSettingsService;
 
     public SlotGenerationService(
             ProviderWorkingHoursRepository workingHoursRepository,
             AppointmentTypeRepository appointmentTypeRepository,
-            SlotRepository slotRepository) {
+            SlotRepository slotRepository,
+            ClinicSettingsService clinicSettingsService) {
         this.workingHoursRepository = workingHoursRepository;
         this.appointmentTypeRepository = appointmentTypeRepository;
         this.slotRepository = slotRepository;
+        this.clinicSettingsService = clinicSettingsService;
     }
 
     /** Ensures every open-able slot from today through throughDate (inclusive) exists for this provider/appointment-type pair. */
@@ -44,10 +48,11 @@ public class SlotGenerationService {
         AppointmentType type = appointmentTypeRepository.findByIdAndTenantId(appointmentTypeId, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment type not found: " + appointmentTypeId));
 
+        ZoneId zone = clinicSettingsService.resolveTimezone(tenantId);
         Instant now = Instant.now();
-        LocalDate date = LocalDate.now(ZoneOffset.UTC);
+        LocalDate date = LocalDate.now(zone);
         while (!date.isAfter(throughDate)) {
-            generateForDay(tenantId, providerId, appointmentTypeId, type.getDurationMinutes(), date, now);
+            generateForDay(tenantId, providerId, appointmentTypeId, type.getDurationMinutes(), date, now, zone);
             date = date.plusDays(1);
         }
     }
@@ -68,11 +73,12 @@ public class SlotGenerationService {
 
         AppointmentType type = appointmentTypeRepository.findByIdAndTenantId(appointmentTypeId, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment type not found: " + appointmentTypeId));
-        LocalDate date = exactStartTime.atZone(ZoneOffset.UTC).toLocalDate();
+        ZoneId zone = clinicSettingsService.resolveTimezone(tenantId);
+        LocalDate date = exactStartTime.atZone(zone).toLocalDate();
         List<ProviderWorkingHours> windows =
                 workingHoursRepository.findAllByProviderIdAndDayOfWeek(providerId, SlotGenerator.dayOfWeek(date));
 
-        boolean aligns = SlotGenerator.generateForDay(date, windows, type.getDurationMinutes(), Instant.EPOCH).stream()
+        boolean aligns = SlotGenerator.generateForDay(date, windows, type.getDurationMinutes(), Instant.EPOCH, zone).stream()
                 .anyMatch(candidate -> candidate[0].equals(exactStartTime));
         if (!aligns) {
             return Optional.empty();
@@ -84,13 +90,13 @@ public class SlotGenerationService {
     }
 
     private void generateForDay(
-            UUID tenantId, UUID providerId, UUID appointmentTypeId, int durationMinutes, LocalDate date, Instant notBefore) {
+            UUID tenantId, UUID providerId, UUID appointmentTypeId, int durationMinutes, LocalDate date, Instant notBefore, ZoneId zone) {
         List<ProviderWorkingHours> windows =
                 workingHoursRepository.findAllByProviderIdAndDayOfWeek(providerId, SlotGenerator.dayOfWeek(date));
         if (windows.isEmpty()) {
             return;
         }
-        for (Instant[] candidate : SlotGenerator.generateForDay(date, windows, durationMinutes, notBefore)) {
+        for (Instant[] candidate : SlotGenerator.generateForDay(date, windows, durationMinutes, notBefore, zone)) {
             saveSlotIfAbsent(tenantId, providerId, appointmentTypeId, candidate[0], candidate[1]);
         }
     }

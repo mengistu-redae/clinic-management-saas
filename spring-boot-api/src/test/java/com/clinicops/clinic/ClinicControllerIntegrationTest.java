@@ -1,6 +1,7 @@
 package com.clinicops.clinic;
 
 import com.clinicops.support.AbstractIntegrationTest;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -59,5 +60,20 @@ class ClinicControllerIntegrationTest extends AbstractIntegrationTest {
     void platformAdminIsNotAmongTheRolesAllowedOnThisStaffEndpoint() throws Exception {
         mockMvc.perform(get("/api/clinic/me").with(asPlatformAdmin("platform-1")))
                 .andExpect(status().isForbidden());
+    }
+
+    /**
+     * Public, no auth at all - a guest/patient picking a clinic before
+     * booking. Confirms the resolved timezone (phase 18) rides along on
+     * this narrow directory shape, not just the clinic_admin-only settings
+     * endpoint - see ClinicDirectoryView's own javadoc for why.
+     */
+    @Test
+    void publicDirectoryCarriesTheClinicsResolvedTimezone() throws Exception {
+        createClinic("directory-timezone", "Directory Timezone Clinic");
+
+        mockMvc.perform(get("/api/clinics"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.name == 'Directory Timezone Clinic')].timezone").value(Matchers.hasItem("UTC")));
     }
 }

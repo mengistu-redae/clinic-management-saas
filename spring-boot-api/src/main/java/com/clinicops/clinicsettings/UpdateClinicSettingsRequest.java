@@ -14,6 +14,8 @@ public record UpdateClinicSettingsRequest(
         BigDecimal rescheduleFeeFrontDesk,
         Integer rescheduleMinNoticeHours,
         Integer appointmentReminderLeadHours,
+        /** A valid IANA zone id, or null to revert to the platform default - validated in ClinicSettingsService.updateSettings. */
+        String timezone,
         String supportPhone,
         String supportEmail,
         String address,

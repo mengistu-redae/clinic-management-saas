@@ -9,6 +9,7 @@ public record ClinicSettingsOverrides(
         BigDecimal rescheduleFeeFrontDesk,
         Integer rescheduleMinNoticeHours,
         Integer appointmentReminderLeadHours,
+        String timezone,
         String supportPhone,
         String supportEmail,
         String address,
@@ -16,11 +17,11 @@ public record ClinicSettingsOverrides(
 ) {
     static ClinicSettingsOverrides from(ClinicSettings s) {
         if (s == null) {
-            return new ClinicSettingsOverrides(null, null, null, null, null, null, null, null, null);
+            return new ClinicSettingsOverrides(null, null, null, null, null, null, null, null, null, null);
         }
         return new ClinicSettingsOverrides(
                 s.getTaxRatePercent(), s.getRescheduleFeePatientPortal(), s.getRescheduleFeeFrontDesk(),
-                s.getRescheduleMinNoticeHours(), s.getAppointmentReminderLeadHours(),
+                s.getRescheduleMinNoticeHours(), s.getAppointmentReminderLeadHours(), s.getTimezone(),
                 s.getSupportPhone(), s.getSupportEmail(), s.getAddress(), s.getWebsite());
     }
 }

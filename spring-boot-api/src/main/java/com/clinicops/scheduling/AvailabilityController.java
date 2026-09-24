@@ -1,5 +1,6 @@
 package com.clinicops.scheduling;
 
+import com.clinicops.clinicsettings.ClinicSettingsService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -8,7 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,10 +29,13 @@ public class AvailabilityController {
 
     private final SlotGenerationService slotGenerationService;
     private final SlotRepository slotRepository;
+    private final ClinicSettingsService clinicSettingsService;
 
-    public AvailabilityController(SlotGenerationService slotGenerationService, SlotRepository slotRepository) {
+    public AvailabilityController(
+            SlotGenerationService slotGenerationService, SlotRepository slotRepository, ClinicSettingsService clinicSettingsService) {
         this.slotGenerationService = slotGenerationService;
         this.slotRepository = slotRepository;
+        this.clinicSettingsService = clinicSettingsService;
     }
 
     @GetMapping("/api/clinics/{clinicId}/availability")
@@ -41,11 +45,15 @@ public class AvailabilityController {
             @RequestParam UUID appointmentTypeId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
 
-        LocalDate throughDate = to != null ? to : LocalDate.now(ZoneOffset.UTC).plusDays(DEFAULT_HORIZON_DAYS);
+        // clinicId is a path param here (this endpoint is permitAll - a
+        // guest/patient caller has no staff token/TenantContext), so the
+        // zone is resolved by id directly rather than TenantContext.require().
+        ZoneId zone = clinicSettingsService.resolveTimezone(clinicId);
+        LocalDate throughDate = to != null ? to : LocalDate.now(zone).plusDays(DEFAULT_HORIZON_DAYS);
         slotGenerationService.ensureSlotsGenerated(clinicId, providerId, appointmentTypeId, throughDate);
 
         Instant from = Instant.now();
-        Instant until = throughDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+        Instant until = throughDate.plusDays(1).atStartOfDay(zone).toInstant();
         return slotRepository
                 .findAllByTenantIdAndProviderIdAndAppointmentTypeIdAndStatusAndStartTimeBetween(
                         clinicId, providerId, appointmentTypeId, "open", from, until)

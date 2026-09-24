@@ -54,6 +54,17 @@ public class ClinicSettings {
     @Column(name = "appointment_reminder_lead_hours")
     private Integer appointmentReminderLeadHours;
 
+    /**
+     * A valid IANA zone id (e.g. "Africa/Addis_Ababa"), validated against
+     * {@code ZoneId.getAvailableZoneIds()} in ClinicSettingsService - same
+     * "backend-defined bounded set validated in code" convention as
+     * Allergy.severity/Prescription.route. Null means "use the platform
+     * default" (ClinicSettingsService.resolveTimezone), same as every
+     * other business field in this group - see phase 18.
+     */
+    @Column(name = "timezone")
+    private String timezone;
+
     @Column(name = "support_phone")
     private String supportPhone;
 

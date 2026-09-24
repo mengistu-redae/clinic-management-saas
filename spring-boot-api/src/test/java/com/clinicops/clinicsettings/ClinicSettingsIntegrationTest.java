@@ -35,7 +35,7 @@ class ClinicSettingsIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/clinic/settings").with(asClinicAdmin("admin", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new UpdateClinicSettingsRequest(
-                                new BigDecimal("8.5"), null, null, 48, null,
+                                new BigDecimal("8.5"), null, null, 48, null, null,
                                 "555-0100", "support@clinic.test", "1 Main St", "https://clinic.test"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.overrides.rescheduleMinNoticeHours").value(48))
@@ -46,7 +46,7 @@ class ClinicSettingsIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/clinic/settings").with(asClinicAdmin("admin", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new UpdateClinicSettingsRequest(
-                                null, null, null, null, null, null, null, null, null))))
+                                null, null, null, null, null, null, null, null, null, null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.overrides.rescheduleMinNoticeHours").value(Matchers.nullValue()))
                 .andExpect(jsonPath("$.effective.rescheduleMinNoticeHours").value(4));
@@ -60,7 +60,7 @@ class ClinicSettingsIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/clinic/settings").with(asClinicAdmin("admin", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new UpdateClinicSettingsRequest(
-                                null, null, null, null, null, "555-0100", null, null, null))))
+                                null, null, null, null, null, null, "555-0100", null, null, null))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/clinic/branding").with(asClinicAdmin("admin", orgAlias))
@@ -114,6 +114,44 @@ class ClinicSettingsIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new UpdateClinicBrandingRequest(
                                 "not-a-url", "not-a-color", null, null, null))))
+                .andExpect(status().isBadRequest());
+    }
+
+    /** Phase 18 - a clinic's own timezone override, and the platform default (UTC) when unset. */
+    @Test
+    void timezoneDefaultsToUtcAndCanBeOverridden() throws Exception {
+        Clinic clinic = createClinic("settings-timezone-" + UUID.randomUUID(), "Timezone Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/clinic/settings").with(asClinicAdmin("admin", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.overrides.timezone").value(Matchers.nullValue()))
+                .andExpect(jsonPath("$.effective.timezone").value("UTC"))
+                .andExpect(jsonPath("$.defaults.timezone").value("UTC"));
+
+        mockMvc.perform(post("/api/clinic/settings").with(asClinicAdmin("admin", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateClinicSettingsRequest(
+                                null, null, null, null, null, "Africa/Addis_Ababa", null, null, null, null))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.overrides.timezone").value("Africa/Addis_Ababa"))
+                .andExpect(jsonPath("$.effective.timezone").value("Africa/Addis_Ababa"));
+
+        // The override is also readable off the branding endpoint (front_desk/provider/patient/guest surfaces) and the public clinic directory.
+        mockMvc.perform(get("/api/clinic/branding").with(asClinicAdmin("admin", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.timezone").value("Africa/Addis_Ababa"));
+    }
+
+    @Test
+    void invalidTimezoneIsRejected() throws Exception {
+        Clinic clinic = createClinic("settings-timezone-invalid-" + UUID.randomUUID(), "Bad Timezone Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+
+        mockMvc.perform(post("/api/clinic/settings").with(asClinicAdmin("admin", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateClinicSettingsRequest(
+                                null, null, null, null, null, "Not/AZone", null, null, null, null))))
                 .andExpect(status().isBadRequest());
     }
 }

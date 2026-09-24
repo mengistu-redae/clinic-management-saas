@@ -8,6 +8,7 @@ public record ClinicSettingsDefaults(
         BigDecimal rescheduleFeePatientPortal,
         BigDecimal rescheduleFeeFrontDesk,
         long rescheduleMinNoticeHours,
-        int appointmentReminderLeadHours
+        int appointmentReminderLeadHours,
+        String timezone
 ) {
 }

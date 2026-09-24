@@ -533,16 +533,18 @@ what's still genuinely open.
 17. **Real email + SMS delivery** - `NotificationSender`'s existing
     interface gets two real implementations (SendGrid email, Twilio SMS).
     See "Phase 17" below.
-18. **Per-clinic timezone** - a `ClinicSettings.timezone` override,
-    consumed by slot generation and day-boundary math; existing slots are
-    left untouched. See "Phase 18" below.
+18. **Per-clinic timezone** (built 2026-09-24) - a `ClinicSettings.timezone`
+    override, consumed by slot generation and day-boundary math; existing
+    slots are left untouched. See "Phase 18" below.
 
 **Frontend phase N** - viewer-level language (English+Amharic)/
 timezone-display/theme (light/dark/system) preferences, localStorage-only,
-no backend changes except a phase-18 timezone-exposure reconciliation.
+no backend changes except a phase-18 timezone-exposure reconciliation
+(closed now that phase 18 itself is built - see below).
 **Theme built 2026-09-22. Language (i18n + English + Amharic, full
 per-page content sweep across all 32 relevant files) built 2026-09-22.**
-**Timezone-display still sketched, not built.**
+**Timezone-display still not built** - phase 18 (its one dependency) is
+now done, so nothing blocks it anymore; it just hasn't been picked up yet.
 See "Frontend phase N" under "## Frontend" below.
 
 19. **Clinic-admin analytics dashboard** (built 2026-09-24) - a genuinely
@@ -1615,57 +1617,96 @@ it doesn't need to create one.
   `TwilioSmsSenderTest`, both mocking the vendor SDK client so the test
   suite makes no real network call.
 
-## Phase 18: per-clinic timezone (sketched, not yet built)
+## Phase 18: per-clinic timezone
 
-Sketched 2026-09-21, closing the "No per-clinic timezone" known gap.
-`SlotGenerator` and every day-boundary calculation
-(`SlotGenerationService`, `AvailabilityController`,
-`AppointmentController.mySchedule`) currently hardcode `ZoneOffset.UTC` -
-confirmed by grep before writing this plan, five call sites in total.
+Sketched 2026-09-21, built 2026-09-24 - closes the "No per-clinic
+timezone" known gap. Built essentially exactly as sketched; no design
+forks changed between the sketch and the build. New migration
+`V15__clinic_timezone.sql`.
 
 - **A new nullable `timezone` column on `clinic_settings`** (the
   *settings* column group, alongside tax rate/fees/notice-hours - not
   branding), a valid IANA zone id (e.g. `"Africa/Addis_Ababa"`), validated
-  against `ZoneId.getAvailableZoneIds()` server-side - same
-  "backend-defined bounded set validated in code" convention as
-  `Allergy.severity`/`Prescription.route`. `ClinicSettingsService.resolve`
-  gains a platform-default `ZoneId` (`clinicops.clinic.default-timezone`,
-  presumably `UTC`) alongside its existing tax/fee/notice-hour defaults -
-  same coalesce-the-override shape already used for everything else there.
-- **Existing slots are left untouched - asked directly, answered.** Only
-  new slot generation reads the resolved zone; a slot already in the
-  table (booked or not) keeps whatever UTC-interpreted time it was
-  originally generated with. No migration/backfill of `slots.start_time`/
-  `end_time` - deliberately simpler and safer than trying to shift
-  already-referenced rows.
+  in `ClinicSettingsService.updateSettings` via `ZoneId.of(...)` catching
+  `DateTimeException` (a 400 with a clear message on an invalid zone) -
+  same "backend-defined bounded set validated in code" convention as
+  `Allergy.severity`/`Prescription.route`, just checked against `ZoneId`'s
+  own real zone table instead of a small fixed list.
+  `ClinicSettingsService` gains a platform-default zone
+  (`clinicops.clinic.default-timezone: UTC` in `application.yml`,
+  constructor-injected alongside its existing tax/fee/notice-hour
+  defaults) - same coalesce-the-override shape already used for
+  everything else there. `EffectiveClinicSettings`/`ClinicSettingsDefaults`/
+  `ClinicSettingsOverrides`/`UpdateClinicSettingsRequest` all gained a
+  `timezone` field to carry it through `GET`/`POST /api/clinic/settings`'s
+  existing `{overrides, effective, defaults}` shape - no new endpoint.
 - **One shared lookup, not five independent ones** -
-  `SlotGenerator.generateForDay` takes a `ZoneId` parameter instead of a
-  hardcoded `ZoneOffset.UTC` for its window-boundary math; `AvailabilityController`
-  and `AppointmentController.mySchedule`'s own "today" boundary math
-  (`LocalDate.now(...)`, `atStartOfDay(...)`) need the *same* resolved
-  zone for a given tenant. A single `ClinicSettingsService.resolveTimezone
-  (tenantId)` (or equivalent) is the right seam, rather than each call
-  site separately re-querying settings - all five call sites already have
-  a tenant id/clinic id in hand, so nothing needs a *new* way to find
-  which clinic's zone applies.
-- **`Slot`/`Appointment` need no migration at all** - both already store
-  a plain `Instant` (a UTC instant by construction, timezone-agnostic);
-  only the *generation* and *day-boundary* math need a zone, never the
-  storage itself.
-- **A genuinely open question, not resolved by this sketch**: once a
-  clinic sets a non-UTC zone, should the *frontend* display appointment
-  times in the clinic's timezone, or keep rendering in the viewing
-  browser's own local timezone (today's incidental behavior, via
-  `formatDateTime`)? A receptionist and a patient likely both care what
-  time it is *at the clinic*, not in their own browser - but this needs an
-  explicit decision before frontend work starts on this phase, not an
-  assumption carried over from today's UTC-only behavior (which only
-  looks "right" today because generation and casual local testing both
-  happen to be UTC-adjacent).
-- `SlotGeneratorTest` (existing, pure unit) would need a non-UTC-zone case
-  per existing scenario - especially a zone where local-midnight isn't
-  UTC-midnight, the case most likely to surface an off-by-one in "today"'s
-  slot generation.
+  `ClinicSettingsService.resolveTimezone(tenantId)` (new; resolves
+  straight to a real `ZoneId`, not just the raw string) is the single seam
+  every call site that used to hardcode `ZoneOffset.UTC` now calls:
+  `SlotGenerator.generateForDay` (takes a `ZoneId` parameter instead),
+  `SlotGenerationService` (both `ensureSlotsGenerated`'s "today" and
+  `ensureSlotExists`'s reverse-lookup day), `AvailabilityController`'s own
+  "today"/horizon math, and `AppointmentController.mySchedule`'s "today"
+  math - the five call sites confirmed by grep when this was first
+  sketched, all updated, no others found once the search was repeated at
+  build time. Window-boundary math changed from `LocalDateTime.toInstant
+  (ZoneOffset)` to `LocalDateTime.atZone(zone).toInstant()` - the former
+  only accepts a fixed offset and can't express a region-based zone's own
+  rules correctly, the latter can (verified with a real non-UTC test case,
+  see below - not just a type-signature change).
+  `AvailabilityController.availability` resolves by the `clinicId` path
+  param directly (this endpoint is `permitAll` - a guest/patient caller
+  has no `TenantContext` to read), everywhere else resolves via
+  `TenantContext.require()` like every other staff-scoped call already
+  does.
+- **`Slot`/`Appointment` needed no migration** - both already store a
+  plain `Instant`; only the *generation* and *day-boundary* math needed a
+  zone, confirmed true once built, not just assumed.
+- **Existing slots are left untouched, as asked** - no backfill of
+  `slots.start_time`/`end_time` was written or needed; a slot already in
+  the table keeps whatever UTC-interpreted instant it was generated with,
+  regardless of a clinic setting its own zone afterward.
+- **The frontend display question the original sketch flagged as
+  genuinely open is resolved by construction, not by a decision made
+  here**: frontend phase N's own timezone-display picker (still not built
+  itself) is exactly the mechanism that answers "clinic's zone or the
+  viewer's own" - per-viewer, not a single app-wide default - so this
+  phase didn't need to pick one.
+- **The phase-N "reconciliation" is done**: `timezone` is now exposed
+  everywhere that preference picker will need to read it, not just the
+  `clinic_admin`-only settings endpoint - `ClinicBrandingView`
+  (`GET /api/clinic/branding`, readable by `clinic_admin`+`front_desk`+
+  `provider`) and the public `ClinicDirectoryView` (`GET /api/clinics`,
+  `permitAll` - a logged-out patient/guest can read it too) both carry the
+  fully-resolved value now. Non-sensitive operational data, not a privacy
+  concern - same reasoning already applied to a clinic's own display name/
+  branding colors being public.
+- **`SlotGeneratorTest`** gained `interpretsWorkingHoursInTheGivenNonUtcZone`
+  - Africa/Addis_Ababa (UTC+3, no DST, chosen specifically because local
+    midnight isn't UTC midnight, the case most likely to surface an
+    off-by-one), asserting the generated instant lands exactly 3 hours
+    before its local wall-clock time. 7/7 passing locally (pure unit, no
+    Testcontainers needed).
+- **`ClinicSettingsIntegrationTest`** gained `timezoneDefaultsToUtcAndCanBeOverridden`
+  (UTC with no row, override round-trips through both the settings and
+  branding endpoints) and `invalidTimezoneIsRejected` (400 on a bogus
+  zone id). **`ClinicControllerIntegrationTest`** gained
+  `publicDirectoryCarriesTheClinicsResolvedTimezone`. Same Testcontainers
+  wall as every other `AbstractIntegrationTest` subclass - confirmed to
+  fail only there via a clean `mvn test-compile`, not run to green here.
+- **Live-verified against the real running stack** - confirmed via
+  `docker compose exec postgres psql` that `V15` applied cleanly
+  (`flyway_schema_history` shows it `success = t`) and the `timezone`
+  column exists on `clinic_settings`; confirmed via a direct `curl` to
+  `GET /api/clinics` through the real nginx/node-bff/spring-boot-api chain
+  that every existing clinic now reports `"timezone":"UTC"` - the
+  end-to-end resolve-and-serialize path working, not just unit-level
+  logic. `npm test` (24/24) unaffected.
+- **Not done this phase**: the frontend timezone-display picker itself
+  (browser-local/clinic's/manual) - this phase only removed its one
+  backend dependency; building the picker is still open, see "Frontend
+  phase N" above.
 
 ## Frontend
 
@@ -2869,10 +2910,13 @@ append new ones there too, not here.
   rows now reliably end up `sent` (logged) or `failed` instead of
   accumulating as `pending` forever, but nothing actually reaches an inbox.
   **Sketched, not yet built** - see "Phase 17: real email + SMS delivery".
-- No per-clinic timezone - `SlotGenerator` interprets `provider_working_hours`
-  in UTC. Fine for a single-timezone deployment, wrong for one spanning
-  multiple. **Sketched, not yet built** - see "Phase 18: per-clinic
-  timezone".
+- ~~No per-clinic timezone~~ **closed 2026-09-24** - see "Phase 18:
+  per-clinic timezone". `clinic_settings.timezone` is a real, validated
+  override now, resolved through one shared
+  `ClinicSettingsService.resolveTimezone` seam by every day-boundary/slot
+  -generation call site. The one piece still open is the *frontend*
+  display picker (browser-local/clinic's/manual) - see "Frontend phase
+  N"'s own still-not-built timezone-display item.
 - Recurring-series cancellation isn't its own concept - cancelling one
   occurrence just cancels that one `Appointment` row via the normal cancel
   endpoint; there's no "cancel the rest of the series too" option. Not

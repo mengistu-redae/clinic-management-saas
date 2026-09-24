@@ -96,6 +96,13 @@ clinicops:
       # Bounds a recurring-appointment series (phase 2) to prevent abuse -
       # half a year weekly, or a year biweekly. See AppointmentSeriesService.
       max-occurrences: 26
+  clinic:
+    # Platform-wide fallback IANA zone (phase 18) - a clinic_admin can
+    # override this per-clinic via clinic_settings.timezone; every day
+    # -boundary/slot-generation call site reads
+    # ClinicSettingsService.resolveTimezone(tenantId), never this key
+    # directly. UTC until a clinic actually sets its own.
+    default-timezone: UTC
   file-storage:
     # Local disk + a Docker volume, not S3/cloud (decided 2026-09-20,
     # phase 9 plan mode) - see FileStorageService's own javadoc.
