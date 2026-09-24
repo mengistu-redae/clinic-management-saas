@@ -331,6 +331,30 @@ export function useCreateAppointmentPayment(id) {
   });
 }
 
+// ---- refunds (owner-agnostic, addressed by the payment's own id - see
+// payment.PaymentController, phase 16) ----
+
+export function usePaymentRefunds(paymentId) {
+  return useQuery({
+    queryKey: ['payment-refunds', paymentId],
+    queryFn: () => apiGet(`/api/payments/${paymentId}/refunds`),
+    enabled: Boolean(paymentId),
+  });
+}
+
+/** Invalidates both this payment's own refund list and every payments-list query, since a refund also flips the parent payment's own gatewayStatus (shown inline in PaymentsPanel). */
+export function useCreateRefund(paymentId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/payments/${paymentId}/refund`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payment-refunds', paymentId] });
+      queryClient.invalidateQueries({ queryKey: ['appointment-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['lab-order-payments'] });
+    },
+  });
+}
+
 // ---- invoices (see AppointmentInvoiceController/LabOrderInvoiceController - phase 15/frontend phase M) ----
 
 export function useAppointmentInvoice(id) {

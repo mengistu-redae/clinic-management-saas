@@ -513,10 +513,22 @@
     "title": "Invoice",
     "generating": "Generating…",
     "generate": "Generate invoice",
+    "downloadPdf": "Download PDF",
     "subtotal": "Subtotal",
     "tax": "Tax",
     "total": "Total",
     "notGenerated": "No invoice generated yet."
+  },
+  "paymentsPanel": {
+    "refund": "Refund",
+    "refunding": "Refunding…",
+    "confirmRefund": "Confirm refund",
+    "refundAmount": "Refund amount",
+    "refundReasonOptional": "Reason (optional)",
+    "fullyRefunded": "Fully refunded",
+    "partiallyRefunded": "{{amount}} refunded",
+    "errorAmount": "Enter a refund amount greater than zero.",
+    "errorRefund": "Could not process the refund."
   },
   "slotPicker": {
     "noSlotsTitle": "No open slots",

@@ -1636,10 +1636,10 @@ sketch and the build. New migration `V16__payment_gateway_and_refunds.sql`.
   environment`) - not a regression from this phase's own code.
 - **Live-verified against the real running stack** - see CLAUDE-history.md's
   "Verified this session - phase 16" for the full write-up.
-- **Not built this phase, as scoped**: the frontend (a later "Frontend
-  phase" once picked up) - `InvoicePanel.jsx` gaining a same-origin
-  `<a href=".../pdf">` download link, and the Payments panels gaining a
-  "Refund" action per row and a running refunded-amount indicator.
+- **The frontend was picked up the same session** - see "Frontend phase
+  P: phase-16 payment/invoice UI" under "## Frontend" below (the invoice
+  PDF download link, the Payments panels' new refund action, and a real
+  pre-existing role-gating gap found and fixed along the way).
 
 ## Phase 17: real email delivery
 
@@ -2695,6 +2695,70 @@ endpoint, all fully translated and theme-aware, and all live-verified in
 both languages and both themes. No other role's dashboard was touched -
 scoped to clinic-admin only per the user's own answer when this was
 kicked off.
+
+**Frontend phase P: phase-16 payment/invoice UI** (built 2026-09-24) -
+closes the two "not built this phase" items phase 16's own write-up
+flagged: an invoice PDF download link, and a refund action on the
+Payments panel. Zero backend changes - both endpoints have covered this
+exact shape since phase 16 itself.
+
+- **`components/PaymentsPanel.jsx`** (new) - consolidates what had been
+  two separate, near-identical inline Payments blocks
+  (`front-desk/AppointmentDetail.jsx` and `lab-orders/LabOrderDetail.jsx`)
+  into one shared component, specifically because the new refund
+  affordance would otherwise have needed writing twice - same "share the
+  existing page/component" instinct `PatientChart.jsx`/`InvoicePanel.jsx`
+  already established. A `totalOwed` prop, when given, renders the
+  lab-order page's own "collected of total" summary line (omitted on the
+  appointment page, matching its prior behavior exactly - no owed-total
+  concept exists there).
+  - Each payment row is its own child component (`PaymentRow`) - a plain
+    React rules-of-hooks consequence, since each row needs its own
+    `usePaymentRefunds` query that can't be called conditionally in a
+    `.map()` at the parent's own top level. A "Refund" link expands an
+    inline amount/reason form (capped at the payment's own remaining
+    un-refunded amount via the input's `max`); once a payment is fully
+    refunded, the link disappears rather than allowing a further refund
+    the backend would reject anyway.
+  - New hooks `usePaymentRefunds`/`useCreateRefund` (`api/queries.js`) -
+    owner-agnostic (`GET`/`POST /api/payments/{id}/refund(s)`, phase 16),
+    matching the backend's own shape rather than nesting under either
+    owner's own route.
+- **`InvoicePanel.jsx`** gained a `pdfUrl` prop - when an invoice exists,
+  a plain same-origin `<a href={pdfUrl} target="_blank">` replaces the
+  "Generate invoice" button; no new download-handling code needed, since
+  the browser already carries the session cookie same-origin. Confirmed
+  `node-bff`'s existing `relayUpstreamResponse` needed no changes for
+  this (already content-type-agnostic, the same code path phase 13's
+  provider-signature binary `GET` already proved).
+- **A real, pre-existing gap found and fixed along the way, in both
+  panels** - `lab-orders/LabOrderDetail.jsx` is shared by `provider` and
+  `clinic_admin` alike, but its record-payment form and (now) refund
+  button, and `InvoicePanel`'s own "Generate invoice" button, all render
+  unconditionally regardless of role - even though
+  `LabOrderPaymentController.recordPayment`/`PaymentController.refund`/
+  `LabOrderInvoiceController.generateInvoice` are all
+  `front_desk`/`clinic_admin`-only. A `provider` viewing a shared lab
+  order would see working-looking controls that 403 on submit. Confirmed
+  live as `demo-provider`: before the fix, the record-payment form and
+  "Generate invoice" button both rendered; after gating both (and the new
+  refund button) on `hasRole('front_desk') || hasRole('clinic_admin')`,
+  a provider's view of the same order correctly shows the payments list
+  and "No invoice generated yet." with no actionable controls at all.
+  `front-desk/AppointmentDetail.jsx` is already route-gated to those same
+  two roles, so this fix is a no-op there - confirmed unaffected.
+- **Live-verified against the real running stack** - as `demo-front-desk`
+  on a real pre-existing appointment (payments already recorded and
+  partially refunded from phase 16's own verification session): a live
+  partial refund through the actual UI (not just curl) updated the
+  payment row's "X.XX refunded" note instantly via React Query cache
+  invalidation, and the invoice panel's "Download PDF" link resolved to a
+  real `%PDF`-prefixed, `application/pdf` response, confirmed by fetching
+  the link's own `href` and checking the bytes directly. As `demo-provider`
+  on a real reviewed lab order with an existing payment: confirmed the
+  payments list and "collected of total" line still render (read access
+  intact) while the record-payment form, refund link, and generate
+  -invoice button are all correctly absent.
 
 ## Post-phase-7 backend additions
 

@@ -24,6 +24,7 @@ import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import LabOrderTestsEditor from '../../components/labOrder/LabOrderTestsEditor.jsx';
 import InvoicePanel from '../../components/InvoicePanel.jsx';
+import PaymentsPanel from '../../components/PaymentsPanel.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
 
 const inputClass =
@@ -75,11 +76,6 @@ export default function LabOrderDetail() {
   const [confirmLines, setConfirmLines] = useState([]);
 
   const [resultRows, setResultRows] = useState({});
-
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [paymentTxnId, setPaymentTxnId] = useState('');
-  const [paymentError, setPaymentError] = useState(null);
 
   // Pre-fill the confirm-and-order form (provider picker + tests editor)
   // from the patient's own freeform request once it's loaded - same
@@ -221,23 +217,6 @@ export default function LabOrderDetail() {
     }
   }
 
-  async function handleRecordPayment(event) {
-    event.preventDefault();
-    setPaymentError(null);
-    const amount = Number(paymentAmount);
-    if (!paymentAmount || Number.isNaN(amount) || amount <= 0) {
-      setPaymentError(t('fdAppointmentDetail.errorAmount'));
-      return;
-    }
-    try {
-      await createPayment.mutateAsync({ method: paymentMethod, amount, transactionId: paymentTxnId.trim() || undefined });
-      setPaymentAmount('');
-      setPaymentTxnId('');
-    } catch (err) {
-      setPaymentError(err.message || t('fdAppointmentDetail.errorRecordPayment'));
-    }
-  }
-
   if (orderQuery.isLoading) {
     return <Skeleton className="h-64 w-full max-w-2xl" />;
   }
@@ -248,8 +227,6 @@ export default function LabOrderDetail() {
   const patientName = patientQuery.data ? `${patientQuery.data.firstName} ${patientQuery.data.lastName}` : '…';
   const status = order.status;
   const isTerminal = status === 'cancelled' || status === 'reviewed';
-  const payments = paymentsQuery.data || [];
-  const collected = payments.reduce((sum, p) => sum + Number(p.amount), 0);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -414,46 +391,11 @@ export default function LabOrderDetail() {
       )}
 
       {status !== 'requested' && status !== 'cancelled' && (
-        <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink">{t('fdAppointmentDetail.payments')}</h2>
-            <span className="text-sm text-ink-muted">{t('labOrderDetail.collectedOf', { collected: formatCurrency(collected), total: formatCurrency(order.totalCost) })}</span>
-          </div>
-          {payments.length > 0 && (
-            <ul className="mb-4 flex flex-col gap-1.5 text-sm">
-              {payments.map((p) => (
-                <li key={p.id} className="flex items-center justify-between text-ink">
-                  <span className="capitalize">{t(`paymentMethod.${p.method}`, { defaultValue: p.method })}{p.transactionId && <span className="font-mono text-xs text-ink-muted"> ({p.transactionId})</span>}</span>
-                  <span className="font-mono">{formatCurrency(p.amount)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <form onSubmit={handleRecordPayment} className="flex flex-wrap items-end gap-3">
-            <Field label={t('fdAppointmentDetail.method')}>
-              <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputClass}>
-                <option value="cash">{t('paymentMethod.cash')}</option>
-                <option value="card">{t('paymentMethod.card')}</option>
-                <option value="mobile_money">{t('paymentMethod.mobile_money')}</option>
-                <option value="insurance">{t('paymentMethod.insurance')}</option>
-              </select>
-            </Field>
-            <Field label={t('fdAppointmentDetail.amount')}>
-              <input type="number" min="0" step="0.01" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} className={`${inputClass} w-28`} />
-            </Field>
-            <Field label={t('fdAppointmentDetail.txnIdOptional')}>
-              <input value={paymentTxnId} onChange={(e) => setPaymentTxnId(e.target.value)} className={`${inputClass} w-40`} />
-            </Field>
-            <button type="submit" disabled={createPayment.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
-              {createPayment.isPending ? t('fdAppointmentDetail.recording') : t('fdAppointmentDetail.recordPayment')}
-            </button>
-          </form>
-          {paymentError && <div className="mt-3"><ErrorBanner message={paymentError} /></div>}
-        </div>
+        <PaymentsPanel paymentsQuery={paymentsQuery} createPayment={createPayment} totalOwed={order.totalCost} />
       )}
 
       {status !== 'requested' && status !== 'cancelled' && (
-        <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} />
+        <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} pdfUrl={`/api/lab-orders/${id}/invoice/pdf`} />
       )}
 
       {actionError && <div className="mt-4"><ErrorBanner message={actionError} /></div>}

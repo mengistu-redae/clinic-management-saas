@@ -513,10 +513,22 @@
     "title": "ደረሰኝ",
     "generating": "በማመንጨት ላይ…",
     "generate": "ደረሰኝ ይፍጠሩ",
+    "downloadPdf": "ፒዲኤፍ አውርድ",
     "subtotal": "ንዑስ ድምር",
     "tax": "ግብር",
     "total": "ጠቅላላ ድምር",
     "notGenerated": "እስካሁን ደረሰኝ አልተፈጠረም።"
+  },
+  "paymentsPanel": {
+    "refund": "ተመላሽ",
+    "refunding": "በመመለስ ላይ…",
+    "confirmRefund": "ተመላሽ ያረጋግጡ",
+    "refundAmount": "የተመላሽ መጠን",
+    "refundReasonOptional": "ምክንያት (አማራጭ)",
+    "fullyRefunded": "ሙሉ በሙሉ ተመላሽ ተደርጓል",
+    "partiallyRefunded": "{{amount}} ተመላሽ ተደርጓል",
+    "errorAmount": "ከዜሮ በላይ የተመላሽ መጠን ያስገቡ።",
+    "errorRefund": "ተመላሹን ማስኬድ አልተቻለም።"
   },
   "slotPicker": {
     "noSlotsTitle": "ክፍት ሰዓት የለም",

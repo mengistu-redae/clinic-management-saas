@@ -24,7 +24,8 @@ import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import PatientChart from '../../components/PatientChart.jsx';
 import InvoicePanel from '../../components/InvoicePanel.jsx';
-import { formatCurrency, formatDateTime } from '../../lib/format.js';
+import PaymentsPanel from '../../components/PaymentsPanel.jsx';
+import { formatDateTime } from '../../lib/format.js';
 
 const TERMINAL_STATUSES = new Set(['cancelled', 'checked_out', 'no_show']);
 // Mirrors EncounterService's own status gate (see provider/Encounter.jsx) -
@@ -73,10 +74,6 @@ export default function AppointmentDetail() {
   const createPayment = useCreateAppointmentPayment(id);
   const invoiceQuery = useAppointmentInvoice(id);
   const generateInvoice = useGenerateAppointmentInvoice(id);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [paymentTxnId, setPaymentTxnId] = useState('');
-  const [paymentError, setPaymentError] = useState(null);
 
   async function runAction(mutation, body) {
     setActionError(null);
@@ -102,23 +99,6 @@ export default function AppointmentDetail() {
     }
   }
 
-  async function handleRecordPayment(event) {
-    event.preventDefault();
-    setPaymentError(null);
-    const amount = Number(paymentAmount);
-    if (!paymentAmount || Number.isNaN(amount) || amount <= 0) {
-      setPaymentError(t('fdAppointmentDetail.errorAmount'));
-      return;
-    }
-    try {
-      await createPayment.mutateAsync({ method: paymentMethod, amount, transactionId: paymentTxnId.trim() || undefined });
-      setPaymentAmount('');
-      setPaymentTxnId('');
-    } catch (err) {
-      setPaymentError(err.message || t('fdAppointmentDetail.errorRecordPayment'));
-    }
-  }
-
   if (appointmentQuery.isLoading) {
     return <Skeleton className="h-48 w-full max-w-xl" />;
   }
@@ -136,7 +116,6 @@ export default function AppointmentDetail() {
 
   const status = appointment.status;
   const isTerminal = TERMINAL_STATUSES.has(status);
-  const payments = paymentsQuery.data || [];
 
   return (
     <div className="mx-auto max-w-xl">
@@ -253,64 +232,11 @@ export default function AppointmentDetail() {
         </div>
       )}
 
-      {status !== 'cancelled' && (
-        <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
-          <p className="mb-3 text-sm font-semibold text-ink">{t('fdAppointmentDetail.payments')}</p>
-          {payments.length > 0 && (
-            <ul className="mb-4 flex flex-col gap-1.5 text-sm">
-              {payments.map((p) => (
-                <li key={p.id} className="flex items-center justify-between text-ink">
-                  <span className="capitalize">
-                    {t(`paymentMethod.${p.method}`, { defaultValue: p.method })}
-                    {p.transactionId && <span className="font-mono text-xs text-ink-muted"> ({p.transactionId})</span>}
-                  </span>
-                  <span className="font-mono">{formatCurrency(p.amount)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <form onSubmit={handleRecordPayment} className="flex flex-wrap items-end gap-3">
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('fdAppointmentDetail.method')}</span>
-              <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputClass}>
-                <option value="cash">{t('paymentMethod.cash')}</option>
-                <option value="card">{t('paymentMethod.card')}</option>
-                <option value="mobile_money">{t('paymentMethod.mobile_money')}</option>
-                <option value="insurance">{t('paymentMethod.insurance')}</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('fdAppointmentDetail.amount')}</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-                className={`${inputClass} w-28`}
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('fdAppointmentDetail.txnIdOptional')}</span>
-              <input value={paymentTxnId} onChange={(e) => setPaymentTxnId(e.target.value)} className={`${inputClass} w-40`} />
-            </label>
-            <button
-              type="submit"
-              disabled={createPayment.isPending}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {createPayment.isPending ? t('fdAppointmentDetail.recording') : t('fdAppointmentDetail.recordPayment')}
-            </button>
-          </form>
-          {paymentError && (
-            <div className="mt-3">
-              <ErrorBanner message={paymentError} />
-            </div>
-          )}
-        </div>
-      )}
+      {status !== 'cancelled' && <PaymentsPanel paymentsQuery={paymentsQuery} createPayment={createPayment} />}
 
-      {status !== 'cancelled' && <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} />}
+      {status !== 'cancelled' && (
+        <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} pdfUrl={`/api/appointments/${id}/invoice/pdf`} />
+      )}
 
       {cancelError && (
         <div className="mt-4">

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '../api/client.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 import { formatCurrency } from '../lib/format.js';
 import ErrorBanner from './ErrorBanner.jsx';
 
@@ -12,9 +13,23 @@ import ErrorBanner from './ErrorBanner.jsx';
  * generate-once, immutable design. A 404 on the GET means "not generated
  * yet", not an error - same convention as provider/Encounter.jsx's own
  * useEncounter 404 handling.
+ *
+ * `pdfUrl` (phase 16) - a same-origin `GET .../invoice/pdf` path, session
+ * -cookie-authenticated like every other API call this app makes, so a
+ * plain anchor needs no download-handling code of its own; only rendered
+ * once an invoice actually exists.
+ *
+ * A real, pre-existing gap found and fixed alongside PaymentsPanel's own
+ * (phase 16): the "Generate invoice" button rendered unconditionally even
+ * though `AppointmentInvoiceController`/`LabOrderInvoiceController`'s own
+ * generate endpoint is `front_desk`/`clinic_admin`-only - a `provider`
+ * viewing a shared lab order would see a working-looking button that
+ * 403s on click. Gated the same way, on the same two roles.
  */
-export default function InvoicePanel({ invoiceQuery, generateInvoice }) {
+export default function InvoicePanel({ invoiceQuery, generateInvoice, pdfUrl }) {
   const { t } = useTranslation();
+  const { hasRole } = useAuth();
+  const canGenerate = hasRole('front_desk') || hasRole('clinic_admin');
   const notGenerated = invoiceQuery.isError && invoiceQuery.error instanceof ApiError && invoiceQuery.error.status === 404;
 
   if (invoiceQuery.isLoading) {
@@ -35,7 +50,16 @@ export default function InvoicePanel({ invoiceQuery, generateInvoice }) {
     <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-ink">{t('invoicePanel.title')}</h2>
-        {!invoice && (
+        {invoice && pdfUrl ? (
+          <a
+            href={pdfUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-ink hover:bg-slate-50"
+          >
+            {t('invoicePanel.downloadPdf')}
+          </a>
+        ) : !invoice && canGenerate ? (
           <button
             type="button"
             disabled={generateInvoice.isPending}
@@ -44,7 +68,7 @@ export default function InvoicePanel({ invoiceQuery, generateInvoice }) {
           >
             {generateInvoice.isPending ? t('invoicePanel.generating') : t('invoicePanel.generate')}
           </button>
-        )}
+        ) : null}
       </div>
       {invoice ? (
         <dl className="grid grid-cols-3 gap-3 text-sm">
