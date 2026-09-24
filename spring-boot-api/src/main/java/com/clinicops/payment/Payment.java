@@ -22,8 +22,15 @@ import java.util.UUID;
  * {@value #FEE_AUTO_CHARGE_METHOD}-method row for a non-zero computed fee,
  * closing the "nothing auto-creates a payment from a fee" gap - see
  * CLAUDE.md's phase-7 write-up. That row means "this fee was assessed and
- * treated as charged," not "cash/a card was actually collected" - this app
- * still has no real payment gateway, so there's no stronger claim to make.
+ * treated as charged," not "cash/a card was actually collected".
+ *
+ * Phase 16 - a real (mock-for-now) payment gateway: every payment recorded
+ * via AppointmentPaymentController/LabOrderPaymentController now routes
+ * through {@link com.clinicops.paymentgateway.PaymentGatewayClient#charge}
+ * (see {@link PaymentService}), setting {@code gatewayTransactionId}/
+ * {@code gatewayStatus}. The fee_auto_charge shortcut above deliberately
+ * bypasses the gateway entirely - both fields stay null for those rows,
+ * same as {@code invoiceId} below.
  */
 @Entity
 @Table(name = "payments")
@@ -52,4 +59,16 @@ public class Payment extends BaseTenantEntity {
 
     @Column(name = "recorded_by")
     private UUID recordedBy;
+
+    /** Set only when this payment was recorded against an already-issued invoice - see {@link com.clinicops.invoice.Invoice}. Null for a fee_auto_charge row (no invoice exists yet at that point). */
+    @Column(name = "invoice_id")
+    private UUID invoiceId;
+
+    /** Only set when this payment was actually routed through {@link com.clinicops.paymentgateway.PaymentGatewayClient#charge} - the fee_auto_charge shortcut leaves this null. */
+    @Column(name = "gateway_transaction_id")
+    private String gatewayTransactionId;
+
+    /** pending/succeeded/failed/refunded/partially_refunded - the one general lifecycle field, updated by {@link RefundService} regardless of whether the payment was ever gateway-charged. */
+    @Column(name = "gateway_status")
+    private String gatewayStatus;
 }

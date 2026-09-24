@@ -204,7 +204,7 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
 
         Clinic b = clinicB("payment");
         String bAlias = b.getKeycloakOrgId();
-        CreatePaymentRequest paymentRequest = new CreatePaymentRequest(new BigDecimal("10.00"), "cash", null);
+        CreatePaymentRequest paymentRequest = new CreatePaymentRequest(new BigDecimal("10.00"), "cash", null, null);
 
         mockMvc.perform(get("/api/appointments/" + appointment.getId() + "/payments").with(asProvider("prov", bAlias)))
                 .andExpect(status().isNotFound());

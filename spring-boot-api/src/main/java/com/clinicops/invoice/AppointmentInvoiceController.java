@@ -3,6 +3,8 @@ package com.clinicops.invoice;
 import com.clinicops.appointment.AppointmentRepository;
 import com.clinicops.tenant.TenantContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,12 +23,17 @@ public class AppointmentInvoiceController {
     private final AppointmentRepository appointmentRepository;
     private final InvoiceRepository invoiceRepository;
     private final InvoiceService invoiceService;
+    private final InvoicePdfService invoicePdfService;
 
     public AppointmentInvoiceController(
-            AppointmentRepository appointmentRepository, InvoiceRepository invoiceRepository, InvoiceService invoiceService) {
+            AppointmentRepository appointmentRepository,
+            InvoiceRepository invoiceRepository,
+            InvoiceService invoiceService,
+            InvoicePdfService invoicePdfService) {
         this.appointmentRepository = appointmentRepository;
         this.invoiceRepository = invoiceRepository;
         this.invoiceService = invoiceService;
+        this.invoicePdfService = invoicePdfService;
     }
 
     @GetMapping("/api/appointments/{id}/invoice")
@@ -44,6 +51,19 @@ public class AppointmentInvoiceController {
         UUID tenantId = TenantContext.require();
         requireOwnedAppointment(id, tenantId);
         return invoiceService.generateForAppointment(id, tenantId);
+    }
+
+    /** Rendered on demand, never persisted - see InvoicePdfService's own javadoc for why. */
+    @GetMapping("/api/appointments/{id}/invoice/pdf")
+    @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PROVIDER')")
+    public ResponseEntity<byte[]> invoicePdf(@PathVariable UUID id) {
+        UUID tenantId = TenantContext.require();
+        requireOwnedAppointment(id, tenantId);
+        Invoice invoice = invoiceRepository.findByAppointmentIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("No invoice generated yet for appointment " + id));
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(invoicePdfService.renderForAppointment(invoice));
     }
 
     private void requireOwnedAppointment(UUID appointmentId, UUID tenantId) {

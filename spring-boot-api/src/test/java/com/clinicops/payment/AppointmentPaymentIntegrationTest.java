@@ -45,7 +45,7 @@ class AppointmentPaymentIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/payments").with(asFrontDesk("fd", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new BigDecimal("50.00"), "card", "txn-99"))))
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new BigDecimal("50.00"), "card", "txn-99", null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.amount").value(50.00))
                 .andExpect(jsonPath("$.method").value("card"));
@@ -61,7 +61,7 @@ class AppointmentPaymentIntegrationTest extends AbstractIntegrationTest {
         Provider provider = createProvider(clinic.getId(), "Dr. Roles");
         Appointment appointment = bookAppointment(clinic, provider);
         String orgAlias = clinic.getKeycloakOrgId();
-        CreatePaymentRequest request = new CreatePaymentRequest(new BigDecimal("10.00"), "cash", null);
+        CreatePaymentRequest request = new CreatePaymentRequest(new BigDecimal("10.00"), "cash", null, null);
 
         mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/payments").with(asProvider("prov", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -81,12 +81,46 @@ class AppointmentPaymentIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/payments").with(asFrontDesk("fd", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(BigDecimal.ZERO, "cash", null))))
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(BigDecimal.ZERO, "cash", null, null))))
                 .andExpect(status().isBadRequest());
 
         mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/payments").with(asFrontDesk("fd", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new BigDecimal("10.00"), "", null))))
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new BigDecimal("10.00"), "", null, null))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void aPaymentCanLinkToTheAppointmentsOwnAlreadyIssuedInvoice() throws Exception {
+        Clinic clinic = createClinic("pay-appt-invoice-" + UUID.randomUUID(), "Invoice Link Clinic");
+        Provider provider = createProvider(clinic.getId(), "Dr. Invoice");
+        Appointment appointment = bookAppointment(clinic, provider);
+        String orgAlias = clinic.getKeycloakOrgId();
+
+        String invoiceBody = mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/invoice").with(asFrontDesk("fd", orgAlias)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID invoiceId = UUID.fromString(objectMapper.readTree(invoiceBody).get("id").asText());
+
+        mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/payments").with(asFrontDesk("fd", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new BigDecimal("50.00"), "card", null, invoiceId))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.invoiceId").value(invoiceId.toString()))
+                .andExpect(jsonPath("$.gatewayTransactionId").isNotEmpty())
+                .andExpect(jsonPath("$.gatewayStatus").value("succeeded"));
+    }
+
+    @Test
+    void anInvoiceIdBelongingToAnotherOwnerIsRejected() throws Exception {
+        Clinic clinic = createClinic("pay-appt-invoice-mismatch-" + UUID.randomUUID(), "Invoice Mismatch Clinic");
+        Provider provider = createProvider(clinic.getId(), "Dr. Mismatch");
+        Appointment appointment = bookAppointment(clinic, provider);
+        String orgAlias = clinic.getKeycloakOrgId();
+
+        mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/payments").with(asFrontDesk("fd", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new BigDecimal("10.00"), "cash", null, UUID.randomUUID()))))
                 .andExpect(status().isBadRequest());
     }
 
@@ -103,7 +137,7 @@ class AppointmentPaymentIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/payments").with(asFrontDesk("fd", otherClinic.getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new BigDecimal("10.00"), "cash", null))))
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new BigDecimal("10.00"), "cash", null, null))))
                 .andExpect(status().isNotFound());
     }
 }

@@ -125,6 +125,68 @@ class InvoiceControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void invoicePdfRendersARealPdfForAGeneratedInvoice() throws Exception {
+        Clinic clinic = createClinic("invoice-pdf-" + UUID.randomUUID(), "Invoice Pdf Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Appointment appointment = seedAppointment(clinic.getId(), "75.00");
+
+        mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/invoice").with(asFrontDesk("fd", orgAlias)))
+                .andExpect(status().isOk());
+
+        byte[] pdf = mockMvc.perform(get("/api/appointments/" + appointment.getId() + "/invoice/pdf").with(asProvider("prov", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType(MediaType.APPLICATION_PDF))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        assertThatPdf(pdf);
+    }
+
+    @Test
+    void invoicePdfBeforeGenerationIs404() throws Exception {
+        Clinic clinic = createClinic("invoice-pdf-none-" + UUID.randomUUID(), "Invoice Pdf None Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Appointment appointment = seedAppointment(clinic.getId(), "75.00");
+
+        mockMvc.perform(get("/api/appointments/" + appointment.getId() + "/invoice/pdf").with(asFrontDesk("fd", orgAlias)))
+                .andExpect(status().isNotFound());
+    }
+
+    private void assertThatPdf(byte[] bytes) {
+        org.assertj.core.api.Assertions.assertThat(bytes).isNotEmpty();
+        byte[] magic = java.util.Arrays.copyOf(bytes, 4);
+        org.assertj.core.api.Assertions.assertThat(magic).isEqualTo(new byte[] {'%', 'P', 'D', 'F'});
+    }
+
+    @Test
+    void labOrderInvoicePdfRendersARealPdf() throws Exception {
+        Clinic clinic = createClinic("invoice-pdf-lab-" + UUID.randomUUID(), "Invoice Pdf Lab Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Provider provider = createProvider(clinic.getId(), "Dr. Lab Pdf");
+        Patient patient = createPatient(clinic.getId(), "Lab", "PdfPatient", "+15550007777");
+        createLabTestRate(clinic.getId(), "CBC", "20.00", "5.00");
+
+        String body = mockMvc.perform(post("/api/lab-orders").with(asProvider("prov", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.laborder.CreateLabOrderRequest(
+                                patient.getId(), null, provider.getId(), null, null,
+                                List.of(new com.clinicops.laborder.TestItem("CBC", "Complete Blood Count", "blood", null)),
+                                false))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID orderId = UUID.fromString(objectMapper.readTree(body).get("order").get("id").asText());
+
+        mockMvc.perform(post("/api/lab-orders/" + orderId + "/invoice").with(asClinicAdmin("admin", orgAlias)))
+                .andExpect(status().isOk());
+
+        byte[] pdf = mockMvc.perform(get("/api/lab-orders/" + orderId + "/invoice/pdf").with(asProvider("prov", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType(MediaType.APPLICATION_PDF))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        assertThatPdf(pdf);
+    }
+
+    @Test
     void crossTenantAppointmentIs404() throws Exception {
         Clinic clinic = createClinic("invoice-tenant-a-" + UUID.randomUUID(), "Clinic A");
         Clinic otherClinic = createClinic("invoice-tenant-b-" + UUID.randomUUID(), "Clinic B");

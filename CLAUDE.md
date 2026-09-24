@@ -523,13 +523,15 @@ when that phase is built.
 **Deferred phase plan (sketched 2026-09-21, not yet built)** - the user
 asked for these three "Known gaps" items to be planned ahead of time, with
 the key design forks pinned via direct questions rather than left as
-assumptions. None of the three has any code written yet - see "Phase 16"/
-"Phase 17"/"Phase 18" below for the full write-up of what's pinned and
-what's still genuinely open.
+assumptions. Phases 16 and 18 are now both built (backend-only), leaving
+17 (email/SMS) the one still purely sketched - see "Phase 16"/"Phase 17"/
+"Phase 18" below for the full write-up of what's pinned and what's still
+genuinely open.
 
 16. **Real payment gateway + refund flow + invoice PDF + payment-invoice
-    linking** - a pluggable `PaymentGatewayClient` (mock-only for now,
-    real vendor deferred), full+partial refunds. See "Phase 16" below.
+    linking** (built 2026-09-24) - a pluggable `PaymentGatewayClient`
+    (mock-only for now, real vendor deferred), full+partial refunds, and
+    an on-demand invoice PDF. See "Phase 16" below.
 17. **Real email + SMS delivery** - `NotificationSender`'s existing
     interface gets two real implementations (SendGrid email, Twilio SMS).
     See "Phase 17" below.
@@ -1505,72 +1507,139 @@ trends) - both matching this project's own "ask before building" pattern.
   explicitly scoped this to clinic-admin only. `npm test` (24/24)
   confirmed unaffected.
 
-## Phase 16: real payment gateway + refund flow + invoice PDF (sketched, not yet built)
+## Phase 16: real payment gateway + refund flow + invoice PDF
 
-Sketched 2026-09-21 at the user's request, ahead of any code - three
-questions were put to the user before pinning anything (gateway scope,
-refund granularity), matching this project's usual "ask before building"
-convention even for a plan that isn't being implemented yet.
+Sketched 2026-09-21, built 2026-09-24. Three questions were put to the
+user when this was first sketched (gateway scope, refund granularity) plus
+one more before writing any code this session (which PDF library) -
+matching this project's usual "ask before building" convention. Built
+essentially exactly as sketched; no design forks changed between the
+sketch and the build. New migration `V16__payment_gateway_and_refunds.sql`.
 
-- **Pluggable gateway, mock-only for now** (asked directly, answered) - new
-  `com.clinicops.paymentgateway` package, a `PaymentGatewayClient`
-  interface (`charge(...)`/`refund(...)`) mirroring `NotificationSender`'s
-  own "interface + swap the bean later" shape. Ships with exactly one
-  implementation, `MockPaymentGatewayClient` (always succeeds, fabricates a
-  gateway transaction id) - no real vendor (Stripe or otherwise) integrated
-  yet, no third-party account needed to build or test this phase. Wiring a
-  real vendor is its own later decision once real credentials exist,
-  swapped in the same way `LoggingEmailSender` is `NotificationSender`'s
-  only bean today.
-  - **A shape decision to make before writing code, not after**: a real
-    gateway is normally asynchronous (charge, then a webhook confirms it
-    later), while a mock can safely respond synchronously. Design
-    `PaymentGatewayClient`/the service layer around the asynchronous shape
-    (a payment starts in a pending gateway state, moves to
-    succeeded/failed via a confirmation step) even though the mock
-    fast-paths straight to success - so swapping in a real vendor later is
-    a new implementation, not a redesign.
-- **Full and partial refunds** (asked directly, answered "full and
-  partial") - a `refunds` table (new, mirrors `appointment_cancellations`'
-  own append-only audit-row shape - no update/delete): `payment_id` FK,
-  `amount`, optional `reason`, `gateway_refund_transaction_id`,
-  `refunded_by`, `created_at`. Cumulative refunded-so-far per payment must
-  never exceed that payment's own `amount` - enforced in a new
-  `RefundService` (a running-sum check, not expressible as a plain DB
-  CHECK), same "compute in code, not raw SQL" precedent
-  `FeeCalculator`/`InvoiceService` already set.
-- **`payments` gains two things**: `invoice_id` (nullable FK to
-  `invoices`) - closes the "no link from a payment back to the invoice
-  it's paying down" gap; only meaningful for a genuine staff-entered
-  payment (the `fee_auto_charged` auto-created rows have no invoice to
-  link at the point they're created) - and `gateway_transaction_id`/
-  `gateway_status` (allow-listed: pending/succeeded/failed/refunded/
-  partially_refunded). Every payment recorded before this phase stays
-  `invoice_id = null` - already the correct meaning ("not tied to a
-  specific invoice"), no backfill needed.
-- **New endpoints**: `POST /api/payments/{id}/refund` (amount, optional
-  reason - `front_desk`+`clinic_admin`, same gate as recording a payment;
-  no idempotency key needed the way booking has one, since a refund is
-  always a distinct, deliberate action, never an accidental double-submit
-  risk), `GET /api/payments/{id}/refunds` (same 3-role read gate as
-  payments); `CreatePaymentRequest` gains an optional `invoiceId`.
-  `PaymentGatewayException` maps to 502, same "genuinely upstream, not a
-  client error" reasoning `KeycloakAdminException` already established.
+- **Pluggable gateway, mock-only for now** - new `com.clinicops.paymentgateway`
+  package: `PaymentGatewayClient` (`charge(BigDecimal, String)`/
+  `refund(String, BigDecimal)`, both returning a small `ChargeResult`/
+  `RefundResult` record) mirrors `NotificationSender`'s own "interface +
+  swap the bean later" shape. `MockPaymentGatewayClient` (the only bean
+  today) always fabricates a `mock_chg_<uuid>`/`mock_rfd_<uuid>` id and
+  returns `succeeded` immediately - no real vendor integrated, no
+  third-party account needed. `PaymentGatewayException` exists for a real
+  implementation to throw later (maps to 502 in every controller that can
+  trigger it, same "genuinely upstream" reasoning `KeycloakAdminException`
+  already established) - the mock never throws it.
+  - **The asynchronous-shape design decision held**: `ChargeResult`/
+    `RefundResult` carry a `status` string (pending/succeeded/failed) even
+    though the mock always returns `succeeded` synchronously - a real
+    vendor's webhook-confirmed `pending` state is a value this shape
+    already accepts, not a redesign.
+  - **A design call made in this session, not asked directly**: which
+    payments actually get routed through the gateway. Every payment
+    recorded via `AppointmentPaymentController`/`LabOrderPaymentController`
+    now calls `PaymentGatewayClient.charge` unconditionally (regardless of
+    `method` - `cash`/`card`/`mobile_money`/etc. all go through it alike,
+    since this app's `method` field was never an enforced allow-list to
+    split behavior on). The pre-existing `fee_auto_charged` shortcut in
+    `CancellationService`/`RescheduleService`/`LabOrderCancellationService`
+    deliberately bypasses `PaymentService` entirely (unchanged code, still
+    saves a `Payment` directly) - that row was never a genuine gateway
+    charge before this phase and still isn't, so its `gatewayTransactionId`/
+    `gatewayStatus`/`invoiceId` all stay null, same as before.
+  - **`PaymentService`** (new) - the one place `charge` is actually called;
+    a dedicated bean (not plain controller-calls-repository CRUD) since
+    this is genuine cross-cutting logic shared identically by both payment
+    controllers, same reasoning `ClinicSettingsService`/`InvoiceService`
+    already established for themselves.
+- **Full and partial refunds** - `refunds` table (append-only, no
+  update/delete anywhere, same audit-row shape as
+  `appointment_cancellations`/`consent_records`): `payment_id`, `amount`,
+  optional `reason`, `gateway_refund_transaction_id`, `refunded_by`,
+  `created_at`. `RefundService` (new) computes the cumulative
+  refunded-so-far via `RefundRepository.sumAmountByPaymentId` (a running
+  -sum check, not expressible as a plain DB CHECK - same "compute in code"
+  precedent `FeeCalculator`/`InvoiceService` set) and rejects
+  (`RefundExceedsPaymentException`, 400) anything that would push the
+  total past the payment's own `amount`.
+  - **Refunding a payment that was never gateway-charged works too** - a
+    cash payment, or a `fee_auto_charged` row, has no
+    `gatewayTransactionId` to refund at a (mock, for now) vendor, so
+    `RefundService` only calls `gatewayClient.refund(...)` when one
+    exists; either way, a `Refund` audit row is written and
+    `Payment.gatewayStatus` flips to `refunded`/`partially_refunded`. This
+    makes `gatewayStatus` the one general lifecycle field covering every
+    payment this phase touches, not just the electronically-charged ones -
+    a design call made without asking, since the sketch's own allow-list
+    (`pending/succeeded/failed/refunded/partially_refunded`) already
+    implied refund states reachable regardless of origin.
+- **`payments` gains `invoice_id`** (nullable FK to `invoices`) - closes
+  the "no link from a payment back to the invoice it's paying down" gap.
+  `CreatePaymentRequest` gained an optional `invoiceId`; both payment
+  controllers validate it against that same appointment's/lab order's own
+  already-issued invoice (`InvoiceRepository.findByAppointmentIdAndTenantId`/
+  `findByLabOrderIdAndTenantId`) before accepting it - an id belonging to
+  a different owner or tenant 400s, never silently ignored or
+  cross-linked. Every payment recorded before this phase stays
+  `invoice_id = null`, already the correct meaning.
+- **New endpoints, owner-agnostic** - `com.clinicops.payment.PaymentController`
+  (new): `POST /api/payments/{id}/refund` (`front_desk`+`clinic_admin`,
+  same gate as recording a payment; no idempotency key the way booking
+  has one, since a refund is always a distinct, deliberate action) and
+  `GET /api/payments/{id}/refunds` (same 3-role read gate as payments) -
+  addressed directly by the payment's own id, not nested under
+  `/api/appointments/...`/`/api/lab-orders/...` the way recording one is,
+  since `RefundService` only ever needs the payment row itself.
+  `PaymentRepository` gained `findByIdAndTenantId` to support this (the
+  two existing finders are both owner-scoped, not payment-id-scoped).
 - **Invoice PDF, generated on demand, never persisted** - `GET
-  /api/appointments/{id}/invoice/pdf` / `GET /api/lab-orders/{id}/invoice
-  /pdf` render straight from the already-issued (immutable)
-  `Invoice` row plus clinic branding for a letterhead - nothing to gain
-  from storing bytes for something regenerable at zero cost from data
-  that can't change, and it avoids adding a second consumer of the
-  phase-13 uploads volume for an unrelated purpose. A genuinely new
-  library dependency is needed for this (OpenPDF, LGPL, suggested here but
-  not pinned - worth confirming there isn't a preferred alternative before
-  building starts).
-- **Frontend** (a later "Frontend phase N" once this is built, not
-  scoped now): `InvoicePanel.jsx` gains a same-origin `<a href=".../pdf">`
-  download link (session-cookie-authenticated, no new download-handling
-  code needed); the front-desk/lab-order Payments panels gain a "Refund"
-  action per row and a running refunded-amount indicator.
+  /api/appointments/{id}/invoice/pdf` / `GET /api/lab-orders/{id}/invoice/pdf`
+  (same 3-role read gate as the JSON invoice endpoint) render straight
+  from the already-issued (immutable) `Invoice` row plus
+  `ClinicSettingsService`'s branding/contact-info for a letterhead -
+  nothing to gain from persisting bytes for something regenerable at zero
+  cost from data that can't change, and it avoids a second consumer of
+  the phase-13 uploads volume for an unrelated purpose.
+  `InvoicePdfService` (new, `com.clinicops.invoice`) resolves the
+  patient's name (via the appointment's `patientId`, falling back to a
+  guest's `contactName`, exactly mirroring `AppointmentDetail.jsx`'s own
+  resolution order) and the owner's own reference number
+  (`appointmentRef`/`orderRef`) alongside the clinic's letterhead and the
+  subtotal/tax/total breakdown.
+  - **PDF library: OpenPDF** (asked directly, answered - the recommended
+    LGPL/MPL iText-4 fork, over Apache PDFBox) - `com.github.librepdf:openpdf:1.3.42`,
+    confirmed resolvable via a real `mvn dependency:resolve` before
+    writing any rendering code, not assumed from memory. Base package is
+    still `com.lowagie.text.*` (inherited from its pre-fork iText 2/4
+    lineage) - genuinely counterintuitive if searched for under
+    `com.github.librepdf`, confirmed by reading the actual downloaded jar
+    rather than guessed.
+  - **`node-bff` needed zero changes** - `forwardToApi`'s
+    `relayUpstreamResponse` already reads any upstream response via
+    `arrayBuffer()`/`Buffer` and relays its real headers unmodified,
+    content-type-agnostic; this is the identical code path phase 13's
+    provider-signature `GET` (raw image bytes) already proved works for
+    binary responses - confirmed by reading that code before assuming a
+    new proxy bug the way phase 13's own *request*-side multipart bug was
+    found, not found again here.
+- **Tests**: `PaymentServiceTest`/`RefundServiceTest`/`InvoicePdfServiceTest`
+  (new, pure Mockito - `InvoicePdfServiceTest` genuinely renders a real
+  PDF via OpenPDF against mocked repositories/settings and asserts the
+  actual `%PDF` magic header, not just that no exception was thrown) all
+  pass locally, no Testcontainers involved - 11 cases total.
+  `PaymentControllerIntegrationTest` (new, 5 cases: full refund, two
+  partial refunds reaching the full amount, over-refund 400, role gate,
+  cross-tenant 404) plus new cases added to `AppointmentPaymentIntegrationTest`
+  (invoice linking, mismatched-invoice 400) and `InvoiceControllerIntegrationTest`
+  (both owner types' PDF endpoints, pre-generation 404) - same
+  Testcontainers/Windows-npipe wall as every other `AbstractIntegrationTest`
+  subclass, confirmed via a clean `mvn clean test-compile` and by
+  confirming every other pre-existing, unrelated integration test class
+  fails identically in the same run (`Could not find a valid Docker
+  environment`) - not a regression from this phase's own code.
+- **Live-verified against the real running stack** - see CLAUDE-history.md's
+  "Verified this session - phase 16" for the full write-up.
+- **Not built this phase, as scoped**: the frontend (a later "Frontend
+  phase" once picked up) - `InvoicePanel.jsx` gaining a same-origin
+  `<a href=".../pdf">` download link, and the Payments panels gaining a
+  "Refund" action per row and a running refunded-amount indicator.
 
 ## Phase 17: real email + SMS delivery (sketched, not yet built)
 
@@ -2894,6 +2963,29 @@ one - now the documented exception, not the rule.
   -generate 409, get-before-generation 404, provider read-only (403 on
   generate), lab-order invoice prices from its snapshotted `totalCost`,
   cross-tenant 404. Same Testcontainers wall.
+- `PaymentServiceTest`/`RefundServiceTest`/`InvoicePdfServiceTest` (phase
+  16, pure Mockito - genuinely run locally, no Testcontainers) - charging
+  through the gateway copies `ChargeResult` onto the saved `Payment`; a
+  full refund marks a payment `refunded`, a partial one
+  `partially_refunded`, two partials reaching the full amount also end at
+  `refunded`; a refund exceeding the remaining amount is rejected and
+  never touches the gateway or saves anything (`verify(..., never())`); a
+  payment with no `gatewayTransactionId` (cash, or a `fee_auto_charge`
+  row) skips the gateway call entirely on refund but still writes the
+  audit row; `InvoicePdfServiceTest` renders a real PDF via OpenPDF
+  against mocked repositories/settings and asserts the actual `%PDF`
+  magic header (appointment + lab-order + guest-with-no-patient-row
+  cases), not just that no exception was thrown. 11/11 passing locally.
+  `PaymentControllerIntegrationTest` (new, 5 cases: full refund, two
+  partials reaching the full amount, over-refund 400, role gate,
+  cross-tenant 404) plus new cases in `AppointmentPaymentIntegrationTest`
+  (linking a payment to the appointment's own invoice, a mismatched
+  invoice id 400) and `InvoiceControllerIntegrationTest` (both owner
+  types' PDF endpoints render real PDF bytes, pre-generation 404). Same
+  Testcontainers wall - confirmed via a clean `mvn clean test-compile`
+  and by checking every other, unrelated integration test class in the
+  same run failed identically (`Could not find a valid Docker
+  environment`), not just this phase's own new tests.
 
 ## Verified-session logs
 
@@ -2942,26 +3034,24 @@ append new ones there too, not here.
   the domain read/write it accounts for, and list/search endpoints log one
   row per call rather than one per result row - both deliberate, documented
   boundaries, not oversights.
-- Payments are recordable (`com.clinicops.payment`, phase 7) but still
-  purely a manual staff-entered record for a genuine cash/card/etc.
-  payment - no real payment processor/gateway integration, no refund flow.
-  ~~nothing auto-creates a payment from a cancellation/reschedule
-  fee~~ **closed 2026-09-20** - see "Post-phase-7 backend additions":
-  a non-zero fee now auto-creates a `Payment` row (`method =
-  "fee_auto_charged"`) the moment it's computed, so staff no longer has to
-  separately re-type an amount the system already knows. That row still
-  only means "this fee was assessed," not "cash/a card was actually
-  collected" - there's still no real gateway behind it, and no refund
-  concept exists for the opposite direction. **Sketched, not yet built** -
-  see "Phase 16: real payment gateway + refund flow + invoice PDF".
+- ~~Payments are recordable but still purely a manual staff-entered record
+  ... no real payment processor/gateway integration, no refund flow~~
+  **closed 2026-09-24** - see "Phase 16: real payment gateway + refund
+  flow + invoice PDF". Every payment recorded via `AppointmentPaymentController`/
+  `LabOrderPaymentController` now routes through `PaymentGatewayClient`
+  (mock-only for now - still no real vendor, credentials, or third-party
+  account), gaining a `gatewayTransactionId`/`gatewayStatus`; full and
+  partial refunds are real (`RefundService`, `POST /api/payments/{id}/refund`).
+  The `fee_auto_charged` shortcut still bypasses the gateway entirely,
+  unchanged from before this phase - that row still only means "this fee
+  was assessed," not "collected via the gateway," by design.
 - ~~`invoices` still exists in `V1__init.sql`, unused by any code~~
   **closed 2026-09-21** - see "Phase 15: real billing build-out".
-  `com.clinicops.invoice` generates one on staff request (appointment or
-  lab order), with `ClinicSettings.taxRatePercent` finally wired up to
-  compute a real `tax_amount`. Still no invoice PDF/printable view and no
-  link from a payment back to the invoice it's paying down (the two stay
-  entirely separate financial records) - not solved here. **Sketched, not
-  yet built** - both close as part of "Phase 16" (above).
+  ~~Still no invoice PDF/printable view and no link from a payment back to
+  the invoice it's paying down~~ **closed 2026-09-24** - see "Phase 16"
+  above: `GET /api/appointments/{id}/invoice/pdf`/`GET /api/lab-orders/{id}/invoice/pdf`
+  render a real PDF (OpenPDF) on demand, and `payments.invoice_id` links a
+  genuine staff-entered payment back to the invoice it's paying down.
 - ~~Email/notifications: the `notifications` outbox table is written to but
   there's no `NotificationWorker`/real sender yet~~ **partially closed
   2026-09-19** - see "Post-phase-7 backend additions".

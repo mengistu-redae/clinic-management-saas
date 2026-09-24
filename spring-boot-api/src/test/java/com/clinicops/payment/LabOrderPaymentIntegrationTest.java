@@ -48,7 +48,7 @@ class LabOrderPaymentIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/lab-orders/" + orderId + "/payments").with(asFrontDesk("fd", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new java.math.BigDecimal("20.00"), "cash", null))))
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new java.math.BigDecimal("20.00"), "cash", null, null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.amount").value(20.00))
                 .andExpect(jsonPath("$.method").value("cash"));
@@ -72,7 +72,7 @@ class LabOrderPaymentIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/lab-orders/" + orderId + "/payments").with(asFrontDesk("fd", otherClinic.getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new java.math.BigDecimal("10.00"), "cash", null))))
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new java.math.BigDecimal("10.00"), "cash", null, null))))
                 .andExpect(status().isNotFound());
     }
 
@@ -91,12 +91,12 @@ class LabOrderPaymentIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/lab-orders/" + labOrderId + "/payments").with(asFrontDesk("fd", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new java.math.BigDecimal("20.00"), "cash", null))))
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new java.math.BigDecimal("20.00"), "cash", null, null))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/appointments/" + appointment.getId() + "/payments").with(asFrontDesk("fd", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new java.math.BigDecimal("50.00"), "card", "txn-1"))))
+                        .content(objectMapper.writeValueAsString(new CreatePaymentRequest(new java.math.BigDecimal("50.00"), "card", "txn-1", null))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/lab-orders/" + labOrderId + "/payments").with(asProvider("prov", orgAlias)))

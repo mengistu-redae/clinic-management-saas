@@ -70,6 +70,14 @@
       <artifactId>lombok</artifactId>
       <optional>true</optional>
     </dependency>
+    <!-- Phase 16 - on-demand invoice PDF rendering. LGPL/MPL dual-licensed
+         iText-4 fork; chosen over Apache PDFBox for its higher-level
+         paragraph/table API, confirmed with the user before adding. -->
+    <dependency>
+      <groupId>com.github.librepdf</groupId>
+      <artifactId>openpdf</artifactId>
+      <version>1.3.42</version>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

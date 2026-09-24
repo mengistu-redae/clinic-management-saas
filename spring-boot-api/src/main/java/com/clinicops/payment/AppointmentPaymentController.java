@@ -1,6 +1,9 @@
 package com.clinicops.payment;
 
 import com.clinicops.appointment.AppointmentRepository;
+import com.clinicops.invoice.Invoice;
+import com.clinicops.invoice.InvoiceRepository;
+import com.clinicops.paymentgateway.PaymentGatewayException;
 import com.clinicops.tenant.TenantContext;
 import com.clinicops.user.CurrentUserService;
 import jakarta.validation.Valid;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -25,13 +29,21 @@ import java.util.UUID;
 public class AppointmentPaymentController {
 
     private final AppointmentRepository appointmentRepository;
+    private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
+    private final PaymentService paymentService;
     private final CurrentUserService currentUserService;
 
     public AppointmentPaymentController(
-            AppointmentRepository appointmentRepository, PaymentRepository paymentRepository, CurrentUserService currentUserService) {
+            AppointmentRepository appointmentRepository,
+            InvoiceRepository invoiceRepository,
+            PaymentRepository paymentRepository,
+            PaymentService paymentService,
+            CurrentUserService currentUserService) {
         this.appointmentRepository = appointmentRepository;
+        this.invoiceRepository = invoiceRepository;
         this.paymentRepository = paymentRepository;
+        this.paymentService = paymentService;
         this.currentUserService = currentUserService;
     }
 
@@ -48,15 +60,22 @@ public class AppointmentPaymentController {
     public Payment recordPayment(@PathVariable UUID id, @Valid @RequestBody CreatePaymentRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
         requireOwnedAppointment(id, tenantId);
+        UUID invoiceId = resolveInvoiceId(id, tenantId, request.invoiceId());
+        UUID recordedBy = currentUserService.resolveInternalUserId(jwt);
+        return paymentService.recordPayment(tenantId, id, null, invoiceId, request, recordedBy);
+    }
 
-        Payment payment = new Payment();
-        payment.setTenantId(tenantId);
-        payment.setAppointmentId(id);
-        payment.setAmount(request.amount());
-        payment.setMethod(request.method());
-        payment.setTransactionId(request.transactionId());
-        payment.setRecordedBy(currentUserService.resolveInternalUserId(jwt));
-        return paymentRepository.save(payment);
+    /** Only this appointment's own already-issued invoice may be linked - never an arbitrary id from another owner/tenant. */
+    private UUID resolveInvoiceId(UUID appointmentId, UUID tenantId, UUID requestedInvoiceId) {
+        if (requestedInvoiceId == null) {
+            return null;
+        }
+        Invoice invoice = invoiceRepository.findByAppointmentIdAndTenantId(appointmentId, tenantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "No invoice exists for this appointment"));
+        if (!invoice.getId().equals(requestedInvoiceId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invoiceId does not match this appointment's own invoice");
+        }
+        return invoice.getId();
     }
 
     private void requireOwnedAppointment(UUID appointmentId, UUID tenantId) {
@@ -67,6 +86,12 @@ public class AppointmentPaymentController {
     @ExceptionHandler(NoSuchElementException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public String handleNotFound(NoSuchElementException e) {
+        return e.getMessage();
+    }
+
+    @ExceptionHandler(PaymentGatewayException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public String handleGatewayError(PaymentGatewayException e) {
         return e.getMessage();
     }
 }

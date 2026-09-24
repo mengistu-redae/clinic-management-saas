@@ -1297,3 +1297,51 @@ coordinates, which resolved it: confirmed in Postgres
 (`status = 'accepted'`, `notes = 'Scheduled patient to see Dr. Live Test
 next Tuesday.'`) and confirmed the same in the UI itself afterward
 ("Saved." shown, values retained).
+
+## Verified this session - phase 16: real payment gateway + refund flow + invoice PDF
+
+Rebuilt `spring-boot-api` (`docker compose up -d --build spring-boot-api`,
+then `--force-recreate`) and confirmed `V16__payment_gateway_and_refunds.sql`
+applied cleanly via `docker compose exec postgres psql` against
+`flyway_schema_history` (`version 16, success = t`).
+
+Logged in as a real `demo-front-desk` through the actual browser (real
+nginx -> node-bff -> spring-boot-api chain, not a direct curl), then
+drove every new endpoint from the browser's own authenticated `fetch`
+(session-cookie-based, same "reachable from the console today" pattern
+phase 8 already established for its own backend-only endpoints):
+
+- `POST /api/appointments/{id}/payments` with `method: "card"` on a real
+  pre-existing appointment (`F6A604`) - the response carried a genuine
+  `gatewayTransactionId` (`mock_chg_3915d6c8-...`) and
+  `gatewayStatus: "succeeded"`, confirming `PaymentService` actually calls
+  `MockPaymentGatewayClient.charge` before saving, not just wiring that
+  compiles.
+- `POST /api/payments/{id}/refund` for 25.00 against that same 75.00
+  payment - a genuine `gatewayRefundTransactionId` (`mock_rfd_1694b107-...`)
+  came back, `GET /api/payments/{id}/refunds` listed exactly that one row,
+  and re-fetching the payment via `GET /api/appointments/{id}/payments`
+  confirmed `gatewayStatus` had flipped to `"partially_refunded"` - the
+  running-sum/status-update logic working against real persisted state,
+  not just the pure-unit `RefundServiceTest` mocks. A follow-up refund
+  attempt for 60.00 (which would total 85.00 against the 75.00 payment)
+  correctly 400'd with `"Refund total 85.00 would exceed this payment's
+  own amount 75.00"`.
+- Fetched that appointment's already-existing invoice (from an earlier
+  session), then recorded a second payment with that invoice's real id as
+  `invoiceId` - the saved payment's own `invoiceId` came back matching,
+  confirming `AppointmentPaymentController`'s validation resolves and
+  accepts the appointment's genuine invoice. A follow-up attempt with a
+  freshly-`crypto.randomUUID()`'d (definitely-wrong) `invoiceId` correctly
+  400'd with `"invoiceId does not match this appointment's own invoice"`.
+- `GET /api/appointments/{id}/invoice/pdf` through the same authenticated
+  fetch returned `200`, `Content-Type: application/pdf`, 1157 bytes, and
+  the response's own first four bytes decoded to the literal string
+  `"%PDF"` - a real PDF served through the full stack including
+  `node-bff`'s `relayUpstreamResponse`, not just the pure-unit
+  `InvoicePdfServiceTest`'s in-process rendering.
+
+No frontend UI exists for any of this yet (deliberately scoped out this
+phase, per CLAUDE.md's own phase-16 write-up) - every check above went
+through a raw authenticated `fetch()` from the browser console, the same
+verification shape phase 8 used for its own backend-only endpoints.

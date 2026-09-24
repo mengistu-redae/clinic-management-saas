@@ -3,6 +3,8 @@ package com.clinicops.invoice;
 import com.clinicops.laborder.LabOrderRepository;
 import com.clinicops.tenant.TenantContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,12 +23,17 @@ public class LabOrderInvoiceController {
     private final LabOrderRepository labOrderRepository;
     private final InvoiceRepository invoiceRepository;
     private final InvoiceService invoiceService;
+    private final InvoicePdfService invoicePdfService;
 
     public LabOrderInvoiceController(
-            LabOrderRepository labOrderRepository, InvoiceRepository invoiceRepository, InvoiceService invoiceService) {
+            LabOrderRepository labOrderRepository,
+            InvoiceRepository invoiceRepository,
+            InvoiceService invoiceService,
+            InvoicePdfService invoicePdfService) {
         this.labOrderRepository = labOrderRepository;
         this.invoiceRepository = invoiceRepository;
         this.invoiceService = invoiceService;
+        this.invoicePdfService = invoicePdfService;
     }
 
     @GetMapping("/api/lab-orders/{orderId}/invoice")
@@ -44,6 +51,19 @@ public class LabOrderInvoiceController {
         UUID tenantId = TenantContext.require();
         requireOwnedLabOrder(orderId, tenantId);
         return invoiceService.generateForLabOrder(orderId, tenantId);
+    }
+
+    /** Rendered on demand, never persisted - see InvoicePdfService's own javadoc for why. */
+    @GetMapping("/api/lab-orders/{orderId}/invoice/pdf")
+    @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PROVIDER')")
+    public ResponseEntity<byte[]> invoicePdf(@PathVariable UUID orderId) {
+        UUID tenantId = TenantContext.require();
+        requireOwnedLabOrder(orderId, tenantId);
+        Invoice invoice = invoiceRepository.findByLabOrderIdAndTenantId(orderId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("No invoice generated yet for lab order " + orderId));
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(invoicePdfService.renderForLabOrder(invoice));
     }
 
     private void requireOwnedLabOrder(UUID labOrderId, UUID tenantId) {
