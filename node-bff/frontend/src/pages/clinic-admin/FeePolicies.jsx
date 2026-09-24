@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useFeePolicies, useCreateFeePolicy, useUpdateFeePolicy, useDeleteFeePolicy, useProviders } from '../../api/queries.js';
 import Skeleton from '../../components/Skeleton.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
@@ -15,6 +16,7 @@ const inputClass =
  * reference project's RefundPolicies.jsx groups by route.
  */
 export default function ClinicAdminFeePolicies() {
+  const { t } = useTranslation();
   const { data: policies, isLoading, isError, error, refetch } = useFeePolicies();
   const { data: providers } = useProviders(true);
   const createPolicy = useCreateFeePolicy();
@@ -38,7 +40,7 @@ export default function ClinicAdminFeePolicies() {
       setCutoffHours('24');
       setFeePercent('0');
     } catch (err) {
-      setFormError(err.message || 'Could not create this tier - one with the same cutoff may already exist.');
+      setFormError(err.message || t('feePoliciesPage.errorCreate'));
     }
   }
 
@@ -57,29 +59,25 @@ export default function ClinicAdminFeePolicies() {
 
   return (
     <div>
-      <p className="mb-6 text-sm text-ink-muted">
-        Tiers are matched by hours-before-appointment, highest cutoff first. A provider-specific set of tiers
-        replaces the clinic-wide default entirely for that provider - the two are never merged. No tiers configured
-        at all means a 0% fee.
-      </p>
+      <p className="mb-6 text-sm text-ink-muted">{t('feePoliciesPage.intro')}</p>
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
-        <Field label="Applies to">
+        <Field label={t('feePoliciesPage.appliesTo')}>
           <select value={providerId} onChange={(e) => setProviderId(e.target.value)} className={`${inputClass} w-56`}>
-            <option value="">Clinic-wide default</option>
+            <option value="">{t('feePoliciesPage.clinicWideDefault')}</option>
             {(providers || []).map((p) => (
               <option key={p.id} value={p.id}>{p.fullName}</option>
             ))}
           </select>
         </Field>
-        <Field label="Cutoff (hours before)">
+        <Field label={t('feePoliciesPage.cutoffHours')}>
           <input type="number" min="0" value={cutoffHours} onChange={(e) => setCutoffHours(e.target.value)} className={`${inputClass} w-24`} />
         </Field>
-        <Field label="Fee (%)">
+        <Field label={t('feePoliciesPage.feePercent')}>
           <input type="number" min="0" max="100" value={feePercent} onChange={(e) => setFeePercent(e.target.value)} className={`${inputClass} w-24`} />
         </Field>
         <button type="submit" disabled={createPolicy.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-          {createPolicy.isPending ? 'Adding…' : 'Add tier'}
+          {createPolicy.isPending ? t('common.adding') : t('feePoliciesPage.addTier')}
         </button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
@@ -87,7 +85,7 @@ export default function ClinicAdminFeePolicies() {
       {isLoading && <Skeleton className="h-32 w-full" />}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {!isLoading && !isError && (policies || []).length === 0 && (
-        <EmptyState title="No fee tiers configured" description="Every cancellation/no-show fee is 0% until you add one above." />
+        <EmptyState title={t('feePoliciesPage.emptyTitle')} description={t('feePoliciesPage.emptyDescription')} />
       )}
 
       {!isLoading && !isError && orderedKeys.length > 0 && (
@@ -95,7 +93,7 @@ export default function ClinicAdminFeePolicies() {
           {orderedKeys.map((key) => (
             <div key={key} className="rounded-xl border border-slate-200 bg-surface p-4">
               <p className="mb-3 text-sm font-semibold text-ink">
-                {key === 'default' ? 'Clinic-wide default' : providerById[key]?.fullName || 'Unknown provider'}
+                {key === 'default' ? t('feePoliciesPage.clinicWideDefault') : providerById[key]?.fullName || t('feePoliciesPage.unknownProvider')}
               </p>
               <div className="flex flex-col gap-2">
                 {groups.get(key)
@@ -113,6 +111,7 @@ export default function ClinicAdminFeePolicies() {
 }
 
 function TierRow({ tier }) {
+  const { t } = useTranslation();
   const updatePolicy = useUpdateFeePolicy(tier.id);
   const deletePolicy = useDeleteFeePolicy(tier.id);
 
@@ -127,7 +126,7 @@ function TierRow({ tier }) {
       await updatePolicy.mutateAsync({ cutoffHours: Number(cutoffHours), feePercent: Number(feePercent) });
       setEditing(false);
     } catch (err) {
-      setRowError(err.message || 'Could not save changes.');
+      setRowError(err.message || t('common.errorSaveChanges'));
     }
   }
 
@@ -136,24 +135,24 @@ function TierRow({ tier }) {
     try {
       await deletePolicy.mutateAsync();
     } catch (err) {
-      setRowError(err.message || 'Could not delete this tier.');
+      setRowError(err.message || t('feePoliciesPage.errorDelete'));
     }
   }
 
   if (editing) {
     return (
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Cutoff (hours before)">
+        <Field label={t('feePoliciesPage.cutoffHours')}>
           <input type="number" min="0" value={cutoffHours} onChange={(e) => setCutoffHours(e.target.value)} className={`${inputClass} w-24`} />
         </Field>
-        <Field label="Fee (%)">
+        <Field label={t('feePoliciesPage.feePercent')}>
           <input type="number" min="0" max="100" value={feePercent} onChange={(e) => setFeePercent(e.target.value)} className={`${inputClass} w-24`} />
         </Field>
         <button type="button" onClick={saveEdit} disabled={updatePolicy.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-          Save
+          {t('common.save')}
         </button>
         <button type="button" onClick={() => setEditing(false)} className="text-sm text-ink-muted hover:underline">
-          Cancel
+          {t('common.cancel')}
         </button>
         {rowError && <div className="w-full"><ErrorBanner message={rowError} /></div>}
       </div>
@@ -163,11 +162,11 @@ function TierRow({ tier }) {
   return (
     <div className="flex items-center justify-between">
       <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-ink">
-        {tier.cutoffHours}h+ before &rarr; {tier.feePercent}% fee
+        {t('feePoliciesPage.tierLabel', { hours: tier.cutoffHours, percent: tier.feePercent })}
       </span>
       <div className="flex items-center gap-3 text-sm">
-        <button type="button" onClick={() => setEditing(true)} className="text-brand hover:underline">Edit</button>
-        <button type="button" onClick={handleDelete} className="text-danger hover:underline">Delete</button>
+        <button type="button" onClick={() => setEditing(true)} className="text-brand hover:underline">{t('common.edit')}</button>
+        <button type="button" onClick={handleDelete} className="text-danger hover:underline">{t('common.delete')}</button>
       </div>
       {rowError && <div className="mt-2"><ErrorBanner message={rowError} /></div>}
     </div>

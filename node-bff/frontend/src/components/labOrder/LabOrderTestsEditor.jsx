@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 const inputClass =
   'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
@@ -11,6 +13,7 @@ export const emptyTestLine = () => ({ testCode: '', testName: '', specimenType: 
  * specimenType/notes) instead of description/quantity/weight.
  */
 export default function LabOrderTestsEditor({ lines, onChange, labRates }) {
+  const { t } = useTranslation();
   function updateLine(index, field, value) {
     onChange(lines.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
   }
@@ -25,7 +28,7 @@ export default function LabOrderTestsEditor({ lines, onChange, labRates }) {
     <div className="flex flex-col gap-2">
       {lines.map((line, i) => (
         <div key={i} className="flex flex-wrap items-end gap-3">
-          <Field label="Test code">
+          <Field label={t('labOrderTestsEditor.testCode')}>
             <input
               list="lab-order-test-codes"
               value={line.testCode}
@@ -39,19 +42,19 @@ export default function LabOrderTestsEditor({ lines, onChange, labRates }) {
               className={`${inputClass} w-32`}
             />
           </Field>
-          <Field label="Test name">
+          <Field label={t('labOrderTestsEditor.testName')}>
             <input value={line.testName} onChange={(e) => updateLine(i, 'testName', e.target.value)} placeholder="Complete Blood Count" className={`${inputClass} w-56`} />
           </Field>
-          <Field label="Specimen (optional)">
+          <Field label={t('labOrderTestsEditor.specimen')}>
             <input value={line.specimenType} onChange={(e) => updateLine(i, 'specimenType', e.target.value)} placeholder="Blood" className={`${inputClass} w-32`} />
           </Field>
           <button type="button" onClick={() => removeLine(i)} className="text-xs text-danger hover:underline">
-            Remove
+            {t('labOrderTestsEditor.remove')}
           </button>
         </div>
       ))}
       <button type="button" onClick={addLine} className="self-start text-xs font-semibold text-brand hover:underline">
-        + Add test
+        {t('labOrderTestsEditor.addTest')}
       </button>
       {labRates && labRates.length > 0 && (
         <datalist id="lab-order-test-codes">

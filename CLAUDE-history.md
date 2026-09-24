@@ -1134,3 +1134,166 @@ taxRatePercent` back to the platform default `0.0`) - a deliberate
 cleanup so this verification pass doesn't leave a surprise non-zero tax
 rate sitting on the shared demo clinic for the next session to trip
 over.
+
+## Verified this session - frontend phase H
+
+Rebuilt the `node-bff` container after `npm run build` succeeded clean
+in `node-bff/frontend/`. Logged in as a real `demo-front-desk` user and
+opened the same checked-out appointment used for phase 15's own live
+verification (ref `F6A604`). The new "Patient chart" panel rendered
+immediately below the appointment summary, already showing one real
+pre-existing allergy (Penicillin/Rash/Severe/Active, from an earlier
+session's data).
+
+Typed a new allergy (Latex/Hives, Moderate) into the inline add form and
+submitted - it appeared instantly in the list as Active, and the form
+cleared. Clicked "Mark resolved" on it - the badge flipped to green
+"Resolved" and the action link flipped to "Reactivate" in place, no page
+reload. Confirmed both rows directly in Postgres
+(`SELECT allergen, severity, status FROM allergies WHERE patient_id = ...`)
+- Penicillin still `severe`/`active`, Latex now `moderate`/`resolved`,
+matching the UI exactly.
+
+Entered vitals (height 170, weight 70, temp 37, pulse 72) and saved -
+the BMI field (read-only, derived) computed `24.2` the moment the save
+completed, matching `70 / 1.70²` HALF_UP-rounded to one decimal, and the
+button label flipped from "Save vitals" to "Update vitals". Confirmed the
+row in Postgres (`height_cm 170.0, weight_kg 70.0, temperature_c 37.0,
+pulse_bpm 72`).
+
+Logged out (the app's own one-step "Log out" button) and back in as a
+real `demo-provider`, then navigated directly to
+`/provider/appointments/<same id>/encounter` (this appointment wasn't
+"today" from the provider's own schedule, so reached it by URL rather
+than via the dashboard list). The same Patient Chart panel rendered with
+the same data - both allergies shown, but with no add-allergy form and no
+"Mark resolved"/"Reactivate" buttons on either row, confirming the
+write-gate (`front_desk`/`clinic_admin` only) held for a genuinely
+different login, not just hidden by a client-side role check that
+happened not to fire. Vitals showed the same pre-filled values from the
+front-desk save and remained a live, editable form (provider is one of
+vitals' three writable roles) - confirmed live that this shared component
+correctly differentiates write access per-section, not per-page. Scrolled
+further and confirmed the existing encounter note (chief complaint "Sore
+throat, 3 days", assessment "Likely viral pharyngitis", from an earlier
+session) rendered unaffected below the new panel - the insertion didn't
+disturb the pre-existing page.
+
+## Verified this session - frontend phase I
+
+Rebuilt the `node-bff` container after `npm run build` succeeded clean.
+Logged in as a real `demo-front-desk` user and reopened the same
+checked-out appointment (ref `F6A604`) used for phase H's own
+verification. The new "Consent" section rendered below "Medical history"
+with two real pre-existing records already on file: "General treatment /
+Given / Policy v1 / Witnessed by Jane Witness" and "Privacy & data /
+Given / Policy v2" (from an earlier session).
+
+Filled the add-consent form (type "General treatment", policy version
+"v2", unchecked "Consent given") and submitted - a third row appeared
+immediately: "General treatment / Policy v2 / Declined" (red badge), the
+two earlier rows unchanged above it - confirmed this is a genuine
+accumulate, not a replace, live against a real request. Confirmed all
+three rows directly in Postgres
+(`SELECT consent_type, policy_version, consent_given, witness_name FROM
+consent_records WHERE patient_id = ...`) - `general_treatment/v1/true/
+Jane Witness`, `privacy_data/v2/true/null`, `general_treatment/v2/false/
+null` - matching the UI exactly.
+
+Logged out and back in as a real `demo-provider`, navigated directly to
+the same appointment's encounter page. The Consent section showed the
+same three records (read-only) with no add-consent form beneath them -
+confirming the write gate (`front_desk`/`clinic_admin` only) held for a
+genuinely different login, consistent with allergies' own write gate
+from phase H's verification.
+
+## Verified this session - frontend phase J
+
+Rebuilt `node-bff` after `npm run build` succeeded clean. Confirmed via
+Postgres first that the test encounter (appointment `583d8fbb-f0fa-4eae-
+8609-18726b5724f0`) was not yet signed, giving a clean slate to exercise
+the whole sign-and-lock flow live rather than just its pre-locked state.
+
+Logged in as `demo-provider`, opened the encounter page, typed
+"J02.9, R05" into the new ICD-10 field and saved - "Saved." confirmation,
+value persisted on reload. Filled the prescription line's new phase-11
+fields (route "oral" via the new select, frequency "three times daily",
+duration "10 days", quantity 30, refills 0, status "active") and saved -
+confirmed all six values directly in Postgres
+(`SELECT ... FROM prescriptions WHERE encounter_id = ...`), matching the
+form exactly, and `icd10_codes` on the encounter row matching too.
+
+Clicked "Sign encounter" - the page updated with no reload: a green
+"Signed <timestamp>" badge appeared next to "Note", the Save/Sign buttons
+vanished, every note textarea/input turned visibly disabled, a new
+"Addenda" section appeared ("No addenda yet." + an add form), and the
+Prescriptions panel below lost its Remove/+Add/Save controls with every
+field now disabled too - all from a single mutation's cache invalidation,
+no manual refresh. Confirmed `encounters.signed_at`/`signed_by` both set
+in Postgres. Scrolled to the (still-locked) prescriptions panel after the
+refetch settled and confirmed it stayed locked, not just transiently
+right after the sign click.
+
+Typed a realistic addendum ("Patient called back - throat culture came
+back positive for strep, starting amoxicillin as prescribed.") and
+submitted - it appeared immediately in the Addenda list with its own
+timestamp, the add form cleared. Confirmed the row in Postgres
+(`encounter_addenda`, correct `text`, `author_id` populated) - a genuine
+persisted addendum, not just optimistic UI state.
+
+## Verified this session - frontend phase K
+
+Rebuilt `node-bff` after `npm run build` succeeded clean. Logged in as a
+real `demo-clinic-admin` and opened `/clinic-admin/providers` - the new
+license #/expiry/employment fields render on the create form, and "Dr.
+Demo Provider" (data from an earlier session) already shows "full time ·
+license MD-2026-4471" in its summary line, confirming the read path
+works against real pre-existing data before touching anything new.
+
+Opened "Dr. Live Test"'s new "Signature" panel (no signature on file yet)
+and uploaded a real 68-byte 1x1 PNG through the actual file input (via
+the file-upload tool targeting the input's own element, not a simulated
+click) - the preview `<img>` rendered immediately with no page reload,
+and a "Remove" link appeared. Confirmed directly in Postgres
+(`signature_filename`/`signature_content_type` both set,
+`e72ea114-...png` / `image/png`) and on the actual mounted Docker volume
+inside the `spring-boot-api` container (`ls /app/uploads/provider
+-signatures/` showed the same 68-byte file) - a genuine end-to-end
+upload through the real browser -> node-bff -> spring-boot-api ->
+FileStorageService path, not a mocked one.
+
+Clicked "Remove" - confirmed in Postgres that `signature_filename` went
+back to null, and confirmed on the container's filesystem that the file
+itself was actually gone from `/app/uploads/provider-signatures/` (the
+directory listing came back empty) - a real delete, not just the
+database reference being cleared while an orphaned file lingered on disk.
+
+## Verified this session - frontend phase L
+
+Rebuilt `node-bff` after `npm run build` succeeded clean. Logged in as a
+real `demo-clinic-admin`, opened `/referrals` - the new nav link renders,
+and the list showed two real pre-existing referrals from an earlier
+session (an external Dermatology referral, and a completed/urgent
+internal Cardiology one to "Dr. Live Test"), both with patient/provider
+names correctly resolved.
+
+Opened "+ New referral", filled a real internal referral (patient "Demo
+Patient", referring provider "Dr. Demo Provider", receiving provider
+"Dr. Live Test", specialty "Dermatology", a real reason) and submitted -
+the new referral appeared at the top of the list (newest-first), the
+form closed automatically. Confirmed nothing in Postgres was accidentally
+duplicated or mis-owned - a clean third row alongside the two existing
+ones, not a replacement.
+
+Expanded the new referral's row, changed its status to "accepted" and
+added notes, then saved. Native `<select>` + rapid-fire browser_batch
+actions proved unreliable here (a couple of attempts either left the
+select unchanged or, worse, had a stray click land on a nav link and
+navigate away before the save fired - caught immediately by checking
+Postgres after each attempt rather than trusting the click alone).
+Switched to locating the Status select, Notes textarea, and Save button
+by `find` and clicking them by element reference instead of raw
+coordinates, which resolved it: confirmed in Postgres
+(`status = 'accepted'`, `notes = 'Scheduled patient to see Dr. Live Test
+next Tuesday.'`) and confirmed the same in the UI itself afterward
+("Saved." shown, values retained).

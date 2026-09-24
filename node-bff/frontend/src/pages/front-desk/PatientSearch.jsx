@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { usePatients, useCreatePatient } from '../../api/queries.js';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
@@ -10,6 +11,7 @@ const inputClass =
 
 /** Front-desk's entry point before booking a walk-in - search an existing patient, or register a new one. */
 export default function PatientSearch() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [showRegister, setShowRegister] = useState(false);
@@ -23,7 +25,7 @@ export default function PatientSearch() {
     event.preventDefault();
     setRegisterError(null);
     if (!form.firstName.trim() || !form.lastName.trim()) {
-      setRegisterError('First and last name are required.');
+      setRegisterError(t('patientSearch.errorNameRequired'));
       return;
     }
     try {
@@ -37,19 +39,19 @@ export default function PatientSearch() {
       });
       navigate(`/front-desk/book/${patient.id}`);
     } catch (err) {
-      setRegisterError(err.message || 'Could not register this patient. Please try again.');
+      setRegisterError(err.message || t('patientSearch.errorRegister'));
     }
   }
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="mb-1 text-2xl font-bold text-ink">Book for a walk-in</h1>
-      <p className="mb-6 text-sm text-ink-muted">Find an existing patient, or register a new one.</p>
+      <h1 className="mb-1 text-2xl font-bold text-ink">{t('nav.frontDesk.bookWalkIn')}</h1>
+      <p className="mb-6 text-sm text-ink-muted">{t('patientSearch.subtitle')}</p>
 
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search by name..."
+        placeholder={t('patientSearch.searchPlaceholder')}
         className={`${inputClass} mb-4`}
       />
 
@@ -62,15 +64,15 @@ export default function PatientSearch() {
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {data && data.length === 0 && !showRegister && (
         <EmptyState
-          title="No matching patients"
-          description="Try a different search, or register a new patient."
+          title={t('patientSearch.noMatchTitle')}
+          description={t('patientSearch.noMatchDescription')}
           action={
             <button
               type="button"
               onClick={() => setShowRegister(true)}
               className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
             >
-              Register new patient
+              {t('patientSearch.registerNew')}
             </button>
           }
         />
@@ -102,28 +104,28 @@ export default function PatientSearch() {
           onClick={() => setShowRegister(true)}
           className="text-sm font-medium text-brand hover:underline"
         >
-          Not listed? Register a new patient
+          {t('patientSearch.notListed')}
         </button>
       )}
 
       {showRegister && (
         <form onSubmit={handleRegister} className="mt-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-surface p-4">
-          <p className="text-sm font-semibold text-ink">Register new patient</p>
+          <p className="text-sm font-semibold text-ink">{t('patientSearch.registerNew')}</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">First name</span>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.firstName')}</span>
               <input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className={inputClass} />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Last name</span>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.lastName')}</span>
               <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} className={inputClass} />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Phone</span>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.phone')}</span>
               <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputClass} />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Date of birth</span>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.dateOfBirth')}</span>
               <input
                 type="date"
                 value={form.dateOfBirth}
@@ -132,11 +134,11 @@ export default function PatientSearch() {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">National ID (optional)</span>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.nationalIdOptional')}</span>
               <input value={form.nationalId} onChange={(e) => setForm({ ...form, nationalId: e.target.value })} className={inputClass} />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Email (optional)</span>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.emailOptional')}</span>
               <input
                 type="email"
                 value={form.email}
@@ -150,7 +152,7 @@ export default function PatientSearch() {
             disabled={createPatient.isPending}
             className="self-start rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {createPatient.isPending ? 'Registering…' : 'Register and continue'}
+            {createPatient.isPending ? t('patientSearch.registering') : t('patientSearch.registerAndContinue')}
           </button>
           {registerError && <ErrorBanner message={registerError} />}
         </form>

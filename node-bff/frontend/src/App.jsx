@@ -1,4 +1,5 @@
 import { Routes, Route, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from './auth/AuthContext.jsx';
 import RequireRole from './auth/RequireRole.jsx';
 import AppShell from './layout/AppShell.jsx';
@@ -30,6 +31,7 @@ import ClinicAdminLabRates from './pages/clinic-admin/LabRates.jsx';
 import ProviderEncounter from './pages/provider/Encounter.jsx';
 import LabOrders from './pages/lab-orders/LabOrders.jsx';
 import LabOrderDetail from './pages/lab-orders/LabOrderDetail.jsx';
+import Referrals from './pages/referrals/Referrals.jsx';
 import RequestLabTest from './pages/patient/RequestLabTest.jsx';
 import MyLabOrders from './pages/patient/MyLabOrders.jsx';
 import MyLabOrderDetail from './pages/patient/MyLabOrderDetail.jsx';
@@ -38,12 +40,11 @@ import PlatformAdminClinics from './pages/platform-admin/Clinics.jsx';
 
 /** Logged-out landing at "/" - PublicShell's own header/nav carries the wayfinding (Book/Track/Log in). */
 function PublicHome() {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center gap-4 py-16 text-center">
-      <h1 className="text-2xl font-semibold text-ink">Clinic Management</h1>
-      <p className="max-w-sm text-sm text-ink-muted">
-        Book an appointment as a guest, or sign in as clinic staff or a patient to continue.
-      </p>
+      <h1 className="text-2xl font-semibold text-ink">{t('publicHome.title')}</h1>
+      <p className="max-w-sm text-sm text-ink-muted">{t('publicHome.subtitle')}</p>
     </div>
   );
 }
@@ -81,11 +82,12 @@ function RootLayout() {
 }
 
 function NotFound() {
+  const { t } = useTranslation();
   return (
     <div className="py-16 text-center">
-      <p className="text-xl font-semibold text-ink">Page not found</p>
+      <p className="text-xl font-semibold text-ink">{t('notFound.title')}</p>
       <Link to="/" className="mt-2 inline-block text-sm text-brand hover:underline">
-        Back home
+        {t('notFound.backHome')}
       </Link>
     </div>
   );
@@ -307,6 +309,15 @@ export default function App() {
           element={
             <RequireRole roles={['provider', 'clinic_admin']}>
               <LabOrderDetail />
+            </RequireRole>
+          }
+        />
+        {/* Referrals - same shared-route-tree reasoning as lab orders above (frontend phase L). */}
+        <Route
+          path="/referrals"
+          element={
+            <RequireRole roles={['provider', 'clinic_admin']}>
+              <Referrals />
             </RequireRole>
           }
         />

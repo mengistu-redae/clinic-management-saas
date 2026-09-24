@@ -53,10 +53,14 @@ function redirectToLogin() {
 }
 
 export async function apiFetch(path, options = {}) {
+  // A FormData body (provider signature upload, phase 13/frontend phase K)
+  // must NOT get a manual Content-Type - the browser sets its own
+  // multipart boundary parameter, which we can't replicate here.
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(path, {
     ...options,
     headers: {
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...options.headers,
     },
   });
@@ -88,6 +92,11 @@ export function apiGet(path) {
 
 export function apiPost(path, body) {
   return apiFetch(path, { method: 'POST', body: body !== undefined ? JSON.stringify(body) : undefined });
+}
+
+/** For a multipart upload (e.g. ProviderController's signature endpoint) - formData is sent as-is, never JSON-stringified. */
+export function apiPostForm(path, formData) {
+  return apiFetch(path, { method: 'POST', body: formData });
 }
 
 export function apiPatch(path, body) {

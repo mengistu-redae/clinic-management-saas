@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { usePatient, useAppointmentTypes, useProviders, useCreateAppointment, useMyClinic } from '../../api/queries.js';
 import { ApiError } from '../../api/client.js';
 import SlotPicker from '../../components/booking/SlotPicker.jsx';
@@ -18,6 +19,7 @@ const selectClass =
  * pages/booking/BookingForm.jsx.
  */
 export default function BookForPatient() {
+  const { t } = useTranslation();
   const { patientId } = useParams();
   const navigate = useNavigate();
 
@@ -48,25 +50,25 @@ export default function BookForPatient() {
       navigate(`/front-desk/appointments/${created.id}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setBookingError('That slot was just taken by someone else. Pick another.');
+        setBookingError(t('booking.slotTaken'));
         setSelectedSlot(null);
         idempotencyKeyRef.current = crypto.randomUUID();
         return;
       }
-      setBookingError(err.message || 'Could not book this appointment. Please try again.');
+      setBookingError(err.message || t('booking.errorBook'));
     }
   }
 
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="mb-1 text-2xl font-bold text-ink">
-        Book for {patient ? `${patient.firstName} ${patient.lastName}` : '…'}
+        {t('bookForPatient.title', { name: patient ? `${patient.firstName} ${patient.lastName}` : '…' })}
       </h1>
-      <p className="mb-6 text-sm text-ink-muted">Pick an appointment type and a provider to see open times.</p>
+      <p className="mb-6 text-sm text-ink-muted">{t('booking.pickTypeAndProvider')}</p>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Appointment type</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('booking.appointmentType')}</span>
           {typesQuery.isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : (
@@ -78,10 +80,10 @@ export default function BookForPatient() {
               }}
               className={selectClass}
             >
-              <option value="">Select…</option>
-              {typesQuery.data?.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.durationMinutes} min, {formatCurrency(t.priceAmount)})
+              <option value="">{t('booking.select')}</option>
+              {typesQuery.data?.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name} ({type.durationMinutes} min, {formatCurrency(type.priceAmount)})
                 </option>
               ))}
             </select>
@@ -89,7 +91,7 @@ export default function BookForPatient() {
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Provider</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('reschedule.provider')}</span>
           {providersQuery.isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : (
@@ -101,7 +103,7 @@ export default function BookForPatient() {
               }}
               className={selectClass}
             >
-              <option value="">Select…</option>
+              <option value="">{t('booking.select')}</option>
               {providersQuery.data?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.fullName}
@@ -114,7 +116,7 @@ export default function BookForPatient() {
 
       {appointmentTypeId && providerId && (
         <div className="mt-6">
-          <h2 className="mb-3 text-sm font-semibold text-ink">Available times</h2>
+          <h2 className="mb-3 text-sm font-semibold text-ink">{t('booking.availableTimes')}</h2>
           <SlotPicker
             clinicId={clinicId}
             providerId={providerId}
@@ -136,7 +138,7 @@ export default function BookForPatient() {
             onClick={handleConfirm}
             className="w-full rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
-            {createAppointment.isPending ? 'Booking…' : 'Confirm booking'}
+            {createAppointment.isPending ? t('booking.booking') : t('booking.confirmBooking')}
           </button>
         </div>
       )}

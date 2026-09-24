@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useMyAppointment, useClinicsDirectory, useClinicProviders, useClinicAppointmentTypes, useCancelMyAppointment } from '../api/queries.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { ApiError } from '../api/client.js';
@@ -18,6 +19,7 @@ import { formatDateTime } from '../lib/format.js';
  * instant first paint right after booking.
  */
 export default function AppointmentDetail() {
+  const { t } = useTranslation();
   const { id } = useParams();
   const location = useLocation();
   const { authenticated, hasRole } = useAuth();
@@ -33,7 +35,7 @@ export default function AppointmentDetail() {
 
   const clinicName = stateData?.clinicName || clinicsQuery.data?.find((c) => c.id === clinicId)?.name;
   const providerName = stateData?.providerName || providersQuery.data?.find((p) => p.id === appointment?.providerId)?.fullName;
-  const typeName = stateData?.typeName || typesQuery.data?.find((t) => t.id === appointment?.appointmentTypeId)?.name;
+  const typeName = stateData?.typeName || typesQuery.data?.find((type) => type.id === appointment?.appointmentTypeId)?.name;
   const startTime = stateData?.slot?.startTime || appointment?.startTime;
 
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -47,9 +49,9 @@ export default function AppointmentDetail() {
       setConfirmingCancel(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setCancelError('This appointment was already cancelled.');
+        setCancelError(t('appointmentDetail.alreadyCancelled'));
       } else {
-        setCancelError(err.message || 'Could not cancel this appointment. Please try again.');
+        setCancelError(err.message || t('appointmentDetail.errorCancel'));
       }
       setConfirmingCancel(false);
     }
@@ -64,15 +66,14 @@ export default function AppointmentDetail() {
   if (!appointment) {
     return !authenticated ? (
       <div className="mx-auto max-w-xl rounded-xl border border-slate-200 bg-surface p-5 text-sm text-ink-muted">
-        This appointment isn't available here anymore. Look it up with your appointment reference and phone number
-        instead at{' '}
+        {t('appointmentDetail.notAvailableGuest')}{' '}
         <Link to="/track-appointment" className="text-brand hover:underline">
-          Track an appointment
+          {t('publicNav.trackAppointment')}
         </Link>
         .
       </div>
     ) : (
-      <ErrorBanner message="Appointment not found." />
+      <ErrorBanner message={t('appointmentDetail.notFound')} />
     );
   }
 
@@ -81,23 +82,23 @@ export default function AppointmentDetail() {
   return (
     <div className="mx-auto max-w-xl">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink">Appointment</h1>
+        <h1 className="text-2xl font-bold text-ink">{t('appointmentDetail.title')}</h1>
         <StatusPill status={status} />
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-surface p-5">
-        <p className="text-lg font-semibold text-ink">{clinicName || 'Clinic'}</p>
+        <p className="text-lg font-semibold text-ink">{clinicName || t('appointmentDetail.clinicFallback')}</p>
         <p className="text-sm text-ink-muted">
-          {typeName || 'Appointment'} with {providerName || 'a provider'}
+          {typeName || t('appointmentDetail.appointmentFallback')} with {providerName || t('appointmentDetail.providerFallback')}
         </p>
 
         <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-sm">
           <div>
-            <dt className="text-ink-muted">Reference</dt>
+            <dt className="text-ink-muted">{t('appointmentDetail.reference')}</dt>
             <dd className="font-mono text-xs text-ink">{appointment.appointmentRef || '—'}</dd>
           </div>
           <div>
-            <dt className="text-ink-muted">When</dt>
+            <dt className="text-ink-muted">{t('appointmentDetail.when')}</dt>
             <dd className="text-ink">{startTime ? formatDateTime(startTime) : '—'}</dd>
           </div>
         </dl>
@@ -105,11 +106,10 @@ export default function AppointmentDetail() {
 
       {!authenticated && (
         <div className="mt-4 rounded-lg border border-slate-200 bg-surface p-3 text-sm text-ink-muted">
-          Booked without an account - save your reference{' '}
-          <span className="font-mono text-ink">{appointment.appointmentRef}</span> and phone number. Look this
-          appointment up again anytime at{' '}
+          {t('appointmentDetail.bookedWithoutAccountPrefix')}{' '}
+          <span className="font-mono text-ink">{appointment.appointmentRef}</span> {t('appointmentDetail.bookedWithoutAccountSuffix')}{' '}
           <Link to="/track-appointment" className="text-brand hover:underline">
-            Track an appointment
+            {t('publicNav.trackAppointment')}
           </Link>
           .
         </div>
@@ -128,7 +128,7 @@ export default function AppointmentDetail() {
             to={`/appointments/${id}/reschedule`}
             className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-ink hover:bg-slate-50"
           >
-            Reschedule
+            {t('appointmentDetail.reschedule')}
           </Link>
           {!confirmingCancel ? (
             <button
@@ -136,25 +136,25 @@ export default function AppointmentDetail() {
               onClick={() => setConfirmingCancel(true)}
               className="rounded-lg border border-danger/40 px-4 py-2 text-sm font-medium text-danger hover:bg-danger-light"
             >
-              Cancel appointment
+              {t('appointmentDetail.cancelAppointment')}
             </button>
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
-              <p className="text-sm text-danger">Cancel this appointment?</p>
+              <p className="text-sm text-danger">{t('appointmentDetail.cancelConfirm')}</p>
               <button
                 type="button"
                 disabled={cancelAppointment.isPending}
                 onClick={handleCancel}
                 className="shrink-0 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger/90 disabled:opacity-50"
               >
-                {cancelAppointment.isPending ? 'Cancelling…' : 'Yes, cancel'}
+                {cancelAppointment.isPending ? t('appointmentDetail.cancelling') : t('appointmentDetail.yesCancel')}
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmingCancel(false)}
                 className="shrink-0 text-sm text-ink-muted hover:underline"
               >
-                Never mind
+                {t('appointmentDetail.neverMind')}
               </button>
             </div>
           )}

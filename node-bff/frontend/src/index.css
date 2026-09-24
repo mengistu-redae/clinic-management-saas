@@ -2,6 +2,11 @@
 @import '@fontsource/inter/500.css';
 @import '@fontsource/inter/600.css';
 @import '@fontsource/inter/700.css';
+/* Amharic (frontend phase N) - Inter has no Ge'ez-script glyphs. */
+@import '@fontsource/noto-sans-ethiopic/400.css';
+@import '@fontsource/noto-sans-ethiopic/500.css';
+@import '@fontsource/noto-sans-ethiopic/600.css';
+@import '@fontsource/noto-sans-ethiopic/700.css';
 
 @tailwind base;
 @tailwind components;
@@ -9,16 +14,102 @@
 
 /*
  * Default brand/accent palette as space-separated RGB channels (see
- * tailwind.config.js). These are the platform defaults; a future
- * BrandingProvider (phase 5) overrides --brand / --accent on :root for a
- * signed-in clinic's staff, and per-card branding scopes them to a single
- * appointment card via an inline style.
+ * tailwind.config.js). These are the platform defaults; BrandingProvider
+ * (phase 5) overrides --brand / --accent on :root for a signed-in clinic's
+ * staff, and per-card branding scopes them to a single appointment card via
+ * an inline style.
+ *
+ * The neutral/status tokens below (surface/ink/ink-muted/success/danger/
+ * warning/slate-50..300) were added for the Light/Dark/System theme toggle
+ * (frontend phase N) - every one of them already existed as a Tailwind
+ * color before this, just as a flat hex value instead of a CSS variable, so
+ * converting them here (plus the matching tailwind.config.js change) is
+ * what makes theme/ThemeProvider.jsx's .dark class actually change anything
+ * app-wide, with no per-page edits.
  */
 :root {
+  /* Tells the browser which native form-control/scrollbar palette to use -
+     without this, a plain <input>/<select>/<input type="date"> (none of
+     this app's shared inputClass strings set an explicit background) keeps
+     rendering with the OS's default *light* UA styling even once .dark is
+     active elsewhere, since Tailwind's utilities never touch un-classed
+     native chrome. Found live testing this phase - real white input boxes
+     on an otherwise-dark page - not a hypothetical. */
+  color-scheme: light;
   --brand: 29 78 216;         /* #1D4ED8 */
   --brand-dark: 30 58 138;    /* #1E3A8A */
   --brand-light: 239 244 255; /* #EFF4FF */
   --accent: 13 148 136;       /* #0D9488 */
   --accent-dark: 15 118 110;  /* #0F766E */
   --accent-light: 240 253 250;/* #F0FDFA */
+
+  --surface: 255 255 255;     /* #FFFFFF */
+  --ink: 15 23 42;            /* #0F172A */
+  --ink-muted: 100 116 139;   /* #64748B */
+
+  --success: 22 163 74;       /* #16A34A */
+  --success-light: 233 249 239; /* #E9F9EF */
+  --danger: 220 38 38;        /* #DC2626 */
+  --danger-light: 253 236 236;  /* #FDECEC */
+  --warning: 217 119 6;       /* #D97706 */
+  --warning-light: 254 243 226; /* #FEF3E2 */
+
+  /* Tailwind's own slate-50/100/200/300 - see tailwind.config.js's slate
+     override for why only these four shades. */
+  --slate-50: 248 250 252;    /* #F8FAFC */
+  --slate-100: 241 245 249;   /* #F1F5F9 */
+  --slate-200: 226 232 240;   /* #E2E8F0 */
+  --slate-300: 203 213 225;   /* #CBD5E1 */
+}
+
+/*
+ * Dark theme - applied by theme/ThemeProvider.jsx toggling `.dark` on
+ * <html> (never on :root directly from CSS, since 'system' has to be
+ * resolved in JS via matchMedia first - see that file's own comment).
+ * brand/accent/brand-dark/accent-dark are deliberately left unchanged: a
+ * saturated brand-colored button with white text reads fine in both
+ * themes, and re-tuning every clinic's own custom brand color for two
+ * themes felt like real design work rather than plumbing - only the pale
+ * `-light` tint (used purely as a pill/badge background, e.g. `bg-brand
+ * -light text-brand`) actually looks wrong unmodified against a dark card,
+ * so only that gets a dark value here (and, for a signed-in clinic's own
+ * override, in lib/color.js's theme-aware deriveShades instead of here).
+ */
+:root.dark {
+  color-scheme: dark;
+  --brand-light: 23 37 84;      /* dark navy tint, was #EFF4FF */
+  --accent-light: 4 47 46;      /* dark teal tint, was #F0FDFA */
+
+  --surface: 30 41 59;        /* slate-800 #1E293B - card background */
+  --ink: 241 245 249;         /* slate-100 #F1F5F9 - primary text */
+  --ink-muted: 148 163 184;   /* slate-400 #94A3B8 - secondary text */
+
+  --success: 74 222 128;      /* green-400 #4ADE80 - brighter for contrast on dark */
+  --success-light: 6 78 59;   /* green-900 #064E3B */
+  --danger: 248 113 113;      /* red-400 #F87171 */
+  --danger-light: 127 29 29;  /* red-900 #7F1D1D */
+  --warning: 251 191 36;      /* amber-400 #FBBF24 */
+  --warning-light: 120 53 15; /* amber-900 #78350F */
+
+  --slate-50: 15 23 42;       /* slate-900 #0F172A - page background */
+  --slate-100: 51 65 85;      /* slate-700 #334155 - subtle badge bg */
+  --slate-200: 71 85 105;     /* slate-600 #475569 - card/header borders */
+  --slate-300: 100 116 139;   /* slate-500 #64748B - input borders */
+}
+
+/*
+ * Amharic font fallback (frontend phase N) - index.html's <body> carries
+ * Tailwind's `font-sans` utility (Inter first), which has no Ge'ez-script
+ * glyphs at all. theme/LanguageProvider.jsx sets `<html lang="am">` when
+ * Amharic is active; `:lang()` inherits down through every descendant, so
+ * this one rule covers the whole page, not just <body> itself. Written as
+ * `body:lang(am)` (element + pseudo-class, matching `body.font-sans`'s own
+ * specificity) and placed after Tailwind's utilities layer, so normal
+ * cascade/source-order rules decide the tie rather than needing
+ * `!important`. English text mixed into an Amharic-locale page (numbers,
+ * proper nouns) still renders fine - Ethiopic and Latin glyphs simply come
+ * from different fonts in the same stack.
+ */
+body:lang(am) {
+  font-family: 'Noto Sans Ethiopic', 'Inter', ui-sans-serif, system-ui, sans-serif;
 }

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAppointments, usePatients } from '../../api/queries.js';
 import StatusPill from '../../components/StatusPill.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
@@ -15,6 +16,7 @@ import { formatDateTime } from '../../lib/format.js';
  * per row.
  */
 export default function Appointments() {
+  const { t } = useTranslation();
   const appointments = useAppointments(true);
   const patients = usePatients();
 
@@ -52,14 +54,14 @@ export default function Appointments() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink">Appointments</h1>
+        <h1 className="text-2xl font-bold text-ink">{t('nav.frontDesk.appointments')}</h1>
         <Link to="/front-desk/patients" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
-          Book for a walk-in
+          {t('nav.frontDesk.bookWalkIn')}
         </Link>
       </div>
 
       {rows.length === 0 ? (
-        <EmptyState title="No appointments yet" description="Bookings for this clinic will show up here." />
+        <EmptyState title={t('frontDeskAppointments.emptyTitle')} description={t('frontDeskAppointments.emptyDescription')} />
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((a) => (
@@ -70,7 +72,7 @@ export default function Appointments() {
             >
               <div>
                 <p className="text-sm font-medium text-ink">
-                  {(a.patientId && patientNames.get(a.patientId)) || a.contactName || 'Guest'}
+                  {(a.patientId && patientNames.get(a.patientId)) || a.contactName || t('frontDeskAppointments.guest')}
                 </p>
                 <p className="font-mono text-xs text-ink-muted">
                   {a.appointmentRef} · {formatDateTime(a.bookedAt)}

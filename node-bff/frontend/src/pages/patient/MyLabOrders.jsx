@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useMyLabOrders } from '../../api/queries.js';
 import StatusPill from '../../components/StatusPill.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
@@ -8,6 +9,7 @@ import { formatDateTime } from '../../lib/format.js';
 
 /** The full list the dashboard's own top-5 preview links out to - same relationship as MyAppointments.jsx. GET /api/my-lab-orders. */
 export default function MyLabOrders() {
+  const { t } = useTranslation();
   const { data, isLoading, isError, error, refetch } = useMyLabOrders(true);
 
   const orders = [...(data || [])].sort((a, b) => new Date(b.order.orderedAt) - new Date(a.order.orderedAt));
@@ -15,9 +17,9 @@ export default function MyLabOrders() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink">My Lab Orders</h1>
+        <h1 className="text-2xl font-bold text-ink">{t('myLabOrders.title')}</h1>
         <Link to="/my-lab-orders/request" className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark">
-          Request a lab test
+          {t('myLabOrders.requestTest')}
         </Link>
       </div>
 
@@ -29,7 +31,7 @@ export default function MyLabOrders() {
       )}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {!isLoading && !isError && orders.length === 0 && (
-        <EmptyState title="No lab orders yet" description="Request one above, or one a provider orders for you will show up here." />
+        <EmptyState title={t('myLabOrders.emptyTitle')} description={t('myLabOrders.emptyDescription')} />
       )}
 
       {!isLoading && !isError && orders.length > 0 && (
@@ -45,7 +47,7 @@ export default function MyLabOrders() {
                   <StatusPill status={order.status} />
                   <span className="font-mono text-xs text-ink-muted">{order.orderRef}</span>
                 </div>
-                <p className="text-sm text-ink">{tests.length} test{tests.length === 1 ? '' : 's'}</p>
+                <p className="text-sm text-ink">{t('myLabOrders.testCount', { count: tests.length })}</p>
                 <p className="text-xs text-ink-muted">{formatDateTime(order.orderedAt)}</p>
               </div>
               <span className="text-ink-muted">&rsaquo;</span>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useClinicSettings, useUpdateClinicSettings } from '../../api/queries.js';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
@@ -32,6 +33,7 @@ const numOrNull = (v) => (v.trim() === '' ? null : Number(v));
  * platform default, it isn't merged with what was there before).
  */
 export default function ClinicAdminSettings() {
+  const { t } = useTranslation();
   const { data, isLoading, isError, error, refetch } = useClinicSettings(true);
   const updateSettings = useUpdateClinicSettings();
 
@@ -66,7 +68,7 @@ export default function ClinicAdminSettings() {
       });
       setSaved(true);
     } catch (err) {
-      setFormError(err.message || 'Could not save settings.');
+      setFormError(err.message || t('settingsPage.errorSave'));
     }
   }
 
@@ -77,52 +79,46 @@ export default function ClinicAdminSettings() {
 
   return (
     <div className="max-w-2xl">
-      <p className="mb-6 text-sm text-ink-muted">
-        Business rules and contact details for your clinic. Leave a value blank to use the platform default shown
-        beside it.
-      </p>
+      <p className="mb-6 text-sm text-ink-muted">{t('settingsPage.intro')}</p>
 
       <form onSubmit={handleSave} className="flex flex-col gap-6">
-        <Section title="Tax">
-          <Field label="Tax rate (%)" hint={`Default ${d.taxRatePercent}`}>
+        <Section title={t('settingsPage.taxSection')}>
+          <Field label={t('settingsPage.taxRate')} hint={t('settingsPage.defaultHint', { value: d.taxRatePercent })}>
             <input type="number" step="0.01" min="0" max="100" value={form.taxRatePercent} onChange={set('taxRatePercent')} placeholder={String(d.taxRatePercent)} className={inputClass} />
           </Field>
         </Section>
 
-        <Section title="Reschedule">
-          <Field label="Minimum notice (hours before the appointment)" hint={`Default ${d.rescheduleMinNoticeHours}`}>
+        <Section title={t('settingsPage.rescheduleSection')}>
+          <Field label={t('settingsPage.minNotice')} hint={t('settingsPage.defaultHint', { value: d.rescheduleMinNoticeHours })}>
             <input type="number" min="0" value={form.rescheduleMinNoticeHours} onChange={set('rescheduleMinNoticeHours')} placeholder={String(d.rescheduleMinNoticeHours)} className={inputClass} />
           </Field>
-          <Field label="Fee - patient portal" hint={`Default ${d.rescheduleFeePatientPortal}`}>
+          <Field label={t('settingsPage.feePatientPortal')} hint={t('settingsPage.defaultHint', { value: d.rescheduleFeePatientPortal })}>
             <input type="number" step="0.01" min="0" value={form.rescheduleFeePatientPortal} onChange={set('rescheduleFeePatientPortal')} placeholder={String(d.rescheduleFeePatientPortal)} className={inputClass} />
           </Field>
-          <Field label="Fee - front desk" hint={`Default ${d.rescheduleFeeFrontDesk}`}>
+          <Field label={t('settingsPage.feeFrontDesk')} hint={t('settingsPage.defaultHint', { value: d.rescheduleFeeFrontDesk })}>
             <input type="number" step="0.01" min="0" value={form.rescheduleFeeFrontDesk} onChange={set('rescheduleFeeFrontDesk')} placeholder={String(d.rescheduleFeeFrontDesk)} className={inputClass} />
           </Field>
-          <p className="text-xs text-ink-muted">
-            This is the flat reschedule-mutation fee only - no-show/late-cancel fees are tiered, configured under
-            the Fee Policies tab.
-          </p>
+          <p className="text-xs text-ink-muted">{t('settingsPage.tieredFeeNote')}</p>
         </Section>
 
-        <Section title="Reminders">
-          <Field label="Reminder lead time (hours before the appointment)" hint={`Default ${d.appointmentReminderLeadHours}`}>
+        <Section title={t('settingsPage.remindersSection')}>
+          <Field label={t('settingsPage.reminderLead')} hint={t('settingsPage.defaultHint', { value: d.appointmentReminderLeadHours })}>
             <input type="number" min="0" value={form.appointmentReminderLeadHours} onChange={set('appointmentReminderLeadHours')} placeholder={String(d.appointmentReminderLeadHours)} className={inputClass} />
           </Field>
         </Section>
 
-        <Section title="Contact info">
-          <p className="text-xs text-ink-muted">No platform default for these - shown on notifications and tracking pages when set.</p>
-          <Field label="Support phone">
+        <Section title={t('settingsPage.contactSection')}>
+          <p className="text-xs text-ink-muted">{t('settingsPage.contactNote')}</p>
+          <Field label={t('settingsPage.supportPhone')}>
             <input value={form.supportPhone} onChange={set('supportPhone')} placeholder="+15551234567" className={inputClass} />
           </Field>
-          <Field label="Support email">
+          <Field label={t('settingsPage.supportEmail')}>
             <input type="email" value={form.supportEmail} onChange={set('supportEmail')} className={inputClass} />
           </Field>
-          <Field label="Address">
+          <Field label={t('settingsPage.address')}>
             <input value={form.address} onChange={set('address')} className={inputClass} />
           </Field>
-          <Field label="Website">
+          <Field label={t('settingsPage.website')}>
             <input value={form.website} onChange={set('website')} placeholder="https://…" className={inputClass} />
           </Field>
         </Section>
@@ -131,9 +127,9 @@ export default function ClinicAdminSettings() {
 
         <div className="flex items-center gap-3">
           <button type="submit" disabled={updateSettings.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-            {updateSettings.isPending ? 'Saving…' : 'Save settings'}
+            {updateSettings.isPending ? t('settingsPage.saving') : t('settingsPage.saveSettings')}
           </button>
-          {saved && <span className="text-sm text-success">Saved.</span>}
+          {saved && <span className="text-sm text-success">{t('settingsPage.saved')}</span>}
         </div>
       </form>
     </div>

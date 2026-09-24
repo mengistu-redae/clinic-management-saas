@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 const tabClass = ({ isActive }) =>
   `border-b-2 px-1 pb-2 text-sm font-medium transition-colors ${
@@ -13,21 +14,22 @@ const tabClass = ({ isActive }) =>
  * names.
  */
 export default function ClinicAdminSettingsLayout() {
+  const { t } = useTranslation();
   return (
     <div>
-      <h1 className="mb-4 text-2xl font-bold text-ink">Settings</h1>
+      <h1 className="mb-4 text-2xl font-bold text-ink">{t('nav.clinicAdmin.settings')}</h1>
       <nav className="mb-6 flex gap-6 border-b border-slate-200">
         <NavLink to="/clinic-admin/settings" end className={tabClass}>
-          General
+          {t('clinicAdminSettingsTabs.general')}
         </NavLink>
         <NavLink to="/clinic-admin/settings/branding" className={tabClass}>
-          Branding
+          {t('clinicAdminSettingsTabs.branding')}
         </NavLink>
         <NavLink to="/clinic-admin/settings/fee-policies" className={tabClass}>
-          Fee Policies
+          {t('clinicAdminSettingsTabs.feePolicies')}
         </NavLink>
         <NavLink to="/clinic-admin/settings/lab-rates" className={tabClass}>
-          Lab Rates
+          {t('clinicAdminSettingsTabs.labRates')}
         </NavLink>
       </nav>
       <Outlet />

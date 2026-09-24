@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   useAppointment,
   usePatient,
@@ -13,12 +14,16 @@ import {
   useCancelAppointment,
   useAppointmentPayments,
   useCreateAppointmentPayment,
+  useAppointmentInvoice,
+  useGenerateAppointmentInvoice,
 } from '../../api/queries.js';
 import { ApiError } from '../../api/client.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import PatientChart from '../../components/PatientChart.jsx';
+import InvoicePanel from '../../components/InvoicePanel.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
 
 const TERMINAL_STATUSES = new Set(['cancelled', 'checked_out', 'no_show']);
@@ -42,6 +47,7 @@ const inputClass =
  * CheckInController exactly.
  */
 export default function AppointmentDetail() {
+  const { t } = useTranslation();
   const { id } = useParams();
   const { hasRole } = useAuth();
   const appointmentQuery = useAppointment(id);
@@ -65,6 +71,8 @@ export default function AppointmentDetail() {
 
   const paymentsQuery = useAppointmentPayments(id);
   const createPayment = useCreateAppointmentPayment(id);
+  const invoiceQuery = useAppointmentInvoice(id);
+  const generateInvoice = useGenerateAppointmentInvoice(id);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentTxnId, setPaymentTxnId] = useState('');
@@ -75,7 +83,7 @@ export default function AppointmentDetail() {
     try {
       await mutation.mutateAsync(body);
     } catch (err) {
-      setActionError(err.message || 'Could not complete this action. Please try again.');
+      setActionError(err.message || t('fdAppointmentDetail.errorAction'));
     }
   }
 
@@ -86,9 +94,9 @@ export default function AppointmentDetail() {
       setConfirmingCancel(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setCancelError(err.message || 'This appointment was already cancelled.');
+        setCancelError(err.message || t('appointmentDetail.alreadyCancelled'));
       } else {
-        setCancelError(err.message || 'Could not cancel this appointment. Please try again.');
+        setCancelError(err.message || t('appointmentDetail.errorCancel'));
       }
       setConfirmingCancel(false);
     }
@@ -99,7 +107,7 @@ export default function AppointmentDetail() {
     setPaymentError(null);
     const amount = Number(paymentAmount);
     if (!paymentAmount || Number.isNaN(amount) || amount <= 0) {
-      setPaymentError('Enter a valid amount.');
+      setPaymentError(t('fdAppointmentDetail.errorAmount'));
       return;
     }
     try {
@@ -107,7 +115,7 @@ export default function AppointmentDetail() {
       setPaymentAmount('');
       setPaymentTxnId('');
     } catch (err) {
-      setPaymentError(err.message || 'Could not record this payment. Please try again.');
+      setPaymentError(err.message || t('fdAppointmentDetail.errorRecordPayment'));
     }
   }
 
@@ -119,12 +127,12 @@ export default function AppointmentDetail() {
   }
 
   const providerName = providersQuery.data?.find((p) => p.id === appointment.providerId)?.fullName;
-  const typeName = typesQuery.data?.find((t) => t.id === appointment.appointmentTypeId)?.name;
+  const typeName = typesQuery.data?.find((type) => type.id === appointment.appointmentTypeId)?.name;
   const patientName = appointment.patientId
     ? patientQuery.data
       ? `${patientQuery.data.firstName} ${patientQuery.data.lastName}`
       : '…'
-    : appointment.contactName || 'Guest';
+    : appointment.contactName || t('frontDeskAppointments.guest');
 
   const status = appointment.status;
   const isTerminal = TERMINAL_STATUSES.has(status);
@@ -133,57 +141,59 @@ export default function AppointmentDetail() {
   return (
     <div className="mx-auto max-w-xl">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink">Appointment</h1>
+        <h1 className="text-2xl font-bold text-ink">{t('appointmentDetail.title')}</h1>
         <StatusPill status={status} />
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-surface p-5">
         <p className="text-lg font-semibold text-ink">{patientName}</p>
         <p className="text-sm text-ink-muted">
-          {typeName || 'Appointment'} with {providerName || 'a provider'}
+          {typeName || t('appointmentDetail.appointmentFallback')} with {providerName || t('appointmentDetail.providerFallback')}
         </p>
         {appointment.contactPhone && <p className="text-xs text-ink-muted">{appointment.contactPhone}</p>}
 
         <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-sm">
           <div>
-            <dt className="text-ink-muted">Reference</dt>
+            <dt className="text-ink-muted">{t('appointmentDetail.reference')}</dt>
             <dd className="font-mono text-xs text-ink">{appointment.appointmentRef}</dd>
           </div>
           <div>
-            <dt className="text-ink-muted">Channel</dt>
-            <dd className="text-ink capitalize">{appointment.channel.replace(/_/g, ' ')}</dd>
+            <dt className="text-ink-muted">{t('fdAppointmentDetail.channel')}</dt>
+            <dd className="text-ink capitalize">{t(`channel.${appointment.channel}`, { defaultValue: appointment.channel.replace(/_/g, ' ') })}</dd>
           </div>
           <div>
-            <dt className="text-ink-muted">When</dt>
+            <dt className="text-ink-muted">{t('appointmentDetail.when')}</dt>
             <dd className="text-ink">{appointment.startTime ? formatDateTime(appointment.startTime) : '—'}</dd>
           </div>
           <div>
-            <dt className="text-ink-muted">Booked</dt>
+            <dt className="text-ink-muted">{t('common.bookedAt')}</dt>
             <dd className="text-ink">{formatDateTime(appointment.bookedAt)}</dd>
           </div>
         </dl>
       </div>
 
+      <PatientChart patientId={appointment.patientId} appointmentId={id} />
+
       {hasRole('clinic_admin') && DOCUMENTABLE_STATUSES.has(status) && (
         <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-200 bg-surface p-4">
-          <p className="text-sm text-ink-muted">Chief complaint, assessment, plan, and prescriptions for this visit.</p>
+          <p className="text-sm text-ink-muted">{t('fdAppointmentDetail.documentEncounterNote')}</p>
           <Link
             to={`/provider/appointments/${id}/encounter`}
             className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
           >
-            Document encounter
+            {t('fdAppointmentDetail.documentEncounter')}
           </Link>
         </div>
       )}
 
       {!isTerminal && (
         <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
-          <p className="mb-3 text-sm font-semibold text-ink">Next step</p>
+          <p className="mb-3 text-sm font-semibold text-ink">{t('fdAppointmentDetail.nextStep')}</p>
           {status === 'booked' && (
             <div className="flex flex-wrap items-end gap-3">
               <label className="block">
                 <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                  ID presented (optional)
+                  {t('fdAppointmentDetail.idPresentedOptional')}
                 </span>
                 <input value={presentedId} onChange={(e) => setPresentedId(e.target.value)} className={inputClass} />
               </label>
@@ -193,7 +203,7 @@ export default function AppointmentDetail() {
                 onClick={() => runAction(checkIn, presentedId.trim() ? { presentedIdNumber: presentedId.trim() } : undefined)}
                 className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
               >
-                {checkIn.isPending ? 'Checking in…' : 'Check in'}
+                {checkIn.isPending ? t('fdAppointmentDetail.checkingIn') : t('fdAppointmentDetail.checkIn')}
               </button>
               <button
                 type="button"
@@ -201,7 +211,7 @@ export default function AppointmentDetail() {
                 onClick={() => runAction(markNoShow)}
                 className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-ink-muted hover:bg-slate-50"
               >
-                Mark no-show
+                {t('fdAppointmentDetail.markNoShow')}
               </button>
             </div>
           )}
@@ -212,7 +222,7 @@ export default function AppointmentDetail() {
               onClick={() => runAction(room)}
               className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
             >
-              {room.isPending ? 'Rooming…' : 'Room'}
+              {room.isPending ? t('fdAppointmentDetail.rooming') : t('fdAppointmentDetail.room')}
             </button>
           )}
           {status === 'roomed' && (
@@ -222,7 +232,7 @@ export default function AppointmentDetail() {
               onClick={() => runAction(start)}
               className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
             >
-              {start.isPending ? 'Starting…' : 'Start visit'}
+              {start.isPending ? t('fdAppointmentDetail.starting') : t('fdAppointmentDetail.startVisit')}
             </button>
           )}
           {status === 'with_provider' && (
@@ -232,7 +242,7 @@ export default function AppointmentDetail() {
               onClick={() => runAction(checkOut)}
               className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
             >
-              {checkOut.isPending ? 'Checking out…' : 'Check out'}
+              {checkOut.isPending ? t('fdAppointmentDetail.checkingOut') : t('fdAppointmentDetail.checkOut')}
             </button>
           )}
           {actionError && (
@@ -245,13 +255,13 @@ export default function AppointmentDetail() {
 
       {status !== 'cancelled' && (
         <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
-          <p className="mb-3 text-sm font-semibold text-ink">Payments</p>
+          <p className="mb-3 text-sm font-semibold text-ink">{t('fdAppointmentDetail.payments')}</p>
           {payments.length > 0 && (
             <ul className="mb-4 flex flex-col gap-1.5 text-sm">
               {payments.map((p) => (
                 <li key={p.id} className="flex items-center justify-between text-ink">
                   <span className="capitalize">
-                    {p.method}
+                    {t(`paymentMethod.${p.method}`, { defaultValue: p.method })}
                     {p.transactionId && <span className="font-mono text-xs text-ink-muted"> ({p.transactionId})</span>}
                   </span>
                   <span className="font-mono">{formatCurrency(p.amount)}</span>
@@ -261,16 +271,16 @@ export default function AppointmentDetail() {
           )}
           <form onSubmit={handleRecordPayment} className="flex flex-wrap items-end gap-3">
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Method</span>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('fdAppointmentDetail.method')}</span>
               <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputClass}>
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="mobile_money">Mobile money</option>
-                <option value="insurance">Insurance</option>
+                <option value="cash">{t('paymentMethod.cash')}</option>
+                <option value="card">{t('paymentMethod.card')}</option>
+                <option value="mobile_money">{t('paymentMethod.mobile_money')}</option>
+                <option value="insurance">{t('paymentMethod.insurance')}</option>
               </select>
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Amount</span>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('fdAppointmentDetail.amount')}</span>
               <input
                 type="number"
                 min="0"
@@ -281,7 +291,7 @@ export default function AppointmentDetail() {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Txn ID (optional)</span>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('fdAppointmentDetail.txnIdOptional')}</span>
               <input value={paymentTxnId} onChange={(e) => setPaymentTxnId(e.target.value)} className={`${inputClass} w-40`} />
             </label>
             <button
@@ -289,7 +299,7 @@ export default function AppointmentDetail() {
               disabled={createPayment.isPending}
               className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {createPayment.isPending ? 'Recording…' : 'Record payment'}
+              {createPayment.isPending ? t('fdAppointmentDetail.recording') : t('fdAppointmentDetail.recordPayment')}
             </button>
           </form>
           {paymentError && (
@@ -299,6 +309,8 @@ export default function AppointmentDetail() {
           )}
         </div>
       )}
+
+      {status !== 'cancelled' && <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} />}
 
       {cancelError && (
         <div className="mt-4">
@@ -312,7 +324,7 @@ export default function AppointmentDetail() {
             to={`/front-desk/appointments/${id}/reschedule`}
             className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-ink hover:bg-slate-50"
           >
-            Reschedule
+            {t('appointmentDetail.reschedule')}
           </Link>
           {!confirmingCancel ? (
             <button
@@ -320,25 +332,25 @@ export default function AppointmentDetail() {
               onClick={() => setConfirmingCancel(true)}
               className="rounded-lg border border-danger/40 px-4 py-2 text-sm font-medium text-danger hover:bg-danger-light"
             >
-              Cancel appointment
+              {t('appointmentDetail.cancelAppointment')}
             </button>
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
-              <p className="text-sm text-danger">Cancel this appointment?</p>
+              <p className="text-sm text-danger">{t('appointmentDetail.cancelConfirm')}</p>
               <button
                 type="button"
                 disabled={cancelAppointment.isPending}
                 onClick={handleCancel}
                 className="shrink-0 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger/90 disabled:opacity-50"
               >
-                {cancelAppointment.isPending ? 'Cancelling…' : 'Yes, cancel'}
+                {cancelAppointment.isPending ? t('appointmentDetail.cancelling') : t('appointmentDetail.yesCancel')}
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmingCancel(false)}
                 className="shrink-0 text-sm text-ink-muted hover:underline"
               >
-                Never mind
+                {t('appointmentDetail.neverMind')}
               </button>
             </div>
           )}

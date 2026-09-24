@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useTrackAppointment } from '../api/queries.js';
 import { ApiError } from '../api/client.js';
 import StatusPill from '../components/StatusPill.jsx';
@@ -16,6 +17,7 @@ const inputClass =
  * project's TrackBooking.jsx.
  */
 export default function TrackAppointment() {
+  const { t } = useTranslation();
   const [ref, setRef] = useState('');
   const [phone, setPhone] = useState('');
   const [submitted, setSubmitted] = useState(null);
@@ -31,14 +33,12 @@ export default function TrackAppointment() {
 
   return (
     <div className="mx-auto max-w-md">
-      <h1 className="mb-1 text-2xl font-bold text-ink">Track an appointment</h1>
-      <p className="mb-6 text-sm text-ink-muted">
-        Enter your appointment reference and the phone number you booked with.
-      </p>
+      <h1 className="mb-1 text-2xl font-bold text-ink">{t('publicNav.trackAppointment')}</h1>
+      <p className="mb-6 text-sm text-ink-muted">{t('trackAppointment.subtitle')}</p>
 
       <form onSubmit={handleSubmit} className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Reference</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('trackLabOrder.reference')}</span>
           <input
             value={ref}
             onChange={(e) => setRef(e.target.value)}
@@ -47,7 +47,7 @@ export default function TrackAppointment() {
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Phone number</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('trackLabOrder.phoneNumber')}</span>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
         </label>
         <button
@@ -55,7 +55,7 @@ export default function TrackAppointment() {
           disabled={!ref.trim() || !phone.trim()}
           className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Track
+          {t('trackLabOrder.track')}
         </button>
       </form>
 
@@ -63,12 +63,12 @@ export default function TrackAppointment() {
 
       {notFound && (
         <div className="rounded-xl border border-danger/30 bg-danger-light px-4 py-3 text-sm text-danger">
-          No appointment found for that reference and phone number. Double-check both and try again.
+          {t('trackAppointment.notFound')}
         </div>
       )}
       {trackQuery.isError && !notFound && (
         <div className="rounded-xl border border-danger/30 bg-danger-light px-4 py-3 text-sm text-danger">
-          {trackQuery.error?.message || 'Something went wrong.'}
+          {trackQuery.error?.message || t('common.somethingWrong')}
         </div>
       )}
 
@@ -82,11 +82,11 @@ export default function TrackAppointment() {
           <p className="text-xs text-ink-muted">{trackQuery.data.providerName}</p>
           <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-sm">
             <div>
-              <dt className="text-ink-muted">Scheduled for</dt>
+              <dt className="text-ink-muted">{t('trackAppointment.scheduledFor')}</dt>
               <dd className="text-ink">{formatDateTime(trackQuery.data.startTime)}</dd>
             </div>
             <div>
-              <dt className="text-ink-muted">Booked</dt>
+              <dt className="text-ink-muted">{t('common.bookedAt')}</dt>
               <dd className="text-ink">{formatDateTime(trackQuery.data.bookedAt)}</dd>
             </div>
           </dl>

@@ -1,4 +1,7 @@
 import { Link, Outlet } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import ThemeToggle from '../components/ThemeToggle.jsx';
+import LanguageToggle from '../components/LanguageToggle.jsx';
 
 /**
  * Logged-out shell - a header with nav (booking/tracking are both public,
@@ -8,38 +11,44 @@ import { Link, Outlet } from 'react-router-dom';
  * PublicHome for what renders at "/" itself.
  */
 export default function PublicShell() {
+  const { t } = useTranslation();
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:gap-x-8">
             <Link to="/" className="text-lg font-bold text-brand">
-              Clinic Management
+              {t('app.brandFallback')}
             </Link>
             <nav className="flex flex-wrap items-center gap-1">
               <Link to="/book" className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-muted hover:bg-slate-100 hover:text-ink">
-                Book an appointment
+                {t('publicNav.bookAppointment')}
               </Link>
               <Link
                 to="/track-appointment"
                 className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-muted hover:bg-slate-100 hover:text-ink"
               >
-                Track an appointment
+                {t('publicNav.trackAppointment')}
               </Link>
               <Link
                 to="/track-lab-order"
                 className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-muted hover:bg-slate-100 hover:text-ink"
               >
-                Track a lab order
+                {t('publicNav.trackLabOrder')}
               </Link>
             </nav>
           </div>
-          <a
-            href="/auth/login"
-            className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark"
-          >
-            Log in
-          </a>
+          <div className="flex items-center gap-3">
+            <LanguageToggle />
+            <ThemeToggle />
+            <a
+              href="/auth/login"
+              className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark"
+            >
+              {t('publicNav.logIn')}
+            </a>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">

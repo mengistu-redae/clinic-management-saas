@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   usePlatformClinics,
   useCreateClinic,
@@ -39,6 +40,7 @@ const emptyForm = { name: '', orgAlias: '', domain: '', adminEmail: '', adminFul
  * of band.
  */
 export default function PlatformAdminClinics() {
+  const { t } = useTranslation();
   const { data: clinics, isLoading, isError, error, refetch } = usePlatformClinics(true);
   const createClinic = useCreateClinic();
 
@@ -51,7 +53,7 @@ export default function PlatformAdminClinics() {
     setFormError(null);
     setProvisionedAdmin(null);
     if (!form.name.trim() || !form.orgAlias.trim() || !form.domain.trim()) {
-      setFormError('Name, org alias, and domain are all required.');
+      setFormError(t('clinicsPage.errorFieldsRequired'));
       return;
     }
     try {
@@ -67,49 +69,45 @@ export default function PlatformAdminClinics() {
       }
       setForm(emptyForm);
     } catch (err) {
-      setFormError(err.message || 'Could not onboard this clinic - the org alias may already be taken.');
+      setFormError(err.message || t('clinicsPage.errorOnboard'));
     }
   }
 
   return (
     <div>
-      <h1 className="mb-1 text-2xl font-bold text-ink">Clinics</h1>
-      <p className="mb-6 text-sm text-ink-muted">
-        Onboarding a new clinic creates a real Keycloak Organization for its staff, then this platform's own record
-        of it. Fill in the admin email/name below to also create an initial clinic_admin login for it - leave both
-        blank to onboard the clinic with nobody able to log in yet, same as before.
-      </p>
+      <h1 className="mb-1 text-2xl font-bold text-ink">{t('nav.platformAdmin.clinics')}</h1>
+      <p className="mb-6 text-sm text-ink-muted">{t('clinicsPage.intro')}</p>
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
-        <Field label="Name">
+        <Field label={t('common.name')}>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Sunrise Family Clinic" className={`${inputClass} w-56`} />
         </Field>
-        <Field label="Org alias">
+        <Field label={t('clinicsPage.orgAlias')}>
           <input value={form.orgAlias} onChange={(e) => setForm({ ...form, orgAlias: e.target.value })} placeholder="sunrise-clinic" className={`${inputClass} w-44`} />
         </Field>
-        <Field label="Domain">
+        <Field label={t('clinicsPage.domain')}>
           <input value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="sunriseclinic.example" className={`${inputClass} w-56`} />
         </Field>
-        <Field label="Initial admin email (optional)">
+        <Field label={t('clinicsPage.initialAdminEmail')}>
           <input type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} placeholder="admin@sunriseclinic.example" className={`${inputClass} w-56`} />
         </Field>
-        <Field label="Initial admin name (optional)">
+        <Field label={t('clinicsPage.initialAdminName')}>
           <input value={form.adminFullName} onChange={(e) => setForm({ ...form, adminFullName: e.target.value })} placeholder="Jane Doe" className={`${inputClass} w-44`} />
         </Field>
         <button type="submit" disabled={createClinic.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
-          {createClinic.isPending ? 'Provisioning…' : 'Onboard clinic'}
+          {createClinic.isPending ? t('clinicsPage.provisioning') : t('clinicsPage.onboardClinic')}
         </button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
       {provisionedAdmin && (
         <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="mb-1 font-semibold">Initial clinic_admin login created for {provisionedAdmin.email}</p>
+          <p className="mb-1 font-semibold">{t('clinicsPage.adminCreatedTitle', { email: provisionedAdmin.email })}</p>
           <p className="mb-2">
-            Temporary password (shown once, not recoverable afterward - hand it to them out of band):{' '}
+            {t('clinicsPage.tempPasswordNote')}{' '}
             <span className="font-mono font-semibold">{provisionedAdmin.temporaryPassword}</span>
           </p>
           <button type="button" onClick={() => setProvisionedAdmin(null)} className="text-amber-900 underline">
-            Dismiss
+            {t('clinicsPage.dismiss')}
           </button>
         </div>
       )}
@@ -117,7 +115,7 @@ export default function PlatformAdminClinics() {
       {isLoading && <Skeleton className="h-32 w-full" />}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {!isLoading && !isError && clinics?.length === 0 && (
-        <EmptyState title="No clinics yet" description="Onboard your first clinic above." />
+        <EmptyState title={t('clinicsPage.emptyTitle')} description={t('clinicsPage.emptyDescription')} />
       )}
 
       {!isLoading && !isError && clinics?.length > 0 && (
@@ -132,6 +130,7 @@ export default function PlatformAdminClinics() {
 }
 
 function ClinicRow({ clinic }) {
+  const { t } = useTranslation();
   const updateClinic = useUpdateClinic(clinic.id);
   const deactivateClinic = useDeactivateClinic(clinic.id);
   const reactivateClinic = useReactivateClinic(clinic.id);
@@ -146,7 +145,7 @@ function ClinicRow({ clinic }) {
       await updateClinic.mutateAsync({ name: name.trim() });
       setEditing(false);
     } catch (err) {
-      setRowError(err.message || 'Could not save changes.');
+      setRowError(err.message || t('common.errorSaveChanges'));
     }
   }
 
@@ -159,7 +158,7 @@ function ClinicRow({ clinic }) {
         await reactivateClinic.mutateAsync();
       }
     } catch (err) {
-      setRowError(err.message || 'Could not update this clinic.');
+      setRowError(err.message || t('clinicsPage.errorUpdateClinic'));
     }
   }
 
@@ -169,14 +168,14 @@ function ClinicRow({ clinic }) {
     <div className="rounded-xl border border-slate-200 bg-surface p-4">
       {editing ? (
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="Name">
+          <Field label={t('common.name')}>
             <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputClass} w-56`} />
           </Field>
           <button type="button" onClick={saveEdit} disabled={updateClinic.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-            {updateClinic.isPending ? 'Saving…' : 'Save'}
+            {updateClinic.isPending ? t('settingsPage.saving') : t('common.save')}
           </button>
           <button type="button" onClick={() => setEditing(false)} className="text-sm text-ink-muted hover:underline">
-            Cancel
+            {t('common.cancel')}
           </button>
         </div>
       ) : (
@@ -187,14 +186,14 @@ function ClinicRow({ clinic }) {
               <span className="text-sm font-semibold text-ink">{clinic.name}</span>
               <span className="font-mono text-xs text-ink-muted">{clinic.keycloakOrgId}</span>
             </div>
-            <p className="text-xs text-ink-muted">Onboarded {formatDateTime(clinic.createdAt)}</p>
+            <p className="text-xs text-ink-muted">{t('clinicsPage.onboardedPrefix')} {formatDateTime(clinic.createdAt)}</p>
           </div>
           <div className="flex items-center gap-3 text-sm">
             <button type="button" onClick={() => { setRowError(null); setName(clinic.name); setEditing(true); }} className="text-brand hover:underline">
-              Edit
+              {t('common.edit')}
             </button>
             <button type="button" onClick={toggleActive} disabled={pending} className="text-ink-muted hover:underline disabled:opacity-50">
-              {clinic.status === 'active' ? 'Deactivate' : 'Reactivate'}
+              {clinic.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
             </button>
           </div>
         </div>

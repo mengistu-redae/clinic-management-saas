@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   useClinicsDirectory,
   useClinicAppointmentTypes,
@@ -20,6 +21,7 @@ const inputClass = selectClass;
 
 /** Step 2+3+4 of the booking flow, all on one page - pick a type/provider, pick a slot, confirm. */
 export default function BookingForm() {
+  const { t } = useTranslation();
   const { clinicId } = useParams();
   const navigate = useNavigate();
   const { authenticated } = useAuth();
@@ -47,7 +49,7 @@ export default function BookingForm() {
   const booking = authenticated ? createAppointment : createGuestAppointment;
 
   const selectedType = useMemo(
-    () => typesQuery.data?.find((t) => t.id === appointmentTypeId),
+    () => typesQuery.data?.find((type) => type.id === appointmentTypeId),
     [typesQuery.data, appointmentTypeId],
   );
 
@@ -62,11 +64,11 @@ export default function BookingForm() {
   async function handleConfirm() {
     setBookingError(null);
     if (!authenticated && !contactName.trim()) {
-      setBookingError('Enter your name so the clinic knows who is booking.');
+      setBookingError(t('bookingForm.errorNameRequired'));
       return;
     }
     if (!authenticated && !contactPhone.trim()) {
-      setBookingError('Enter a phone number so you can look this appointment up again later.');
+      setBookingError(t('bookingForm.errorPhoneRequired'));
       return;
     }
     try {
@@ -99,23 +101,23 @@ export default function BookingForm() {
       });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setBookingError('That slot was just taken by someone else. Pick another.');
+        setBookingError(t('booking.slotTaken'));
         setSelectedSlot(null);
         idempotencyKeyRef.current = crypto.randomUUID();
         return;
       }
-      setBookingError(err.message || 'Could not book this appointment. Please try again.');
+      setBookingError(err.message || t('booking.errorBook'));
     }
   }
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="mb-1 text-2xl font-bold text-ink">{clinicName || 'Book an appointment'}</h1>
-      <p className="mb-6 text-sm text-ink-muted">Pick an appointment type and a provider to see open times.</p>
+      <h1 className="mb-1 text-2xl font-bold text-ink">{clinicName || t('publicNav.bookAppointment')}</h1>
+      <p className="mb-6 text-sm text-ink-muted">{t('booking.pickTypeAndProvider')}</p>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Appointment type</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('booking.appointmentType')}</span>
           {typesQuery.isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : (
@@ -124,10 +126,10 @@ export default function BookingForm() {
               onChange={(e) => handleTypeOrProviderChange(setAppointmentTypeId)(e.target.value)}
               className={selectClass}
             >
-              <option value="">Select…</option>
-              {typesQuery.data?.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.durationMinutes} min, {formatCurrency(t.priceAmount)})
+              <option value="">{t('booking.select')}</option>
+              {typesQuery.data?.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name} ({type.durationMinutes} min, {formatCurrency(type.priceAmount)})
                 </option>
               ))}
             </select>
@@ -135,7 +137,7 @@ export default function BookingForm() {
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Provider</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('reschedule.provider')}</span>
           {providersQuery.isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : (
@@ -144,7 +146,7 @@ export default function BookingForm() {
               onChange={(e) => handleTypeOrProviderChange(setProviderId)(e.target.value)}
               className={selectClass}
             >
-              <option value="">Select…</option>
+              <option value="">{t('booking.select')}</option>
               {providersQuery.data?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.fullName}
@@ -157,7 +159,7 @@ export default function BookingForm() {
 
       {appointmentTypeId && providerId && (
         <div className="mt-6">
-          <h2 className="mb-3 text-sm font-semibold text-ink">Available times</h2>
+          <h2 className="mb-3 text-sm font-semibold text-ink">{t('booking.availableTimes')}</h2>
           <SlotPicker
             clinicId={clinicId}
             providerId={providerId}
@@ -175,22 +177,21 @@ export default function BookingForm() {
         <div className="mt-6 rounded-xl border border-slate-200 bg-surface p-4 shadow-sm">
           {!authenticated && (
             <div className="mb-4">
-              <p className="mb-3 text-sm font-semibold text-ink">Your contact info</p>
+              <p className="mb-3 text-sm font-semibold text-ink">{t('bookingForm.yourContactInfo')}</p>
               <p className="mb-3 text-xs text-ink-muted">
-                Booking without an account - save your appointment reference and phone number to look it up again
-                later at <span className="font-mono">/track-appointment</span>.
+                {t('bookingForm.withoutAccountNote')} <span className="font-mono">/track-appointment</span>.
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Name</span>
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('common.name')}</span>
                   <input value={contactName} onChange={(e) => setContactName(e.target.value)} className={inputClass} />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Phone</span>
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.phone')}</span>
                   <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className={inputClass} />
                 </label>
                 <label className="block sm:col-span-2">
-                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Email (optional)</span>
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.emailOptional')}</span>
                   <input
                     type="email"
                     value={contactEmail}
@@ -208,7 +209,7 @@ export default function BookingForm() {
             onClick={handleConfirm}
             className="w-full rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
-            {booking.isPending ? 'Booking…' : 'Confirm booking'}
+            {booking.isPending ? t('booking.booking') : t('booking.confirmBooking')}
           </button>
         </div>
       )}

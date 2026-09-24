@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppointmentTypes, useCreateAppointmentType, useUpdateAppointmentType } from '../../api/queries.js';
 import StatusPill from '../../components/StatusPill.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
@@ -13,6 +14,7 @@ const emptyForm = { name: '', durationMinutes: '30', priceAmount: '' };
 
 /** clinic-admin appointment-type management - GET/POST/POST .../update AppointmentTypeController. All statuses shown, same reasoning as Providers.jsx. */
 export default function ClinicAdminAppointmentTypes() {
+  const { t } = useTranslation();
   const { data: types, isLoading, isError, error, refetch } = useAppointmentTypes(true);
   const createType = useCreateAppointmentType();
 
@@ -25,33 +27,33 @@ export default function ClinicAdminAppointmentTypes() {
     const duration = Number(form.durationMinutes);
     const price = Number(form.priceAmount);
     if (!form.name.trim() || !duration || duration <= 0 || form.priceAmount === '' || price < 0) {
-      setFormError('Name, a positive duration, and a non-negative price are required.');
+      setFormError(t('appointmentTypesPage.errorFields'));
       return;
     }
     try {
       await createType.mutateAsync({ name: form.name.trim(), durationMinutes: duration, priceAmount: price });
       setForm(emptyForm);
     } catch (err) {
-      setFormError(err.message || 'Could not create appointment type.');
+      setFormError(err.message || t('appointmentTypesPage.errorCreate'));
     }
   }
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-ink">Appointment Types</h1>
+      <h1 className="mb-6 text-2xl font-bold text-ink">{t('nav.clinicAdmin.appointmentTypes')}</h1>
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
-        <Field label="Name">
+        <Field label={t('common.name')}>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="New Patient / 30 min" className={`${inputClass} w-56`} />
         </Field>
-        <Field label="Duration (min)">
+        <Field label={t('appointmentTypesPage.duration')}>
           <input type="number" min="1" value={form.durationMinutes} onChange={(e) => setForm({ ...form, durationMinutes: e.target.value })} className={`${inputClass} w-28`} />
         </Field>
-        <Field label="Price">
+        <Field label={t('appointmentTypesPage.price')}>
           <input type="number" min="0" step="0.01" value={form.priceAmount} onChange={(e) => setForm({ ...form, priceAmount: e.target.value })} className={`${inputClass} w-28`} />
         </Field>
         <button type="submit" disabled={createType.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-          {createType.isPending ? 'Adding…' : 'Add type'}
+          {createType.isPending ? t('common.adding') : t('appointmentTypesPage.addType')}
         </button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
@@ -59,7 +61,7 @@ export default function ClinicAdminAppointmentTypes() {
       {isLoading && <Skeleton className="h-24 w-full" />}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {!isLoading && !isError && types?.length === 0 && (
-        <EmptyState title="No appointment types yet" description="Add your first type above." />
+        <EmptyState title={t('appointmentTypesPage.emptyTitle')} description={t('appointmentTypesPage.emptyDescription')} />
       )}
 
       {!isLoading && !isError && types?.length > 0 && (
@@ -74,6 +76,7 @@ export default function ClinicAdminAppointmentTypes() {
 }
 
 function TypeRow({ type }) {
+  const { t } = useTranslation();
   const updateType = useUpdateAppointmentType(type.id);
 
   const [editing, setEditing] = useState(false);
@@ -96,7 +99,7 @@ function TypeRow({ type }) {
       });
       setEditing(false);
     } catch (err) {
-      setRowError(err.message || 'Could not save changes.');
+      setRowError(err.message || t('common.errorSaveChanges'));
     }
   }
 
@@ -105,7 +108,7 @@ function TypeRow({ type }) {
     try {
       await updateType.mutateAsync({ status: type.status === 'active' ? 'inactive' : 'active' });
     } catch (err) {
-      setRowError(err.message || 'Could not update this type.');
+      setRowError(err.message || t('appointmentTypesPage.errorUpdate'));
     }
   }
 
@@ -113,20 +116,20 @@ function TypeRow({ type }) {
     <div className="rounded-xl border border-slate-200 bg-surface p-4">
       {editing ? (
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="Name">
+          <Field label={t('common.name')}>
             <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={`${inputClass} w-56`} />
           </Field>
-          <Field label="Duration (min)">
+          <Field label={t('appointmentTypesPage.duration')}>
             <input type="number" min="1" value={editForm.durationMinutes} onChange={(e) => setEditForm({ ...editForm, durationMinutes: e.target.value })} className={`${inputClass} w-28`} />
           </Field>
-          <Field label="Price">
+          <Field label={t('appointmentTypesPage.price')}>
             <input type="number" min="0" step="0.01" value={editForm.priceAmount} onChange={(e) => setEditForm({ ...editForm, priceAmount: e.target.value })} className={`${inputClass} w-28`} />
           </Field>
           <button type="button" onClick={saveEdit} disabled={updateType.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-            Save
+            {t('common.save')}
           </button>
           <button type="button" onClick={() => setEditing(false)} className="text-sm text-ink-muted hover:underline">
-            Cancel
+            {t('common.cancel')}
           </button>
         </div>
       ) : (
@@ -139,9 +142,9 @@ function TypeRow({ type }) {
             </div>
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <button type="button" onClick={startEdit} className="text-brand hover:underline">Edit</button>
+            <button type="button" onClick={startEdit} className="text-brand hover:underline">{t('common.edit')}</button>
             <button type="button" onClick={toggleActive} className="text-ink-muted hover:underline">
-              {type.status === 'active' ? 'Deactivate' : 'Reactivate'}
+              {type.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
             </button>
           </div>
         </div>

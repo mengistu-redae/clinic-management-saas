@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useMySchedule } from '../../api/queries.js';
 import StatCard from '../../components/StatCard.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
@@ -8,6 +9,7 @@ import Skeleton from '../../components/Skeleton.jsx';
 
 /** Provider landing page - see GET /api/my-schedule (already day-scoped server-side, ZoneOffset.UTC). */
 export default function ProviderDashboard() {
+  const { t } = useTranslation();
   const { data, isLoading, isError, error, refetch } = useMySchedule(true);
 
   if (isError) {
@@ -26,17 +28,21 @@ export default function ProviderDashboard() {
 
   return (
     <div className="flex flex-col gap-8">
-      <h1 className="text-2xl font-bold text-ink">Today's Schedule</h1>
+      <h1 className="text-2xl font-bold text-ink">{t('providerDashboard.title')}</h1>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <StatCard label="Patients today" value={data.length} />
-        <StatCard label="Seen so far" value={seenCount} hint={`${data.length - seenCount} remaining`} />
+        <StatCard label={t('providerDashboard.patientsToday')} value={data.length} />
+        <StatCard
+          label={t('providerDashboard.seenSoFar')}
+          value={seenCount}
+          hint={t('providerDashboard.remainingHint', { count: data.length - seenCount })}
+        />
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-surface p-4 shadow-sm">
-        <p className="mb-3 text-sm font-semibold text-ink">Today's appointments</p>
+        <p className="mb-3 text-sm font-semibold text-ink">{t('providerDashboard.appointmentsToday')}</p>
         {data.length === 0 ? (
-          <EmptyState title="Nothing scheduled today" description="Appointments booked with you for today will show up here." />
+          <EmptyState title={t('providerDashboard.emptyTitle')} description={t('providerDashboard.emptyDescription')} />
         ) : (
           <ul className="flex flex-col gap-2">
             {data.map((a) => (

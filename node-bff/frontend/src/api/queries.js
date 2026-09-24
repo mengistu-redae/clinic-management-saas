@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from './client.js';
+import { apiGet, apiPost, apiPostForm } from './client.js';
 
 // ---- auth ----
 
@@ -123,6 +123,15 @@ export function useLabOrderRequests(enabled) {
   return useQuery({
     queryKey: ['lab-order-requests'],
     queryFn: () => apiGet('/api/lab-orders/requests'),
+    enabled,
+  });
+}
+
+/** Clinic-admin dashboard analytics (frontend phase O) - see ClinicAnalyticsController. `days` defaults server-side to 30 when omitted. */
+export function useClinicAnalytics(enabled, days) {
+  return useQuery({
+    queryKey: ['clinic-analytics', days],
+    queryFn: () => apiGet(`/api/clinic/analytics${days ? `?days=${days}` : ''}`),
     enabled,
   });
 }
@@ -322,6 +331,25 @@ export function useCreateAppointmentPayment(id) {
   });
 }
 
+// ---- invoices (see AppointmentInvoiceController/LabOrderInvoiceController - phase 15/frontend phase M) ----
+
+export function useAppointmentInvoice(id) {
+  return useQuery({
+    queryKey: ['appointment-invoice', id],
+    queryFn: () => apiGet(`/api/appointments/${id}/invoice`),
+    enabled: Boolean(id),
+    retry: false,
+  });
+}
+
+export function useGenerateAppointmentInvoice(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/appointments/${id}/invoice`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['appointment-invoice', id] }),
+  });
+}
+
 // ---- clinic-admin config (providers/rooms/appointment-types/fee-policies/
 // working-hours/lab-rates/settings/branding - see ProviderController/
 // RoomController/AppointmentTypeController/FeePolicyController/
@@ -357,6 +385,27 @@ export function useUnlinkProviderLogin(id) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => apiPost(`/api/providers/${id}/unlink-login`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
+  });
+}
+
+/** Multipart upload (frontend phase K) - file is a raw File/Blob from an <input type="file">, wrapped in FormData under the "file" field ProviderController.uploadSignature expects. */
+export function useUploadProviderSignature(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return apiPostForm(`/api/providers/${id}/signature`, formData);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
+  });
+}
+
+export function useRemoveProviderSignature(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/providers/${id}/signature/remove`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
   });
 }
@@ -516,6 +565,91 @@ export function useDeleteLabRate(id) {
   });
 }
 
+// ---- patient chart: allergies/vitals/medical history/consent (phase
+// 8/9/10 backend, frontend phases H/I) - shared by
+// front-desk/AppointmentDetail.jsx and provider/Encounter.jsx via
+// components/PatientChart.jsx ----
+
+export function useAllergies(patientId) {
+  return useQuery({
+    queryKey: ['allergies', patientId],
+    queryFn: () => apiGet(`/api/patients/${patientId}/allergies`),
+    enabled: Boolean(patientId),
+  });
+}
+
+export function useCreateAllergy(patientId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/patients/${patientId}/allergies`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['allergies', patientId] }),
+  });
+}
+
+/** Partial update - reactionType/severity/status only, per AllergyController.updateAllergy. */
+export function useUpdateAllergy(patientId, id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/patients/${patientId}/allergies/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['allergies', patientId] }),
+  });
+}
+
+/** 404 (nothing recorded yet) is an expected, common state here, same reasoning as useEncounter - retry:false so it surfaces immediately instead of retrying a few times first. */
+export function useVitals(appointmentId) {
+  return useQuery({
+    queryKey: ['vitals', appointmentId],
+    queryFn: () => apiGet(`/api/appointments/${appointmentId}/vitals`),
+    enabled: Boolean(appointmentId),
+    retry: false,
+  });
+}
+
+/** Full-replace on every call, per UpsertVitalsRequest. */
+export function useUpsertVitals(appointmentId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/appointments/${appointmentId}/vitals`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vitals', appointmentId] }),
+  });
+}
+
+/** 404 (nothing recorded yet) is expected - same reasoning as useVitals/useEncounter. */
+export function useMedicalHistory(patientId) {
+  return useQuery({
+    queryKey: ['medical-history', patientId],
+    queryFn: () => apiGet(`/api/patients/${patientId}/medical-history`),
+    enabled: Boolean(patientId),
+    retry: false,
+  });
+}
+
+/** Full-replace on every call, per UpsertMedicalHistoryRequest - omitted fields clear rather than persist. */
+export function useUpsertMedicalHistory(patientId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/patients/${patientId}/medical-history`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['medical-history', patientId] }),
+  });
+}
+
+/** Accumulates - never a singleton, unlike allergies/vitals/medical history. See ConsentRecord's own javadoc: genuinely immutable, no update/delete anywhere. */
+export function useConsentRecords(patientId) {
+  return useQuery({
+    queryKey: ['consent-records', patientId],
+    queryFn: () => apiGet(`/api/patients/${patientId}/consent-records`),
+    enabled: Boolean(patientId),
+  });
+}
+
+export function useCreateConsentRecord(patientId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/patients/${patientId}/consent-records`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['consent-records', patientId] }),
+  });
+}
+
 // ---- provider clinical (encounter documentation + prescriptions - see
 // EncounterController) ----
 
@@ -547,6 +681,24 @@ export function useReplacePrescriptions(appointmentId) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (items) => apiPost(`/api/appointments/${appointmentId}/encounter/prescriptions`, items),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounter', appointmentId] }),
+  });
+}
+
+/** No body - a pure state transition, idempotent re-call (see EncounterService.sign). Locks the encounter/prescriptions once it succeeds - frontend phase J. */
+export function useSignEncounter(appointmentId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/appointments/${appointmentId}/encounter/sign`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounter', appointmentId] }),
+  });
+}
+
+/** Only reachable once the encounter is signed (see EncounterService.addAddendum) - frontend phase J. */
+export function useAddAddendum(appointmentId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/appointments/${appointmentId}/encounter/addenda`, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounter', appointmentId] }),
   });
 }
@@ -629,6 +781,23 @@ export function useCreateLabOrderPayment(id) {
   });
 }
 
+export function useLabOrderInvoice(id) {
+  return useQuery({
+    queryKey: ['lab-order-invoice', id],
+    queryFn: () => apiGet(`/api/lab-orders/${id}/invoice`),
+    enabled: Boolean(id),
+    retry: false,
+  });
+}
+
+export function useGenerateLabOrderInvoice(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/lab-orders/${id}/invoice`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lab-order-invoice', id] }),
+  });
+}
+
 // ---- patient lab requests (see PatientLabRequestController.createRequest - GET is useMyLabOrders above) ----
 
 export function useCreateLabRequest() {
@@ -646,6 +815,33 @@ export function useTrackLabOrder(ref, phone) {
     queryFn: () => apiGet(`/api/lab-orders/track/${encodeURIComponent(ref)}?phone=${encodeURIComponent(phone)}`),
     enabled: Boolean(ref && phone),
     retry: false,
+  });
+}
+
+// ---- referrals (staff - provider/clinic_admin; see ReferralController, frontend phase L) ----
+
+export function useReferrals(enabled) {
+  return useQuery({
+    queryKey: ['referrals'],
+    queryFn: () => apiGet('/api/referrals'),
+    enabled,
+  });
+}
+
+export function useCreateReferral() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/referrals', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['referrals'] }),
+  });
+}
+
+/** Partial update - status/priority/notes/clinicalSummary only, per UpdateReferralRequest. */
+export function useUpdateReferral(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/referrals/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['referrals'] }),
   });
 }
 

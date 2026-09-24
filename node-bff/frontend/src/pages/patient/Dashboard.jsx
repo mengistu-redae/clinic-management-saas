@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useMyAppointments, useMyLabOrders } from '../../api/queries.js';
 import StatCard from '../../components/StatCard.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
@@ -24,6 +25,7 @@ function ListPanel({ title, action, children }) {
 
 /** Patient landing page - see GET /api/my-appointments, GET /api/my-lab-orders. */
 export default function PatientDashboard() {
+  const { t } = useTranslation();
   const appointments = useMyAppointments(true);
   const labOrders = useMyLabOrders(true);
 
@@ -64,41 +66,49 @@ export default function PatientDashboard() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-ink">My Dashboard</h1>
+        <h1 className="text-2xl font-bold text-ink">{t('patientDashboard.title')}</h1>
         <div className="flex gap-2">
           <Link
             to="/book"
             className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark"
           >
-            Book an appointment
+            {t('nav.patient.bookAppointment')}
           </Link>
           <Link
             to="/my-lab-orders/request"
             className="rounded-lg border border-brand/40 px-4 py-2 text-sm font-medium text-brand hover:bg-brand-light/40"
           >
-            Request a lab test
+            {t('myLabOrders.requestTest')}
           </Link>
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <StatCard label="Active appointments" value={activeAppointments.length} hint={`${myAppointments.length} total`} />
-        <StatCard label="Open lab orders" value={openLabOrders.length} hint={`${myLabOrders.length} total`} />
+        <StatCard
+          label={t('patientDashboard.activeAppointments')}
+          value={activeAppointments.length}
+          hint={t('frontDeskDashboard.totalHint', { count: myAppointments.length })}
+        />
+        <StatCard
+          label={t('patientDashboard.openLabOrders')}
+          value={openLabOrders.length}
+          hint={t('frontDeskDashboard.totalHint', { count: myLabOrders.length })}
+        />
       </div>
 
       <div className="grid gap-8 lg:grid-cols-2">
         <ListPanel
-          title="My appointments"
+          title={t('patientDashboard.myAppointmentsPanel')}
           action={
             myAppointments.length > 0 && (
               <Link to="/my-appointments" className="text-xs font-medium text-brand hover:underline">
-                View all
+                {t('frontDeskDashboard.viewAll')}
               </Link>
             )
           }
         >
           {myAppointments.length === 0 ? (
-            <EmptyState title="No appointments yet" description="Appointments you book will show up here." />
+            <EmptyState title={t('frontDeskDashboard.emptyTitle')} description={t('patientDashboard.emptyAppointmentsDescription')} />
           ) : (
             <ul className="flex flex-col gap-2">
               {myAppointments.slice(0, 5).map((a) => (
@@ -120,17 +130,17 @@ export default function PatientDashboard() {
         </ListPanel>
 
         <ListPanel
-          title="My lab orders"
+          title={t('patientDashboard.myLabOrdersPanel')}
           action={
             myLabOrders.length > 0 && (
               <Link to="/my-lab-orders" className="text-xs font-medium text-brand hover:underline">
-                View all
+                {t('frontDeskDashboard.viewAll')}
               </Link>
             )
           }
         >
           {myLabOrders.length === 0 ? (
-            <EmptyState title="No lab orders yet" description="Lab orders and requests you've made will show up here." />
+            <EmptyState title={t('myLabOrders.emptyTitle')} description={t('patientDashboard.emptyLabOrdersDescription')} />
           ) : (
             <ul className="flex flex-col gap-2">
               {myLabOrders.slice(0, 5).map(({ order }) => (

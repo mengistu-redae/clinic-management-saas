@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useTrackLabOrder } from '../api/queries.js';
 import { ApiError } from '../api/client.js';
 import StatusPill from '../components/StatusPill.jsx';
@@ -17,6 +18,7 @@ const inputClass =
  * TrackAppointment.jsx, same two-factor ref+phone shape.
  */
 export default function TrackLabOrder() {
+  const { t } = useTranslation();
   const [ref, setRef] = useState('');
   const [phone, setPhone] = useState('');
   const [submitted, setSubmitted] = useState(null);
@@ -32,18 +34,16 @@ export default function TrackLabOrder() {
 
   return (
     <div className="mx-auto max-w-md">
-      <h1 className="mb-1 text-2xl font-bold text-ink">Track a lab order</h1>
-      <p className="mb-6 text-sm text-ink-muted">
-        Enter the order reference and the phone number on file with the clinic.
-      </p>
+      <h1 className="mb-1 text-2xl font-bold text-ink">{t('publicNav.trackLabOrder')}</h1>
+      <p className="mb-6 text-sm text-ink-muted">{t('trackLabOrder.subtitle')}</p>
 
       <form onSubmit={handleSubmit} className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Reference</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('trackLabOrder.reference')}</span>
           <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="e.g. A1B2C3" className={`${inputClass} font-mono uppercase`} />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Phone number</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('trackLabOrder.phoneNumber')}</span>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
         </label>
         <button
@@ -51,7 +51,7 @@ export default function TrackLabOrder() {
           disabled={!ref.trim() || !phone.trim()}
           className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Track
+          {t('trackLabOrder.track')}
         </button>
       </form>
 
@@ -59,12 +59,12 @@ export default function TrackLabOrder() {
 
       {notFound && (
         <div className="rounded-xl border border-danger/30 bg-danger-light px-4 py-3 text-sm text-danger">
-          No lab order found for that reference and phone number. Double-check both and try again.
+          {t('trackLabOrder.notFound')}
         </div>
       )}
       {trackQuery.isError && !notFound && (
         <div className="rounded-xl border border-danger/30 bg-danger-light px-4 py-3 text-sm text-danger">
-          {trackQuery.error?.message || 'Something went wrong.'}
+          {trackQuery.error?.message || t('common.somethingWrong')}
         </div>
       )}
 
@@ -75,11 +75,11 @@ export default function TrackLabOrder() {
             <StatusPill status={trackQuery.data.status} />
           </div>
           <dl className="grid grid-cols-2 gap-3 text-sm">
-            <div><dt className="text-ink-muted">Ordered</dt><dd className="text-ink">{formatDateTime(trackQuery.data.orderedAt)}</dd></div>
-            <div><dt className="text-ink-muted">Specimen collected</dt><dd className="text-ink">{formatDateTime(trackQuery.data.specimenCollectedAt)}</dd></div>
-            <div><dt className="text-ink-muted">Sent to lab</dt><dd className="text-ink">{formatDateTime(trackQuery.data.sentAt)}</dd></div>
-            <div><dt className="text-ink-muted">Resulted</dt><dd className="text-ink">{formatDateTime(trackQuery.data.resultedAt)}</dd></div>
-            <div><dt className="text-ink-muted">Reviewed</dt><dd className="text-ink">{formatDateTime(trackQuery.data.reviewedAt)}</dd></div>
+            <div><dt className="text-ink-muted">{t('trackLabOrder.ordered')}</dt><dd className="text-ink">{formatDateTime(trackQuery.data.orderedAt)}</dd></div>
+            <div><dt className="text-ink-muted">{t('trackLabOrder.specimenCollected')}</dt><dd className="text-ink">{formatDateTime(trackQuery.data.specimenCollectedAt)}</dd></div>
+            <div><dt className="text-ink-muted">{t('trackLabOrder.sentToLab')}</dt><dd className="text-ink">{formatDateTime(trackQuery.data.sentAt)}</dd></div>
+            <div><dt className="text-ink-muted">{t('trackLabOrder.resulted')}</dt><dd className="text-ink">{formatDateTime(trackQuery.data.resultedAt)}</dd></div>
+            <div><dt className="text-ink-muted">{t('trackLabOrder.reviewed')}</dt><dd className="text-ink">{formatDateTime(trackQuery.data.reviewedAt)}</dd></div>
           </dl>
         </div>
       )}

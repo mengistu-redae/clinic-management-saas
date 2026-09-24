@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   useLabOrders,
   useLabOrderRequests,
@@ -28,6 +29,7 @@ const emptyForm = { patientId: '', orderingProviderId: '', priority: 'routine', 
  * reference project's cargo/Waybills.jsx, this app's own fields.
  */
 export default function LabOrders() {
+  const { t } = useTranslation();
   const [statusFilter, setStatusFilter] = useState('');
   const { data: orders, isLoading, isError, error, refetch } = useLabOrders(true);
   const { data: requests } = useLabOrderRequests(true);
@@ -49,7 +51,7 @@ export default function LabOrders() {
     setFormError(null);
     const tests = lines.filter((l) => l.testCode.trim() && l.testName.trim());
     if (!form.patientId || !form.orderingProviderId || tests.length === 0) {
-      setFormError('Patient, ordering provider, and at least one complete test line are required.');
+      setFormError(t('labOrdersPage.errorFields'));
       return;
     }
     try {
@@ -70,7 +72,7 @@ export default function LabOrders() {
       setLines([emptyTestLine()]);
       setShowCreate(false);
     } catch (err) {
-      setFormError(err.message || 'Could not create this lab order - check every test code has a configured rate.');
+      setFormError(err.message || t('labOrdersPage.errorCreate'));
     }
   }
 
@@ -80,21 +82,21 @@ export default function LabOrders() {
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-ink">Lab Orders</h1>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status" className={`${inputClass} w-44`}>
-          <option value="">All statuses</option>
-          <option value="ordered">Ordered</option>
-          <option value="specimen_collected">Specimen collected</option>
-          <option value="in_transit">In transit</option>
-          <option value="resulted">Resulted</option>
-          <option value="reviewed">Reviewed</option>
-          <option value="cancelled">Cancelled</option>
+        <h1 className="text-2xl font-bold text-ink">{t('nav.provider.labOrders')}</h1>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={t('labOrdersPage.filterByStatus')} className={`${inputClass} w-44`}>
+          <option value="">{t('labOrdersPage.allStatuses')}</option>
+          <option value="ordered">{t('status.ordered')}</option>
+          <option value="specimen_collected">{t('status.specimen_collected')}</option>
+          <option value="in_transit">{t('status.in_transit')}</option>
+          <option value="resulted">{t('status.resulted')}</option>
+          <option value="reviewed">{t('status.reviewed')}</option>
+          <option value="cancelled">{t('status.cancelled')}</option>
         </select>
       </div>
 
       {requests && requests.length > 0 && (
         <div className="mb-6 rounded-xl border border-warning/40 bg-warning-light p-4">
-          <h2 className="mb-3 text-sm font-semibold text-ink">Pending patient requests ({requests.length})</h2>
+          <h2 className="mb-3 text-sm font-semibold text-ink">{t('labOrdersPage.pendingRequests', { count: requests.length })}</h2>
           <div className="flex flex-col gap-2">
             {[...requests].sort((a, b) => new Date(a.orderedAt) - new Date(b.orderedAt)).map((r) => (
               <Link
@@ -106,7 +108,7 @@ export default function LabOrders() {
                   <span className="font-mono text-xs text-ink-muted">{r.orderRef}</span>
                   <p className="text-sm font-semibold text-ink">{patientById[r.patientId] ? `${patientById[r.patientId].firstName} ${patientById[r.patientId].lastName}` : '…'}</p>
                 </div>
-                <span className="text-sm font-medium text-brand">Review &rsaquo;</span>
+                <span className="text-sm font-medium text-brand">{t('labOrdersPage.review')} &rsaquo;</span>
               </Link>
             ))}
           </div>
@@ -119,7 +121,7 @@ export default function LabOrders() {
           onClick={() => setShowCreate((v) => !v)}
           className="rounded-lg border border-brand/40 px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand-light/40"
         >
-          {showCreate ? 'Close' : '+ New lab order'}
+          {showCreate ? t('labOrdersPage.close') : t('labOrdersPage.newLabOrder')}
         </button>
       </div>
 
@@ -127,51 +129,51 @@ export default function LabOrders() {
         <>
           <form onSubmit={handleCreate} className="mb-4 rounded-xl border border-slate-200 bg-surface p-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <Field label="Patient">
+              <Field label={t('labOrdersPage.patient')}>
                 <select value={form.patientId} onChange={(e) => setForm({ ...form, patientId: e.target.value })} className={`${inputClass} w-full`}>
-                  <option value="">Select…</option>
+                  <option value="">{t('booking.select')}</option>
                   {(patients || []).map((p) => (
                     <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>
                   ))}
                 </select>
               </Field>
-              <Field label="Ordering provider">
+              <Field label={t('labOrdersPage.orderingProvider')}>
                 <select value={form.orderingProviderId} onChange={(e) => setForm({ ...form, orderingProviderId: e.target.value })} className={`${inputClass} w-full`}>
-                  <option value="">Select…</option>
+                  <option value="">{t('booking.select')}</option>
                   {(providers || []).map((p) => (
                     <option key={p.id} value={p.id}>{p.fullName}</option>
                   ))}
                 </select>
               </Field>
-              <Field label="Priority">
+              <Field label={t('labOrdersPage.priority')}>
                 <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className={`${inputClass} w-full`}>
-                  <option value="routine">Routine</option>
-                  <option value="urgent">Urgent</option>
-                  <option value="stat">Stat</option>
+                  <option value="routine">{t('labOrdersPage.routine')}</option>
+                  <option value="urgent">{t('labOrdersPage.urgent')}</option>
+                  <option value="stat">{t('labOrdersPage.stat')}</option>
                 </select>
               </Field>
             </div>
 
             <div className="mt-4">
-              <Field label="Notes (optional)">
+              <Field label={t('labOrdersPage.notesOptional')}>
                 <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className={`${inputClass} w-full max-w-md`} />
               </Field>
             </div>
 
             <div className="mt-4">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                Tests {labRates && labRates.length > 0 && <span className="font-normal normal-case text-ink-muted">- known codes: {labRates.map((r) => r.testCode).join(', ')}</span>}
+                {t('requestLabTest.tests')} {labRates && labRates.length > 0 && <span className="font-normal normal-case text-ink-muted">- {t('labOrdersPage.knownCodes', { codes: labRates.map((r) => r.testCode).join(', ') })}</span>}
               </span>
               <LabOrderTestsEditor lines={lines} onChange={setLines} labRates={labRates} />
             </div>
 
             <label className="mt-4 flex items-start gap-2 text-sm text-ink">
               <input type="checkbox" checked={form.consentAcknowledged} onChange={(e) => setForm({ ...form, consentAcknowledged: e.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
-              <span>Patient consent acknowledged (required only for restricted/sensitive test codes)</span>
+              <span>{t('labOrdersPage.consentLabel')}</span>
             </label>
 
             <button type="submit" disabled={createOrder.isPending} className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
-              {createOrder.isPending ? 'Creating…' : 'Create lab order'}
+              {createOrder.isPending ? t('labOrdersPage.creating') : t('labOrdersPage.createLabOrder')}
             </button>
           </form>
           {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
@@ -181,7 +183,7 @@ export default function LabOrders() {
       {isLoading && <Skeleton className="h-32 w-full" />}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {!isLoading && !isError && sortedOrders.length === 0 && (
-        <EmptyState title="No lab orders yet" description="Use “+ New lab order” above to create one - you'll need a lab rate configured for each test code." />
+        <EmptyState title={t('myLabOrders.emptyTitle')} description={t('labOrdersPage.emptyDescription')} />
       )}
 
       {!isLoading && !isError && sortedOrders.length > 0 && (

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useClinicsDirectory } from '../../api/queries.js';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
@@ -6,12 +7,13 @@ import EmptyState from '../../components/EmptyState.jsx';
 
 /** Step 1 of the booking flow - public, reachable logged-out. See ClinicController.clinics. */
 export default function ClinicPicker() {
+  const { t } = useTranslation();
   const { data, isLoading, isError, error, refetch } = useClinicsDirectory();
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="mb-1 text-2xl font-bold text-ink">Book an appointment</h1>
-      <p className="mb-6 text-sm text-ink-muted">Choose a clinic to get started.</p>
+      <h1 className="mb-1 text-2xl font-bold text-ink">{t('publicNav.bookAppointment')}</h1>
+      <p className="mb-6 text-sm text-ink-muted">{t('clinicPicker.subtitle')}</p>
 
       {isLoading && (
         <div className="flex flex-col gap-2">
@@ -21,7 +23,7 @@ export default function ClinicPicker() {
       )}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {data && data.length === 0 && (
-        <EmptyState title="No clinics available" description="Check back later." />
+        <EmptyState title={t('clinicPicker.noneTitle')} description={t('clinicPicker.noneDescription')} />
       )}
       {data && data.length > 0 && (
         <div className="flex flex-col gap-2">

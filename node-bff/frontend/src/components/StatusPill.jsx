@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 /**
  * Style map covers every status vocabulary this app has: the check-in state
  * machine (booked -> checked_in -> roomed -> with_provider -> checked_out,
@@ -28,10 +30,15 @@ const STYLES = {
 };
 
 export default function StatusPill({ status }) {
+  const { t } = useTranslation();
   const style = STYLES[status] || 'bg-slate-100 text-ink-muted';
+  // Falls back to the raw status value (English, underscore-split) for a
+  // status this app doesn't know about yet - same "never blank" fallback
+  // this component always had, just no longer the only path.
+  const label = t(`status.${status}`, { defaultValue: String(status).replace(/_/g, ' ') });
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${style}`}>
-      {String(status).replace(/_/g, ' ')}
+      {label}
     </span>
   );
 }

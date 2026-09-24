@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAvailability } from '../../api/queries.js';
 import Skeleton from '../Skeleton.jsx';
 import ErrorBanner from '../ErrorBanner.jsx';
@@ -13,6 +14,7 @@ import { formatDayLabel, formatTime } from '../../lib/format.js';
  * BookingForm reveals a confirm panel, Reschedule submits directly.
  */
 export default function SlotPicker({ clinicId, providerId, appointmentTypeId, selectedSlotId, onSelect }) {
+  const { t } = useTranslation();
   const { data, isLoading, isError, error, refetch } = useAvailability(clinicId, providerId, appointmentTypeId);
 
   const groups = useMemo(() => {
@@ -36,7 +38,7 @@ export default function SlotPicker({ clinicId, providerId, appointmentTypeId, se
     return <ErrorBanner message={error?.message} onRetry={refetch} />;
   }
   if (groups.length === 0) {
-    return <EmptyState title="No open slots" description="Nothing available in the next two weeks - try a different provider." />;
+    return <EmptyState title={t('slotPicker.noSlotsTitle')} description={t('slotPicker.noSlotsDescription')} />;
   }
 
   return (

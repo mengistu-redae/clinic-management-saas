@@ -520,6 +520,38 @@ when that phase is built.
     cover lab orders too, staff-triggered generation, real tax-rate wiring.
     See "Phase 15" below.
 
+**Deferred phase plan (sketched 2026-09-21, not yet built)** - the user
+asked for these three "Known gaps" items to be planned ahead of time, with
+the key design forks pinned via direct questions rather than left as
+assumptions. None of the three has any code written yet - see "Phase 16"/
+"Phase 17"/"Phase 18" below for the full write-up of what's pinned and
+what's still genuinely open.
+
+16. **Real payment gateway + refund flow + invoice PDF + payment-invoice
+    linking** - a pluggable `PaymentGatewayClient` (mock-only for now,
+    real vendor deferred), full+partial refunds. See "Phase 16" below.
+17. **Real email + SMS delivery** - `NotificationSender`'s existing
+    interface gets two real implementations (SendGrid email, Twilio SMS).
+    See "Phase 17" below.
+18. **Per-clinic timezone** - a `ClinicSettings.timezone` override,
+    consumed by slot generation and day-boundary math; existing slots are
+    left untouched. See "Phase 18" below.
+
+**Frontend phase N** - viewer-level language (English+Amharic)/
+timezone-display/theme (light/dark/system) preferences, localStorage-only,
+no backend changes except a phase-18 timezone-exposure reconciliation.
+**Theme built 2026-09-22. Language (i18n + English + Amharic, full
+per-page content sweep across all 32 relevant files) built 2026-09-22.**
+**Timezone-display still sketched, not built.**
+See "Frontend phase N" under "## Frontend" below.
+
+19. **Clinic-admin analytics dashboard** (built 2026-09-24) - a genuinely
+    new backend aggregation endpoint (`GET /api/clinic/analytics`) plus
+    real charts (Recharts) on the clinic-admin dashboard. Built out of
+    numeric order, ahead of the still-sketched phases 16-18, at the user's
+    request. See "Phase 19" below and "Frontend phase O" under
+    "## Frontend" below.
+
 Lower priority / only if the product genuinely wants full-EHR breadth:
 immunizations, structured physical-exam findings, discharge summaries -
 these fit an inpatient/full-EHR shape more than this app's outpatient-
@@ -1268,10 +1300,10 @@ New migration `V11__encounter_sign_and_lock.sql`.
   addendum confirmed both via the API and in Postgres, and the *existing*
   `provider/Encounter.jsx` page - not just raw API calls - confirmed to
   surface the real 409 message rather than fail silently).
-- **A real, honestly-documented UX gap**: `provider/Encounter.jsx`
-  (frontend phase E) has no dedicated "locked"/"signed" UI, no sign
-  button, and no addendum form - a real frontend refinement, not scoped
-  to this backend-only phase.
+- **UX gap noted here, closed later the same session by Frontend phase J**
+  (below) - at the time this backend phase was built, `provider/
+  Encounter.jsx` (frontend phase E) had no dedicated "locked"/"signed" UI,
+  no sign button, and no addendum form.
 
 ## Phase 13: provider profile hardening
 
@@ -1292,26 +1324,20 @@ only), `GET .../signature` (raw bytes, same 3-role gate as the resource),
 `ProviderControllerIntegrationTest` gained 7 cases - `Failures: 0`, 12/12.
 
 **A real, previously-latent bug found and fixed**: the first live upload
-through the browser 500'd, "Current request is not a multipart request."
-`node-bff`'s `forwardToApi` always JSON-re-serialized `req.body`, but
-`express.json()` never populates `req.body` for a multipart request - the
-file bytes were silently discarded before reaching spring-boot-api. Fixed
-by streaming the raw request through for a multipart content-type instead
-(`body: req, duplex: 'half'`), preserving the original boundary. Detection
-is now `isMultipartRequest` (exported, unit-tested, 3 new cases,
-mirroring `shouldForwardBody`'s convention) - latent since node-bff's
-proxy layer was first built, never exercised until this phase's own
-upload.
+500'd, "Current request is not a multipart request" - `node-bff`'s
+`forwardToApi` always JSON-re-serialized `req.body`, but `express.json()`
+never populates it for a multipart request, silently dropping the file
+bytes before spring-boot-api. Fixed by streaming the raw request through
+for a multipart content-type instead (`isMultipartRequest`, exported,
+unit-tested) - latent since the proxy layer was first built, never
+exercised until this phase's own upload.
 
-**Live-verified against the real running stack** - see CLAUDE-history.md's
-"Verified this session - phase 13" (a real PNG through the actual
-browser->node-bff->spring-boot-api path, byte-for-byte round trip, and
-the file's real presence/absence confirmed directly on the mounted Docker
-volume via `docker exec`, not just the API's own claim).
+**Live-verified** - see CLAUDE-history.md's "phase 13" entry (a real PNG
+through the actual browser path, byte-for-byte, confirmed on the mounted
+volume via `docker exec`).
 
-No frontend UI for any of this yet (license/employment fields, signature
-upload/preview) - same "backend first" scope boundary as every EHR-leaning
-phase before it.
+Frontend UI for this (license/employment fields, signature upload
+/preview) followed later - see "Frontend phase K" below.
 
 ## Phase 14: referrals
 
@@ -1368,6 +1394,278 @@ code (owner scope, generation trigger, `taxRatePercent` wiring) - see
 
 No frontend UI yet - same "backend first" scope boundary as every
 EHR-leaning phase before it.
+
+## Phase 19: clinic-admin analytics dashboard
+
+Built 2026-09-24 at the user's direct request ("modify the dashboard to
+have analytical graphs and stat cards"), out of numeric order - phases
+16-18 are still only sketched. Two questions were put to the user before
+building anything: which dashboard(s) (answered clinic-admin only) and
+whether to derive charts from data already being fetched or build real
+backend aggregation (answered: real aggregation, for genuine historical
+trends) - both matching this project's own "ask before building" pattern.
+
+- **`com.clinicops.analytics`** (new package) - a single bundled
+  `GET /api/clinic/analytics?days=` endpoint (`ClinicAnalyticsController`,
+  `clinic_admin`-only, `days` defaults to 30 and is clamped to [1,180]),
+  returning `ClinicAnalyticsSummary { appointmentVolume, revenue,
+  statusBreakdown, appointmentsByProvider }` - the same "wrapper record for
+  one always-together response" shape as `AppointmentSeriesResult`/
+  `EncounterWithPrescriptions`, not four separate endpoints. No new
+  migration - this is pure read aggregation over `appointments`/`payments`,
+  which already had everything needed. No dedicated service bean either -
+  the controller composes two repositories directly, the same "controller
+  calls repositories directly" precedent phase 5's CRUD already set, since
+  there's no cross-cutting business logic here, just composition.
+  - **`appointmentVolume`/`revenue`** - daily buckets (native
+    `GROUP BY CAST(... AS date)` queries) since `since` (`Instant.now()
+    - days`), UTC day boundaries - same convention as every other day-math
+    in this app (`SlotGenerator`, `AvailabilityController`,
+    `my-schedule`), since there's still no per-clinic timezone (phase 18).
+    Volume is keyed off `bookedAt` (a booking-activity trend), deliberately
+    not the slot's own start time - answers "how much is this clinic
+    growing," not "how full is the calendar," and needs no join to slots.
+    Revenue sums `payments.amount` (covers both appointment and lab-order
+    payments alike, `fee_auto_charged` rows included - same table, same
+    "whatever's in here got collected" reading every other consumer of
+    `Payment` already uses).
+  - **`statusBreakdown`** - a current snapshot (not time-windowed): every
+    appointment this tenant has, grouped by its live status.
+  - **`appointmentsByProvider`** - volume per provider since `since`; the
+    frontend resolves `providerId` to a name from its own already-fetched
+    provider list rather than the backend joining/returning names.
+- **Frontend: real charts (Recharts), not client-computed ones** - matches
+  what was asked for. Before writing any chart code, the dataviz skill's
+  procedure was followed in full, including actually running its
+  `validate_palette.js` against candidate colors rather than eyeballing
+  them (see `components/analytics/chartPalette.js`'s own comment for the
+  specific numbers). Two real findings from that step shaped the design:
+  - This app's own live theme tokens turned out to be the *wrong* source
+    for chart colors, not just an unvalidated one - `--brand` unchanged in
+    dark mode reads under 3:1 against a dark chart surface (it's tuned for
+    button/badge backgrounds, a different contrast job), and the light
+    -theme `--success`/`--danger` pair fails CVD separation outright (ΔE
+    5.0, red/green, below even the 6-8 "legal only with secondary
+    encoding" floor). So charts use their own small separately-validated
+    palette (one primary hue per theme, a shared teal, and a primary
+    +danger pair for the one chart that puts two colors on screen at
+    once) instead of reading `--brand`/`--danger` live - deliberately
+    NOT tied to a clinic's own custom branding color either, since a
+    per-tenant hex can't be re-validated at runtime.
+  - The status-breakdown panel was originally sketched as one hue per
+    status (7 colors) until the validator ruled out the natural
+    green-for-"completed" choice; it shipped instead as a genuine
+    status-outcome encoding - primary for every in-progress/completed
+    status, danger for the two "lost" ones (`no_show`/`cancelled`) - which
+    reads as more informative than arbitrary categorical color anyway, not
+    just a workaround.
+  - `AppointmentVolumeChart`/`RevenueChart` (single-hue area charts),
+    `StatusBreakdownChart` (horizontal bar, two-color status-outcome
+    coding, a legend since 2+ colors are on screen, direct value labels at
+    each bar tip), `ProviderUtilizationChart` (single-hue bar, capped to
+    the busiest 8 providers) - all built to the skill's mark specs (2px
+    lines, ~10% area-fill opacity, rounded bar ends, recessive
+    hairline gridlines, a 2px surface-color ring on active dots) and its
+    labeling rule (label the tip/endpoint, never every point - the
+    30/90-day trend charts thin their x-axis ticks instead of rendering
+    one per day). `ChartTooltip.jsx`/`ChartCard.jsx` are shared across all
+    four rather than each chart styling its own.
+  - Every chart is fully translated (chart titles/subtitles, legend text,
+    status-axis labels, the day-range toggle) through the same `t('...')`
+    pattern the rest of the app's language sweep uses -
+    `clinicAnalytics.*` in `locales/en.json`/`am.json`. Day-axis labels go
+    through `lib/format.js`'s `formatDayLabel`, which - not incidentally -
+    is the exact function the "fix the two translation bugs" pass just
+    before this phase made locale-aware; this phase is the first thing
+    that visibly exercises that fix in a chart context.
+  - A new day-range toggle (7/30/90 days, same plain segmented-control
+    shape as `ThemeToggle`/`LanguageToggle`) re-queries the analytics
+    endpoint; a new "Revenue ({{days}}d)" stat card sits alongside the
+    existing five (all unchanged) rather than replacing anything.
+  - New dependency: `recharts@2`. Adds real weight to the bundle (roughly
+    doubles it, ~500KB to ~910KB minified) - not addressed here
+    (code-splitting would be the natural fix, a separate concern from
+    this phase's own scope).
+- **Live-verified against the real running stack** - real `demo-clinic
+  -admin` login; all four charts and the new stat card confirmed rendering
+  correct data in both Light and Dark themes (the validated dark-mode
+  palette swaps in correctly - lighter blue/red, not the raw light-mode
+  hexes) and in both English and Amharic (including the status-axis
+  category labels and the interpolated "Revenue (30 days)" /
+  "N appointments booked" strings); the 7/30/90-day toggle confirmed
+  actually re-fetching and changing every panel's numbers, not just
+  relabeling stale data.
+- **No `TenantIsolationIntegrationTest` addition** - `/api/clinic/analytics`
+  resolves entirely from the caller's own token (`TenantContext.require()`),
+  same "no cross-tenant vector to test" reasoning that already excluded
+  `ClinicSettings`/branding/`my-schedule` from that suite.
+- **Not done this phase**: front_desk/provider/platform_admin/patient
+  dashboards keep their existing plain-stat-card shape - the user
+  explicitly scoped this to clinic-admin only. `npm test` (24/24)
+  confirmed unaffected.
+
+## Phase 16: real payment gateway + refund flow + invoice PDF (sketched, not yet built)
+
+Sketched 2026-09-21 at the user's request, ahead of any code - three
+questions were put to the user before pinning anything (gateway scope,
+refund granularity), matching this project's usual "ask before building"
+convention even for a plan that isn't being implemented yet.
+
+- **Pluggable gateway, mock-only for now** (asked directly, answered) - new
+  `com.clinicops.paymentgateway` package, a `PaymentGatewayClient`
+  interface (`charge(...)`/`refund(...)`) mirroring `NotificationSender`'s
+  own "interface + swap the bean later" shape. Ships with exactly one
+  implementation, `MockPaymentGatewayClient` (always succeeds, fabricates a
+  gateway transaction id) - no real vendor (Stripe or otherwise) integrated
+  yet, no third-party account needed to build or test this phase. Wiring a
+  real vendor is its own later decision once real credentials exist,
+  swapped in the same way `LoggingEmailSender` is `NotificationSender`'s
+  only bean today.
+  - **A shape decision to make before writing code, not after**: a real
+    gateway is normally asynchronous (charge, then a webhook confirms it
+    later), while a mock can safely respond synchronously. Design
+    `PaymentGatewayClient`/the service layer around the asynchronous shape
+    (a payment starts in a pending gateway state, moves to
+    succeeded/failed via a confirmation step) even though the mock
+    fast-paths straight to success - so swapping in a real vendor later is
+    a new implementation, not a redesign.
+- **Full and partial refunds** (asked directly, answered "full and
+  partial") - a `refunds` table (new, mirrors `appointment_cancellations`'
+  own append-only audit-row shape - no update/delete): `payment_id` FK,
+  `amount`, optional `reason`, `gateway_refund_transaction_id`,
+  `refunded_by`, `created_at`. Cumulative refunded-so-far per payment must
+  never exceed that payment's own `amount` - enforced in a new
+  `RefundService` (a running-sum check, not expressible as a plain DB
+  CHECK), same "compute in code, not raw SQL" precedent
+  `FeeCalculator`/`InvoiceService` already set.
+- **`payments` gains two things**: `invoice_id` (nullable FK to
+  `invoices`) - closes the "no link from a payment back to the invoice
+  it's paying down" gap; only meaningful for a genuine staff-entered
+  payment (the `fee_auto_charged` auto-created rows have no invoice to
+  link at the point they're created) - and `gateway_transaction_id`/
+  `gateway_status` (allow-listed: pending/succeeded/failed/refunded/
+  partially_refunded). Every payment recorded before this phase stays
+  `invoice_id = null` - already the correct meaning ("not tied to a
+  specific invoice"), no backfill needed.
+- **New endpoints**: `POST /api/payments/{id}/refund` (amount, optional
+  reason - `front_desk`+`clinic_admin`, same gate as recording a payment;
+  no idempotency key needed the way booking has one, since a refund is
+  always a distinct, deliberate action, never an accidental double-submit
+  risk), `GET /api/payments/{id}/refunds` (same 3-role read gate as
+  payments); `CreatePaymentRequest` gains an optional `invoiceId`.
+  `PaymentGatewayException` maps to 502, same "genuinely upstream, not a
+  client error" reasoning `KeycloakAdminException` already established.
+- **Invoice PDF, generated on demand, never persisted** - `GET
+  /api/appointments/{id}/invoice/pdf` / `GET /api/lab-orders/{id}/invoice
+  /pdf` render straight from the already-issued (immutable)
+  `Invoice` row plus clinic branding for a letterhead - nothing to gain
+  from storing bytes for something regenerable at zero cost from data
+  that can't change, and it avoids adding a second consumer of the
+  phase-13 uploads volume for an unrelated purpose. A genuinely new
+  library dependency is needed for this (OpenPDF, LGPL, suggested here but
+  not pinned - worth confirming there isn't a preferred alternative before
+  building starts).
+- **Frontend** (a later "Frontend phase N" once this is built, not
+  scoped now): `InvoicePanel.jsx` gains a same-origin `<a href=".../pdf">`
+  download link (session-cookie-authenticated, no new download-handling
+  code needed); the front-desk/lab-order Payments panels gain a "Refund"
+  action per row and a running refunded-amount indicator.
+
+## Phase 17: real email + SMS delivery (sketched, not yet built)
+
+Sketched 2026-09-21. `com.clinicops.notification.NotificationSender` is
+already an interface (`send(Notification)`) with exactly one
+implementation, `LoggingEmailSender` - this phase fills that existing seam,
+it doesn't need to create one.
+
+- **Email via SendGrid, SMS via Twilio** - a single-vendor pairing
+  (Twilio owns SendGrid) so one account/API-key setup covers both
+  channels, rather than mixing a raw-SMTP email sender with Twilio's own
+  API client for SMS. **This specific email-transport choice was a call
+  made in this planning session, not put to the user directly - flagged
+  as revisitable** if plain SMTP (no SendGrid account needed, works
+  against Gmail/Mailgun/a local Mailhog for dev) is preferred instead.
+- **The real work here is recipient plumbing, not just two new HTTP
+  clients**: `Notification.channel` already exists (defaults `"email"`)
+  but nothing today ever sets it to `"sms"`, and every existing call site
+  (`AppointmentWriter`, `CancellationService`, `RescheduleService`,
+  `LabOrderStatusService`) resolves only an email recipient
+  (`command.recipientEmail()` etc.) even though `patients.phone`/
+  `contactPhone` already exist on the domain. Each call site needs to
+  decide - and likely write one `Notification` row per available channel,
+  not one row with a single "best" recipient - whether to notify by
+  email, SMS, or both.
+- **`NotificationWorker` needs to route by channel** - a
+  `Map<String, NotificationSender>` keyed by `"email"`/`"sms"` (or an
+  equivalent small dispatcher) instead of assuming a single sender for
+  everything, since it will now hold two real beans instead of one stub.
+- **Real message templates** - `Notification.payload` has stayed a
+  placeholder `"{}"` since phase 1; this is the natural point to also
+  write real content (booking confirmation, cancellation, reschedule,
+  lab-order status change) rather than shipping real delivery of an empty
+  payload.
+- **Hard external dependency**: this phase needs real SendGrid and Twilio
+  accounts/API keys/a from-number before it can be built and tested at
+  all - the one item of these three that can't be scoped further without
+  that.
+- New config: `clinicops.notification.sendgrid.api-key`,
+  `clinicops.notification.twilio.*` (account sid, auth token, from
+  number). `NotificationWorkerTest` (existing, pure Mockito) extends with
+  per-channel dispatch cases; new `SendGridEmailSenderTest`/
+  `TwilioSmsSenderTest`, both mocking the vendor SDK client so the test
+  suite makes no real network call.
+
+## Phase 18: per-clinic timezone (sketched, not yet built)
+
+Sketched 2026-09-21, closing the "No per-clinic timezone" known gap.
+`SlotGenerator` and every day-boundary calculation
+(`SlotGenerationService`, `AvailabilityController`,
+`AppointmentController.mySchedule`) currently hardcode `ZoneOffset.UTC` -
+confirmed by grep before writing this plan, five call sites in total.
+
+- **A new nullable `timezone` column on `clinic_settings`** (the
+  *settings* column group, alongside tax rate/fees/notice-hours - not
+  branding), a valid IANA zone id (e.g. `"Africa/Addis_Ababa"`), validated
+  against `ZoneId.getAvailableZoneIds()` server-side - same
+  "backend-defined bounded set validated in code" convention as
+  `Allergy.severity`/`Prescription.route`. `ClinicSettingsService.resolve`
+  gains a platform-default `ZoneId` (`clinicops.clinic.default-timezone`,
+  presumably `UTC`) alongside its existing tax/fee/notice-hour defaults -
+  same coalesce-the-override shape already used for everything else there.
+- **Existing slots are left untouched - asked directly, answered.** Only
+  new slot generation reads the resolved zone; a slot already in the
+  table (booked or not) keeps whatever UTC-interpreted time it was
+  originally generated with. No migration/backfill of `slots.start_time`/
+  `end_time` - deliberately simpler and safer than trying to shift
+  already-referenced rows.
+- **One shared lookup, not five independent ones** -
+  `SlotGenerator.generateForDay` takes a `ZoneId` parameter instead of a
+  hardcoded `ZoneOffset.UTC` for its window-boundary math; `AvailabilityController`
+  and `AppointmentController.mySchedule`'s own "today" boundary math
+  (`LocalDate.now(...)`, `atStartOfDay(...)`) need the *same* resolved
+  zone for a given tenant. A single `ClinicSettingsService.resolveTimezone
+  (tenantId)` (or equivalent) is the right seam, rather than each call
+  site separately re-querying settings - all five call sites already have
+  a tenant id/clinic id in hand, so nothing needs a *new* way to find
+  which clinic's zone applies.
+- **`Slot`/`Appointment` need no migration at all** - both already store
+  a plain `Instant` (a UTC instant by construction, timezone-agnostic);
+  only the *generation* and *day-boundary* math need a zone, never the
+  storage itself.
+- **A genuinely open question, not resolved by this sketch**: once a
+  clinic sets a non-UTC zone, should the *frontend* display appointment
+  times in the clinic's timezone, or keep rendering in the viewing
+  browser's own local timezone (today's incidental behavior, via
+  `formatDateTime`)? A receptionist and a patient likely both care what
+  time it is *at the clinic*, not in their own browser - but this needs an
+  explicit decision before frontend work starts on this phase, not an
+  assumption carried over from today's UTC-only behavior (which only
+  looks "right" today because generation and casual local testing both
+  happen to be UTC-adjacent).
+- `SlotGeneratorTest` (existing, pure unit) would need a non-UTC-zone case
+  per existing scenario - especially a zone where local-midnight isn't
+  UTC-midnight, the case most likely to surface an off-by-one in "today"'s
+  slot generation.
 
 ## Frontend
 
@@ -1640,28 +1938,14 @@ drives already existed and was already live-verified server-side in phase
 5 - but one real, pre-existing backend bug surfaced immediately on first
 live use and did need a genuine fix (below), not just a frontend workaround.
 
-- **A real bug found and fixed live**: a `ResponseStatusException` thrown
-  directly with no dedicated `@ExceptionHandler` (the overlap/duplicate
-  /bad-status checks sprinkled across most phase-5 controllers -
-  `ProviderWorkingHoursController`'s overlap check was the one that
-  actually got hit first) falls through to Spring Boot's own default
+- **A real bug found and fixed live**: a `ResponseStatusException` with no
+  dedicated `@ExceptionHandler` falls through to Spring Boot's default
   `/error` JSON body, which - without `server.error.include-message:
-  always` - omits the exception's own reason text entirely. The frontend's
-  `err.message` then showed the generic `{timestamp,status,error,path}`
-  JSON blob instead of "This window overlaps an existing one for this
-  provider and day". This was a latent bug since phase 5 (every controller
-  -local `@ExceptionHandler` returns a bare String and always worked -
-  `client.js`'s own doc comment claimed *every* error body was plain text on
-  that basis) - simply never exercised by a validation error actually
-  reaching a `catch` block in a live session until this phase's working
-  -hours overlap test. Fixed two ways together: `server.error.include
-  -message: always` in `application.yml` (spring-boot-api) so the JSON body
-  actually carries the message now, and `api/client.js`'s `parseErrorBody`
-  (node-bff/frontend) to unwrap `{message: "..."}` JSON into just that
-  string rather than assuming every error body is plain text - handles both
-  shapes correctly now, not just the ResponseStatusException one. Confirmed
-  live: the overlap 409 now shows "This window overlaps an existing one for
-  this provider and day" instead of raw JSON.
+  always` - omits the reason text, so the frontend showed a raw JSON blob
+  instead of the real message. Latent since phase 5, never exercised
+  until this phase's overlap test. Fixed both sides: `server.error.
+  include-message: always`, and `api/client.js`'s `parseErrorBody` to
+  unwrap `{message: "..."}` JSON too, not just assume plain text.
 - **`pages/clinic-admin/Providers.jsx`** - create form + inline edit (`full
   Name`/`specialty`/`roomId`/`status`) per `ProviderController`, all
   statuses shown (not active-only, unlike the booking-flow directories) -
@@ -1878,6 +2162,340 @@ soft-deactivates with no way back through the UI.
   discoverable from the dashboard" treatment every prior phase's own
   dashboard tweak used.
 
+**Frontend phases H/I** (built 2026-09-21) - first UI for the revised
+EHR-leaning backend phases 8-15, backend-only until now. One shared
+`components/PatientChart.jsx` (allergies + vitals + medical history +
+consent) mounts on both `front-desk/AppointmentDetail.jsx` and
+`provider/Encounter.jsx` - same "share the existing page" pattern as the
+clinic_admin encounter-access fix. Zero backend changes.
+
+- Visible to any staff role reaching either page; only allergies and
+  consent restrict writing to `front_desk`/`clinic_admin`; vitals/medical
+  history are writable by all three. Collapsible, open by default.
+- Allergies: list + add form + a per-row resolve/reactivate toggle, same
+  shape as `Rooms.jsx`'s own deactivate/reactivate button.
+- Vitals/history: full-replace forms, lazy-initialized from the server
+  (same as `provider/Encounter.jsx`'s note form); a 404 renders a blank
+  form. Vitals' BMI is read-only/derived.
+- Consent (phase I): list + add form, no edit (matches
+  `ConsentController`'s no-update/delete design); a checkbox records a
+  decline.
+- `appointmentId` is optional - a guest booking still gets vitals, no
+  allergies/history/consent (patient-scoped).
+- **Live-verified** - see CLAUDE-history.md's "phase H"/"phase I" entries
+  (real `demo-front-desk`/`demo-provider` logins; an allergy added and
+  resolved/reactivated; vitals saved with BMI computed correctly; a
+  consent decline accumulating alongside two existing rows; role-gating
+  held for every section).
+
+**Frontend phase J** (2026-09-21) upgrades `provider/Encounter.jsx`
+itself for phases 11/12 (no new page): an ICD-10 codes field, route/
+frequency/duration/quantity/refills/status per prescription line
+(allow-listed to match `EncounterService`'s constants), a "Sign
+encounter" button, and - once signed - every input disables in place
+(no separate read-only view) with an Addenda list + add form appearing.
+
+- **Live-verified** - see CLAUDE-history.md's "phase J" entry (real
+  `demo-provider`: ICD-10/prescription fields saved and confirmed in
+  Postgres; signing flipped the UI to locked instantly with no reload; an
+  addendum added and persisted; the lock held across a page refetch).
+
+**Frontend phase K** (2026-09-21) extends `clinic-admin/Providers.jsx`
+for phase 13: license number/expiry + employment status on the create
+/edit forms, plus a per-row "Signature" panel - this app's first
+file-upload UI. New `apiPostForm` sends a raw `FormData` body with no
+manual `Content-Type` (`apiFetch` gained a `FormData` check to stop
+forcing a JSON header on it). The preview `<img>` points straight at
+`GET /api/providers/{id}/signature`, same-origin with the session
+cookie.
+
+- **Live-verified** - see CLAUDE-history.md's "phase K" entry (a real PNG
+  uploaded live as `demo-clinic-admin`, confirmed byte-for-byte on the
+  mounted volume and in Postgres; removed, genuinely deleted from disk).
+
+**Frontend phase L** (2026-09-21) is a new `pages/referrals/Referrals.jsx`
+for phase 14 - shared `/referrals` route, same reasoning as `/lab-orders`.
+One page: a create form (patient/referring-provider pickers, internal
+/external radio swapping receiving-provider vs. external fields) plus a
+list with an inline expand-to-update row (status/priority/notes) - no
+separate detail route, since referrals have one partial-update endpoint,
+not a status machine like lab orders.
+
+- **Live-verified** - see CLAUDE-history.md's "phase L" entry (a real
+  referral created live, its status/notes updated inline and confirmed
+  in Postgres).
+
+**Frontend phase M** (2026-09-21) closes the last "Known gaps" item -
+billing (phase 15) was backend-only until now. A new shared
+`components/InvoicePanel.jsx` (same "share one component across both
+owner-type pages" pattern as `PatientChart.jsx` from phases H/I) mounts on
+both `front-desk/AppointmentDetail.jsx` and `lab-orders/LabOrderDetail.jsx`
+- one invoice per owner, no list, no edit form once generated, matching
+`AppointmentInvoiceController`/`LabOrderInvoiceController`'s own
+generate-once/immutable design exactly. A 404 on the GET means "not
+generated yet" (mirrors `provider/Encounter.jsx`'s own `useEncounter` 404
+handling), rendered as a "No invoice generated yet." empty state with a
+"Generate invoice" button instead of an error. Zero backend changes - both
+controllers have covered this exact shape since phase 15.
+
+- `api/queries.js` gained `useAppointmentInvoice`/`useGenerateAppointmentInvoice`
+  and `useLabOrderInvoice`/`useGenerateLabOrderInvoice`, same
+  query-plus-mutation-that-invalidates-it shape as the existing payment
+  hooks right above each.
+- On `AppointmentDetail.jsx` the panel is hidden once `cancelled` (same
+  gate the Payments panel above it already uses); on `LabOrderDetail.jsx`
+  it's hidden for `requested`/`cancelled` (same gate as that page's own
+  Payments panel).
+- **Live-verified** - a real `demo-front-desk` login generated an invoice
+  for a `checked_in` appointment with no invoice yet (`POST
+  .../invoice` 200, confirmed as a genuine new row in Postgres - subtotal
+  50.00/tax 0.00/total 50.00 - not just a UI-only optimistic update); a
+  pre-existing appointment invoice (35.00) and a pre-existing lab-order
+  invoice with a real tax override (55.00 subtotal / 4.54 tax / 59.54
+  total, confirmed as `demo-provider` on `/lab-orders/:id`) both rendered
+  correctly read-only with no "Generate" button shown.
+
+**Frontend phase N: UI language, timezone display, and theme preferences**
+- **Theme built 2026-09-22. Language (i18n + English + Amharic, including
+  the full per-page content sweep) built 2026-09-22. Timezone display
+  still sketched, not built.** A viewer-level
+  preferences layer that didn't exist in any form before this: no i18n
+  library, no dark-mode variant strategy
+  (`tailwind.config.js` had no `darkMode` key at all), and
+  `lib/format.js`'s formatters all pass `undefined` as the locale/zone
+  (deferring silently to the browser's own settings) - confirmed by
+  reading the current config/formatters before writing the original plan,
+  not assumed. Four questions were put to the user before pinning anything
+  (storage location, language scope, theme options, timezone-picker
+  options).
+
+- **Storage: `localStorage` only, no backend changes** (asked directly,
+  answered) - per-browser/device, resets in a new browser or incognito
+  window; explicitly *not* the per-account/server-persisted alternative
+  that was offered. `theme/ThemeProvider.jsx` (built) reads/writes it and
+  wraps the **entire** app in `main.jsx`, outside `BrandingProvider` -
+  unlike branding (deliberately staff-only), theme should apply to
+  logged-out public pages too (booking, tracking), so this provider sits
+  above the authentication boundary, not inside it. Language/timezone
+  will follow the same provider shape once built.
+- **Theme: Light / Dark / System - built** (asked directly, answered).
+  `tailwind.config.js` gained `darkMode: 'class'`; `ThemeProvider` toggles
+  a `.dark` class on `document.documentElement` (never relying on
+  Tailwind's own `'media'` strategy, since an explicit Light/Dark choice
+  has to be able to override the OS). For `"system"` (the default), a
+  live `window.matchMedia('(prefers-color-scheme: dark)')` listener (not
+  a one-time read) keeps the UI in sync if the OS theme changes
+  mid-session. `components/ThemeToggle.jsx` (a plain three-button
+  segmented control, matching this app's existing icon-free UI) is wired
+  into both `AppShell.jsx` (staff) and `PublicShell.jsx` (public) headers.
+  - **The sweep this was originally scoped to need never happened** - the
+    original plan assumed every page's hardcoded `border-slate-200`/
+    `bg-slate-50`/etc. utilities (228 occurrences across 43 files,
+    confirmed by grep before starting) would need replacing with semantic
+    tokens first. Instead, `tailwind.config.js` redefines Tailwind's own
+    `slate.50/100/200/300` (the only four shades this app actually uses,
+    confirmed by grep) as CSS variables, alongside converting
+    `surface`/`ink`/`ink-muted`/`success`/`danger`/`warning` to the same
+    `rgb(var(--x) / <alpha-value>)` pattern `brand`/`accent` already used
+    (phase 5). Every existing `bg-slate-50`, `text-ink`, `bg-danger-light`,
+    etc. across all 43 files now resolves through a variable that
+    `index.css`'s new `:root.dark` block redefines - zero page/component
+    edits. `white`/`black` were deliberately left un-themed (their only
+    uses are logo/signature image-preview backdrops and white text on a
+    solid-colored button, both meant to stay literal in either theme).
+  - **A signed-in clinic's own custom brand color needed a theme-aware
+    fix, not just a static CSS one**: `lib/color.js`'s `deriveShades`
+    (used by `BrandingProvider` to compute a clinic's `-light` pill/badge
+    tint from its chosen brand/accent hex) mixed toward white at a fixed
+    92% regardless of theme - fine on a light card, but a near-white pill
+    is nearly invisible on a dark one. `deriveShades`/`themeVars` now take
+    the resolved theme and mix toward black (65%) instead when dark is
+    active; `BrandingProvider` reads `useTheme()` and recomputes on every
+    theme switch, not just on branding load.
+  - **A real bug found live, not hypothetical**: plain `<input>`/
+    `<select>`/`<input type="date">` elements (none of this app's shared
+    `inputClass` strings set an explicit background) kept rendering with
+    the browser's native *light* form-control styling even with `.dark`
+    active elsewhere - Tailwind utilities never touch un-classed native
+    chrome. Fixed with a single `color-scheme: light` / `:root.dark
+    { color-scheme: dark }` declaration in `index.css` - the browser's own
+    dark UA stylesheet then reskins every native form control (inputs,
+    selects, the date-picker calendar icon) automatically, no per-input
+    changes needed. Confirmed live this was actually broken before the
+    fix and fixed after, not assumed from reasoning about the CSS alone.
+  - **Live-verified** - both explicit Light and Dark, plus System
+    resolving from the OS, checked against: `PublicShell`'s logged-out
+    home (brand color, header, buttons); `AppShell`'s nav/header as
+    `demo-front-desk` with real per-clinic orange branding overriding the
+    default blue in both themes; the full front-desk appointments list
+    (all `StatusPill` colors - cancelled/no_show/checked_out/checked_in
+    /etc. - rendering with correct contrast); an appointment detail page's
+    `PatientChart` panel (allergy severity/status badges, vitals/allergy
+    input fields, the severity `<select>`, the `identifiedAt` date
+    picker), Consent section, Payments panel, and the phase-M Invoice
+    panel (added last session, needed zero changes here since it already
+    used only semantic tokens) - all confirmed correct in both themes via
+    real screenshots, not just code review. `npm test` (24/24) confirmed
+    unaffected.
+  - **Not done this pass**: the timezone-display picker remains exactly
+    as originally sketched below - no code yet.
+- **Language: i18n plumbing + English + Amharic - fully built 2026-09-22**
+  (asked directly, answered - Amharic specifically chosen over Arabic/
+  Spanish when asked as a follow-up). `react-i18next`/`i18next` added to
+  `package.json`; `i18n/index.js` registers both languages globally via
+  `initReactI18next` (so `useTranslation()` works anywhere, no
+  `<I18nextProvider>` wrapper needed) from `i18n/locales/en.json`/
+  `am.json`. `theme/LanguageProvider.jsx` (mirrors `ThemeProvider.jsx`'s
+  exact shape - localStorage key, context, wraps the whole app in
+  `main.jsx` above the auth boundary) calls `i18n.changeLanguage(...)` and
+  sets `document.documentElement.lang` on every change.
+  `components/LanguageToggle.jsx` (same plain segmented-control shape as
+  `ThemeToggle.jsx` - each language labeled in its own script, "English"/
+  "አማርኛ", not translated into the other) sits next to `ThemeToggle` in
+  both `AppShell.jsx` and `PublicShell.jsx`.
+  - **Every page is translated, not just the shared chrome** - the full
+    sweep landed the same session, in one continuous pass across all 32
+    `.jsx` files that had real UI-authored strings (confirmed by grep
+    before starting: 51 `.jsx` files total; `Skeleton.jsx`/`StatCard.jsx`
+    take only props, no literal text; `auth/RequireRole.jsx` only
+    redirects, renders nothing). `locales/en.json`/`am.json` grew to ~590
+    keys each, namespaced per page/component (`status`, `paymentMethod`,
+    `routeLabel`, `prescriptionStatus`, `referralStatus`,
+    `employmentStatus`, `dayLabel` for backend-vocabulary maps;
+    `encounterPage`, `patientChart`, `providersPage`, `labOrderDetail`,
+    etc. per page). `StatusPill.jsx` now resolves through
+    `t('status.<value>', {defaultValue: ...})` - the English-word fallback
+    for an unrecognized status is exactly its old always-English behavior,
+    so nothing regresses if a new status value ships before its
+    translation does. Every locale-file addition was verified to compile
+    (a build after each batch) and the two JSON files were diffed
+    key-by-key at the end (`en` 587 keys, `am` 586 - the one difference is
+    `myLabOrders.testCount_one`, intentionally English-only since
+    i18next's plural-form suffixes are a per-locale grammar feature
+    Amharic doesn't need a second form for, not a missed translation).
+  - **Live-verified, not just built** - real logins as `demo-front-desk`
+    (full appointment list with every `StatusPill` value, an appointment
+    detail with the entire `PatientChart` - allergies/vitals/history/
+    consent - Payments, and the phase-M Invoice panel, all in Amharic),
+    `demo-clinic-admin` (`Providers.jsx`, including composed strings like
+    the license-number prefix and employment-status badge), and
+    `demo-provider` (the schedule dashboard's interpolated "N remaining"
+    hint, and the full `LabOrderDetail.jsx` - the single largest file in
+    this sweep - status timeline, results table, payments-collected
+    summary, and invoice, all correctly in Amharic). One raw English word
+    spotted mid-verification ("routine") turned out to be `order.notes`
+    (genuine staff-entered freeform data, not UI chrome) - confirmed, not
+    a gap. `npm test` (24/24) stayed green throughout.
+  - **Two real gaps found by a later, independent UI-evaluation pass
+    (2026-09-23), both fixed same-day**: (1) `appointment.channel` was
+    rendered as a raw string (`.replace(/_/g, ' ')`, no `t()` call) in
+    `front-desk/Dashboard.jsx` and `front-desk/AppointmentDetail.jsx` -
+    confirmed live sitting in plain English ("Front Desk") inside an
+    otherwise fully-Amharic page; fixed with a new `channel.*` locale
+    namespace (`patient_portal`/`front_desk`/`guest`), same
+    `t('channel.<value>', {defaultValue: ...})` fallback shape as
+    `StatusPill`. (2) `lib/format.js`'s formatters were never actually
+    touched by the sweep - they still built their `Intl.DateTimeFormat`/
+    `Intl.NumberFormat` instances once, at module load, with `undefined`
+    as the locale, so every date/time/currency value in the app quietly
+    stayed on the browser's own locale regardless of the language chosen
+    in the UI (most visible in `SlotPicker.jsx`'s day headers). Fixed by
+    building each formatter fresh per call against `i18n.language` (the
+    shared i18next instance's own current language) instead of a
+    module-level constant - the one file in this app that needed to
+    read `i18n.language` directly rather than going through
+    `useTranslation()`, since it's a plain utility module, not a
+    component. Both confirmed live in Amharic after the fix
+    (`ምንጭ`/"Source" now shows `አቀባበል` not "Front Desk"; `SlotPicker`/
+    chart day-labels render as `ቅዳሜ፣ ሴፕቴ 19` in Amharic script and
+    grammar, not `Sat, Sep 19`).
+  - **A scope boundary, decided here, not asked**: only frontend-authored
+    copy gets translated, ever - not just deferred for now. Error text
+    coming back from spring-boot-api (validation messages,
+    `ResponseStatusException` reasons, etc.) stays English-only -
+    localizing those would mean either translating the backend itself (a
+    separate, much larger effort touching every controller) or
+    maintaining a brittle mapping keyed by free-text backend messages
+    that already aren't stable identifiers. Same "backend-owned
+    vocabulary, not a translated one" reasoning this project already
+    applies to things like ICD-10 codes.
+  - **Amharic needed a font the app didn't ship before this** -
+    `@fontsource/inter` (the only font loaded) has no Ge'ez-script
+    glyphs. Added `@fontsource/noto-sans-ethiopic`, self-hosted the same
+    way Inter already is (not pulled from a CDN at runtime), applied via
+    a `body:lang(am)` CSS rule (written to tie `body.font-sans`'s own
+    specificity and win on source order, rather than reaching for
+    `!important`) so only Amharic-rendered text picks up the fallback
+    font and English stays on Inter.
+  - **`lib/format.js` was not touched this pass** - it still passes
+    `undefined` as the locale to every `Intl` formatter, deferring to the
+    browser's own locale regardless of the chosen UI language. Originally
+    scoped to land as one refactor together with the timezone-display
+    change (both touch the same formatters) - since timezone display
+    wasn't built this pass either, neither was this. A user who picks
+    Amharic today gets Amharic UI *text* but still browser-locale-
+    formatted dates/numbers; worth revisiting together with whichever of
+    language-content-sweep or timezone-display gets built next.
+  - **Live-verified** - real screenshots, not just code review: the full
+    front-desk dashboard (as `demo-front-desk`) with every nav label,
+    both toggles, and the logout button rendering correct Amharic Ge'ez
+    script (not tofu boxes) in dark mode; the logged-out public landing
+    page and its nav/Log-in button in Amharic+dark together; the
+    `NotFound` page in Amharic; switching back to English/Light
+    confirmed unaffected; the Amharic choice and dark theme both survived
+    a real page reload (localStorage persistence, not just in-memory
+    state) and a full logout/login round trip. `npm test` (24/24)
+    confirmed unaffected.
+- **Timezone display: browser-local, the clinic's own timezone, or any
+  manually-picked IANA zone** (asked directly, answered - the broader
+  3-way option over the simpler browser-vs-clinic toggle) - directly
+  resolves the open question the phase-18 sketch flagged and left
+  unresolved (does the UI show clinic-local or viewer-local time). Manual
+  picker uses `Intl.supportedValuesOf('timeZone')` (a real, standard JS
+  API) rather than bundling a static ~400-zone list as an asset.
+  - **Depends on phase 18** (still only sketched, not built) for the
+    "clinic's timezone" option specifically, and **reveals a mismatch
+    between the two sketches worth reconciling before either is built**:
+    phase 18 put `timezone` on `clinic_settings`' *settings* group,
+    readable only by `clinic_admin` today - too narrow here, since
+    `front_desk`/`provider` staff need to read it to select "clinic's
+    timezone" for themselves, and so does a logged-out patient/guest on
+    the public booking/tracking pages. **A design call made in this
+    planning session, not asked directly**: expose `timezone` on the
+    already-public clinic directory/branding response instead - it's
+    non-sensitive operational data (what timezone a clinic runs on isn't
+    confidential), and every consumer of this preference needs to read it
+    without an auth check.
+  - **Sequencing, not a hard block**: the "browser-local" and "manually
+    pick any zone" options need no backend work at all and are buildable
+    immediately; only "clinic's timezone" needs phase 18 (reconciled as
+    above) to exist first. Ship the first two now, wire the third once
+    phase 18 lands, rather than blocking this whole phase on that one.
+- **A settings surface has to be built from nothing** - this app has no
+  per-user settings page or menu of any kind today. Plan: a small
+  "Preferences" popover (gear icon) added to both `AppShell.jsx` (staff)
+  and `PublicShell.jsx` (public) headers, holding the three controls
+  (theme segmented control, language select, timezone select) - the
+  lowest-friction option given there's no existing settings surface to
+  extend.
+- **No backend changes for this phase** except the phase-18 timezone
+  -exposure-width reconciliation noted above - everything else is pure
+  frontend, consistent with the "localStorage only" storage decision.
+
+**Frontend phase O: clinic-admin analytics dashboard** (built 2026-09-24,
+out of order ahead of frontend phases tied to phases 16-18) - see "Phase
+19: clinic-admin analytics dashboard" above for the full write-up
+(backend endpoint, the dataviz-skill-driven chart-color validation work,
+and all four chart components). In short: `pages/clinic-admin/Dashboard.jsx`
+gained a day-range toggle (7/30/90 days), a "Revenue" stat card, and four
+Recharts panels (`components/analytics/`) - appointment-volume and
+revenue trend lines, a status-outcome breakdown bar, and a per-provider
+utilization bar - all reading from the new `GET /api/clinic/analytics`
+endpoint, all fully translated and theme-aware, and all live-verified in
+both languages and both themes. No other role's dashboard was touched -
+scoped to clinic-admin only per the user's own answer when this was
+kicked off.
+
 ## Post-phase-7 backend additions
 
 Two of the "Known gaps" items closed in one session (built 2026-09-19),
@@ -1893,20 +2511,12 @@ this second consumer).
 
 - **`com.clinicops.notification.NotificationWorker`** - a line-for-line
   port of the reference project's own `NotificationWorker`
-  (`@Scheduled(fixedDelay = 10_000)`, `MAX_ATTEMPTS = 5`, pulls
-  `findTop50ByStatusOrderByCreatedAtAsc("pending")`, retries on failure,
-  marks `failed` once attempts are exhausted), adapted only for this app's
-  richer `Notification` shape (`type`/`payload` jsonb instead of
-  `template`/`bookingId`). `NotificationSender` is the same one-method
-  interface; `LoggingEmailSender` is the same stub (logs instead of
-  calling a real provider) - still no real email/SMS provider anywhere in
-  this app, but the outbox no longer just accumulates unread rows forever.
-  `@EnableScheduling` was already on `ClinicManagementApplication` since
-  phase 3's `NoShowScheduler`, so no new wiring needed there.
-  `NotificationWorkerTest` (new, pure Mockito - no Spring context, no
-  Testcontainers, actually runs on this dev machine) covers the
-  successful-send/retry/permanent-failure paths; confirmed passing
-  (`mvn -o test -Dtest=NotificationWorkerTest`).
+  (`@Scheduled(fixedDelay = 10_000)`, `MAX_ATTEMPTS = 5`, pulls pending
+  rows, retries on failure, marks `failed` once exhausted), adapted for
+  this app's richer `Notification` shape. `LoggingEmailSender` still just
+  logs (no real email/SMS provider), but the outbox no longer just
+  accumulates unread rows forever. `NotificationWorkerTest` (pure
+  Mockito, runs locally) covers send/retry/permanent-failure; passing.
 - **Initial `clinic_admin` login on clinic onboarding** - closes the "a
   freshly onboarded clinic has nobody who can log in" gap pinned in phase
   6. `CreateClinicRequest` gained two **optional** fields, `adminEmail`/
@@ -1967,9 +2577,8 @@ excluded with a comment, not silently skipped.
   clinic B's staff get 404 on every path checked (working-hours/payments
   also assert the write path), plus one deactivated-clinic lockout case.
   Narrower than the existing per-resource tests, not a replacement.
-- All three compile clean and were confirmed to fail **only** via the
-  pre-existing, documented Testcontainers/Windows-npipe wall (`Failures:
-  0` in every surefire report) - not a new regression.
+- All three compile clean, failing **only** via the pre-existing
+  Testcontainers/Windows-npipe wall (`Failures: 0`) - not a regression.
 
 **PHI access audit log** (built 2026-09-20) - closes the "PHI-access audit:
 deferred" gap pinned 2026-09-12. No reference-project precedent - two
@@ -1979,16 +2588,13 @@ encounters/prescriptions/lab orders, explicitly not `fee_policies`/
 payments) and **reads, writes, or both** (answered "both").
 
 - **`com.clinicops.phiaudit`** (new package) - `PhiAccessLog` (extends
-  `BaseTenantEntity`; `patientId` nullable for a guest-channel appointment/
-  encounter with no `Patient` row at all), `PhiAccessLogRepository`,
-  `PhiAccessAuditService` (the actual logger - `logRead`/`logWrite`,
-  resolves the actor's internal user id via the existing
-  `CurrentUserService.resolveInternalUserId` - already used identically by
-  `AppointmentPaymentController`'s `recordedBy` - plus email/role straight
-  off the JWT), `PhiAccessLogController` (`GET /api/clinic/phi-access-log`,
-  `clinic_admin` only, optional `?patientId=`, most-recent-200, no
-  pagination framework - same simplicity as every other list endpoint in
-  this app). New migration `V6__phi_access_log.sql`.
+  `BaseTenantEntity`; `patientId` nullable for a guest-channel booking
+  with no `Patient` row), `PhiAccessAuditService` (`logRead`/`logWrite`,
+  resolves the actor via `CurrentUserService.resolveInternalUserId` plus
+  email/role off the JWT), `PhiAccessLogController`
+  (`GET /api/clinic/phi-access-log`, `clinic_admin` only, optional
+  `?patientId=`, most-recent-200, no pagination framework). New migration
+  `V6__phi_access_log.sql`.
 - **Explicit call sites, not AOP/an annotation** - a plain injected bean
   called by name (matches the Notification outbox/`TenantContext` style).
   Wired into `PatientController`, `EncounterController` (`patientId`
@@ -2129,22 +2735,12 @@ one - now the documented exception, not the rule.
   (spring-boot-api), `npm test` (node-bff), `npm run build` (frontend).
 - `LabRateControllerIntegrationTest`/`LabOrderIntegrationTest`/
   `LabOrderPaymentIntegrationTest`/`PatientLabRequestIntegrationTest`
-  (phase 7) - lab-rate CRUD + duplicate-testCode 409; multi-test create
-  with snapshotted pricing; missing-rate 400; empty-tests 400;
-  restricted-test 400 (and `consentAcknowledged` bypass); encounter
-  -patient-mismatch 409; the full `ordered -> specimen_collected ->
-  in_transit -> resulted -> reviewed` happy path (idempotent re-calls,
-  out-of-order 409s); `collect-specimen`'s identity check (mismatch 409,
-  no-ID-on-file 409 too - the deliberate divergence from check-in);
-  resulted-but-unreviewed values readable by a second provider; test-list
-  replace pre/post-collection; cancellation fee at the zero-cutoff tier;
-  the `chk_payments_exactly_one_owner` CHECK violation via raw JDBC;
-  payments scoped correctly per owner; the patient request ->
-  confirm-and-order round trip (incl. re-pricing), role checks, idempotent
-  -past-`requested` 409, cross-patient isolation, and `GET /api/
-  my-lab-orders` unioning both ownership paths. Same Testcontainers/
-  Windows-npipe wall as every prior phase - confirmed via the surefire
-  report, not a regression from this phase's code.
+  (phase 7) - lab-rate CRUD + duplicate-testCode 409; snapshotted pricing;
+  missing-rate/empty-tests 400; the full `ordered -> ... -> reviewed`
+  happy path (idempotent, out-of-order 409s); `collect-specimen` identity
+  check (mismatch/no-ID-on-file both 409); the `chk_payments_exactly_one
+  _owner` CHECK via raw JDBC; the patient request -> confirm-and-order
+  round trip. Same Testcontainers wall.
 - `VitalsTest` (phase 8, pure unit) - BMI computed correctly from height/
   weight; null when either input is missing; null (not a divide-by-zero
   throw) when height is zero.
@@ -2212,33 +2808,24 @@ append new ones there too, not here.
   request); still no real email delivery, so the generated temporary
   password is returned once in the response, not emailed - a
   platform_admin still hands it over out of band.
-- **Frontend now covers every module named in the kickoff spec's own
-  phase plan** (phases A through G - shell/dashboards, patient/guest
-  booking, front-desk's walk-in flow, clinic-admin's settings/CRUD,
-  provider encounter documentation, the full lab-orders module, and
-  platform-admin clinic onboarding) - real routing/nav/branding, every
-  role's dashboard, and every backend endpoint built across all seven
-  backend phases now has a live-data page reaching it. No named-module
-  gap remains; what's left (below) is smaller cross-cutting items - no
-  automated frontend test suite, and the pre-existing backend known-gaps
-  list further down (PHI audit, real payment-gateway integration,
-  notifications, per-clinic timezone, etc.) - not missing screens. See
-  "Frontend" above for phase A/B/C/D/E/F/G's own write-ups and deliberate
-  scope boundaries.
+- **Frontend covers every module from the kickoff spec's original 7-phase
+  plan** (phases A-G), and every EHR-leaning module from the revised plan
+  too. **Frontend phases H-L** (2026-09-21) covered EHR 8-14 (allergies/
+  vitals/history/consent/coding-depth/sign-and-lock/provider license+
+  signature/referrals); **frontend phase M** (2026-09-21) closed the last
+  remaining gap - billing (phase 15) now has a real invoice UI, see
+  "Frontend phase M" above.
 - ~~`clinic_admin` has no UI path to encounter documentation~~ **closed
   2026-09-15** - see "clinic_admin encounter-access fix" above.
   `front-desk/AppointmentDetail.jsx` is now shared with `clinic_admin` (a
   new "Document encounter" link on it, gated by role + status), and
   `/provider/appointments/{id}/encounter`'s `RequireRole` widened to allow
   both roles.
-- `demo-front-desk` (created live this session for frontend-phase-A
-  verification - see "Verified this session") isn't yet in
-  `infra/keycloak/realm-export.json`, so a from-scratch environment won't
-  have it pre-seeded - same gap phase 4/6 already left for
-  `demo-provider`/`demo-platform-admin`, now applies to this fourth role
-  too. Create it live the same way (admin REST API: realm role + demo
-  -clinic Organization membership + a password reset) until someone adds
-  all of these to the realm export properly.
+- `demo-front-desk` (created live for frontend-phase-A verification)
+  isn't yet in `infra/keycloak/realm-export.json` - same gap phase 4/6
+  already left for `demo-provider`/`demo-platform-admin`. Recreate it via
+  the admin REST API (realm role + org membership + password reset) on a
+  from-scratch environment until someone fixes the realm export properly.
 - No automated frontend test suite (no Jest/Vitest/React Testing Library
   set up in `node-bff/frontend/`) - every frontend claim above is `npm run
   build` succeeding plus a real, manual browser walkthrough, not a repeatable
@@ -2261,14 +2848,16 @@ append new ones there too, not here.
   separately re-type an amount the system already knows. That row still
   only means "this fee was assessed," not "cash/a card was actually
   collected" - there's still no real gateway behind it, and no refund
-  concept exists for the opposite direction.
+  concept exists for the opposite direction. **Sketched, not yet built** -
+  see "Phase 16: real payment gateway + refund flow + invoice PDF".
 - ~~`invoices` still exists in `V1__init.sql`, unused by any code~~
   **closed 2026-09-21** - see "Phase 15: real billing build-out".
   `com.clinicops.invoice` generates one on staff request (appointment or
   lab order), with `ClinicSettings.taxRatePercent` finally wired up to
   compute a real `tax_amount`. Still no invoice PDF/printable view and no
   link from a payment back to the invoice it's paying down (the two stay
-  entirely separate financial records) - not solved here.
+  entirely separate financial records) - not solved here. **Sketched, not
+  yet built** - both close as part of "Phase 16" (above).
 - ~~Email/notifications: the `notifications` outbox table is written to but
   there's no `NotificationWorker`/real sender yet~~ **partially closed
   2026-09-19** - see "Post-phase-7 backend additions".
@@ -2279,9 +2868,11 @@ append new ones there too, not here.
   provider. No real email/SMS delivery exists anywhere in this app yet;
   rows now reliably end up `sent` (logged) or `failed` instead of
   accumulating as `pending` forever, but nothing actually reaches an inbox.
+  **Sketched, not yet built** - see "Phase 17: real email + SMS delivery".
 - No per-clinic timezone - `SlotGenerator` interprets `provider_working_hours`
   in UTC. Fine for a single-timezone deployment, wrong for one spanning
-  multiple.
+  multiple. **Sketched, not yet built** - see "Phase 18: per-clinic
+  timezone".
 - Recurring-series cancellation isn't its own concept - cancelling one
   occurrence just cancels that one `Appointment` row via the normal cancel
   endpoint; there's no "cancel the rest of the series too" option. Not

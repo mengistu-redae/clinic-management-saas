@@ -1,6 +1,9 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useBranding } from '../theme/BrandingProvider.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
+import LanguageToggle from '../components/LanguageToggle.jsx';
 
 const navLinkClass = ({ isActive }) =>
   `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -15,6 +18,7 @@ const navLinkClass = ({ isActive }) =>
  * arrive as each role's deeper pages get built in later frontend phases.
  */
 export default function AppShell() {
+  const { t } = useTranslation();
   const { user, hasRole } = useAuth();
   const branding = useBranding();
 
@@ -27,86 +31,94 @@ export default function AppShell() {
               {branding?.logoUrl && (
                 <img src={branding.logoUrl} alt="" className="h-7 w-auto max-w-[8rem] object-contain" />
               )}
-              <span>{branding?.displayName || 'Clinic Management'}</span>
+              <span>{branding?.displayName || t('app.brandFallback')}</span>
             </NavLink>
             <nav className="flex flex-wrap items-center gap-1">
               {hasRole('patient') && (
                 <>
                   <NavLink to="/patient" end className={navLinkClass}>
-                    Dashboard
+                    {t('nav.dashboard')}
                   </NavLink>
                   <NavLink to="/book" className={navLinkClass}>
-                    Book an appointment
+                    {t('nav.patient.bookAppointment')}
                   </NavLink>
                   <NavLink to="/my-appointments" className={navLinkClass}>
-                    My Appointments
+                    {t('nav.patient.myAppointments')}
                   </NavLink>
                   <NavLink to="/my-lab-orders" className={navLinkClass}>
-                    My Lab Orders
+                    {t('nav.patient.myLabOrders')}
                   </NavLink>
                 </>
               )}
               {hasRole('front_desk') && (
                 <>
                   <NavLink to="/front-desk" end className={navLinkClass}>
-                    Dashboard
+                    {t('nav.dashboard')}
                   </NavLink>
                   <NavLink to="/front-desk/patients" className={navLinkClass}>
-                    Book for a walk-in
+                    {t('nav.frontDesk.bookWalkIn')}
                   </NavLink>
                   <NavLink to="/front-desk/appointments" className={navLinkClass}>
-                    Appointments
+                    {t('nav.frontDesk.appointments')}
                   </NavLink>
                 </>
               )}
               {hasRole('provider') && (
                 <>
                   <NavLink to="/provider" end className={navLinkClass}>
-                    Dashboard
+                    {t('nav.dashboard')}
                   </NavLink>
                   <NavLink to="/lab-orders" className={navLinkClass}>
-                    Lab Orders
+                    {t('nav.provider.labOrders')}
+                  </NavLink>
+                  <NavLink to="/referrals" className={navLinkClass}>
+                    {t('nav.provider.referrals')}
                   </NavLink>
                 </>
               )}
               {hasRole('clinic_admin') && (
                 <>
                   <NavLink to="/clinic-admin" end className={navLinkClass}>
-                    Dashboard
+                    {t('nav.dashboard')}
                   </NavLink>
                   <NavLink to="/front-desk/appointments" className={navLinkClass}>
-                    Appointments
+                    {t('nav.clinicAdmin.appointments')}
                   </NavLink>
                   <NavLink to="/clinic-admin/providers" className={navLinkClass}>
-                    Providers
+                    {t('nav.clinicAdmin.providers')}
                   </NavLink>
                   <NavLink to="/clinic-admin/rooms" className={navLinkClass}>
-                    Rooms
+                    {t('nav.clinicAdmin.rooms')}
                   </NavLink>
                   <NavLink to="/clinic-admin/appointment-types" className={navLinkClass}>
-                    Appointment Types
+                    {t('nav.clinicAdmin.appointmentTypes')}
                   </NavLink>
                   <NavLink to="/lab-orders" className={navLinkClass}>
-                    Lab Orders
+                    {t('nav.clinicAdmin.labOrders')}
+                  </NavLink>
+                  <NavLink to="/referrals" className={navLinkClass}>
+                    {t('nav.clinicAdmin.referrals')}
                   </NavLink>
                   <NavLink to="/clinic-admin/settings" className={navLinkClass}>
-                    Settings
+                    {t('nav.clinicAdmin.settings')}
                   </NavLink>
                 </>
               )}
               {hasRole('platform_admin') && (
                 <>
                   <NavLink to="/platform-admin" end className={navLinkClass}>
-                    Dashboard
+                    {t('nav.dashboard')}
                   </NavLink>
                   <NavLink to="/platform-admin/clinics" className={navLinkClass}>
-                    Clinics
+                    {t('nav.platformAdmin.clinics')}
                   </NavLink>
                 </>
               )}
             </nav>
           </div>
           <div className="flex items-center gap-3">
+            <LanguageToggle />
+            <ThemeToggle />
             <div className="text-right leading-tight">
               <p className="text-sm font-medium text-ink">{user?.preferred_username}</p>
               {user?.email && <p className="text-xs text-ink-muted">{user.email}</p>}
@@ -116,7 +128,7 @@ export default function AppShell() {
                 type="submit"
                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-ink-muted hover:bg-slate-100"
               >
-                Log out
+                {t('logOut')}
               </button>
             </form>
           </div>

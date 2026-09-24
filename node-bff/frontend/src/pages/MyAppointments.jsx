@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useMyAppointments } from '../api/queries.js';
 import StatusPill from '../components/StatusPill.jsx';
 import EmptyState from '../components/EmptyState.jsx';
@@ -8,14 +9,15 @@ import { formatDateTime } from '../lib/format.js';
 
 /** The patient dashboard shows a top-5 preview; this is the full list. */
 export default function MyAppointments() {
+  const { t } = useTranslation();
   const { data, isLoading, isError, error, refetch } = useMyAppointments(true);
 
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink">My Appointments</h1>
+        <h1 className="text-2xl font-bold text-ink">{t('myAppointments.title')}</h1>
         <Link to="/book" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
-          Book new
+          {t('myAppointments.bookNew')}
         </Link>
       </div>
 
@@ -27,7 +29,7 @@ export default function MyAppointments() {
       )}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {data && data.length === 0 && (
-        <EmptyState title="No appointments yet" description="Book an appointment and it will show up here." />
+        <EmptyState title={t('myAppointments.emptyTitle')} description={t('myAppointments.emptyDescription')} />
       )}
       {data && data.length > 0 && (
         <div className="flex flex-col gap-2">

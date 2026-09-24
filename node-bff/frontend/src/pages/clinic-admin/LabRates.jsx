@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLabRates, useCreateLabRate, useUpdateLabRate, useDeleteLabRate } from '../../api/queries.js';
 import Skeleton from '../../components/Skeleton.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
@@ -16,6 +17,7 @@ const inputClass =
  * matching UpdateLabTestRateRequest's own shape.
  */
 export default function ClinicAdminLabRates() {
+  const { t } = useTranslation();
   const { data: rates, isLoading, isError, error, refetch } = useLabRates(true);
   const createRate = useCreateLabRate();
 
@@ -29,7 +31,7 @@ export default function ClinicAdminLabRates() {
     setFormError(null);
     const base = Number(baseCharge);
     if (!testCode.trim() || baseCharge === '' || base < 0) {
-      setFormError('A test code and a non-negative base charge are required.');
+      setFormError(t('labRatesPage.errorFields'));
       return;
     }
     try {
@@ -42,28 +44,26 @@ export default function ClinicAdminLabRates() {
       setBaseCharge('');
       setCollectionFee('0');
     } catch (err) {
-      setFormError(err.message || 'Could not create this rate - a rate for this test code may already exist.');
+      setFormError(err.message || t('labRatesPage.errorCreate'));
     }
   }
 
   return (
     <div>
-      <p className="mb-6 text-sm text-ink-muted">
-        A lab test can only be ordered once a rate exists for its code - there's no separate fixed test catalog.
-      </p>
+      <p className="mb-6 text-sm text-ink-muted">{t('labRatesPage.intro')}</p>
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
-        <Field label="Test code">
+        <Field label={t('labOrderTestsEditor.testCode')}>
           <input value={testCode} onChange={(e) => setTestCode(e.target.value)} placeholder="CBC" className={`${inputClass} w-32`} />
         </Field>
-        <Field label="Base charge">
+        <Field label={t('labRatesPage.baseCharge')}>
           <input type="number" min="0" step="0.01" value={baseCharge} onChange={(e) => setBaseCharge(e.target.value)} className={`${inputClass} w-28`} />
         </Field>
-        <Field label="Collection fee">
+        <Field label={t('labRatesPage.collectionFee')}>
           <input type="number" min="0" step="0.01" value={collectionFee} onChange={(e) => setCollectionFee(e.target.value)} className={`${inputClass} w-28`} />
         </Field>
         <button type="submit" disabled={createRate.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-          {createRate.isPending ? 'Adding…' : 'Add rate'}
+          {createRate.isPending ? t('common.adding') : t('labRatesPage.addRate')}
         </button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
@@ -71,7 +71,7 @@ export default function ClinicAdminLabRates() {
       {isLoading && <Skeleton className="h-24 w-full" />}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {!isLoading && !isError && rates?.length === 0 && (
-        <EmptyState title="No lab rates configured" description="Add your first rate above." />
+        <EmptyState title={t('labRatesPage.emptyTitle')} description={t('labRatesPage.emptyDescription')} />
       )}
 
       {!isLoading && !isError && rates?.length > 0 && (
@@ -86,6 +86,7 @@ export default function ClinicAdminLabRates() {
 }
 
 function RateRow({ rate }) {
+  const { t } = useTranslation();
   const updateRate = useUpdateLabRate(rate.id);
   const deleteRate = useDeleteLabRate(rate.id);
 
@@ -100,7 +101,7 @@ function RateRow({ rate }) {
       await updateRate.mutateAsync({ baseCharge: Number(baseCharge), collectionFee: Number(collectionFee) });
       setEditing(false);
     } catch (err) {
-      setRowError(err.message || 'Could not save changes.');
+      setRowError(err.message || t('common.errorSaveChanges'));
     }
   }
 
@@ -109,7 +110,7 @@ function RateRow({ rate }) {
     try {
       await deleteRate.mutateAsync();
     } catch (err) {
-      setRowError(err.message || 'Could not delete this rate.');
+      setRowError(err.message || t('labRatesPage.errorDelete'));
     }
   }
 
@@ -117,20 +118,20 @@ function RateRow({ rate }) {
     <div className="rounded-xl border border-slate-200 bg-surface p-4">
       {editing ? (
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="Test code">
+          <Field label={t('labOrderTestsEditor.testCode')}>
             <span className={`${inputClass} inline-block w-32 bg-slate-50 font-mono text-ink-muted`}>{rate.testCode}</span>
           </Field>
-          <Field label="Base charge">
+          <Field label={t('labRatesPage.baseCharge')}>
             <input type="number" min="0" step="0.01" value={baseCharge} onChange={(e) => setBaseCharge(e.target.value)} className={`${inputClass} w-28`} />
           </Field>
-          <Field label="Collection fee">
+          <Field label={t('labRatesPage.collectionFee')}>
             <input type="number" min="0" step="0.01" value={collectionFee} onChange={(e) => setCollectionFee(e.target.value)} className={`${inputClass} w-28`} />
           </Field>
           <button type="button" onClick={saveEdit} disabled={updateRate.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-            Save
+            {t('common.save')}
           </button>
           <button type="button" onClick={() => setEditing(false)} className="text-sm text-ink-muted hover:underline">
-            Cancel
+            {t('common.cancel')}
           </button>
         </div>
       ) : (
@@ -138,13 +139,13 @@ function RateRow({ rate }) {
           <div>
             <span className="font-mono text-sm font-semibold text-ink">{rate.testCode}</span>
             <span className="ml-3 text-sm text-ink-muted">
-              {formatCurrency(rate.baseCharge)} base
-              {Number(rate.collectionFee) > 0 && ` + ${formatCurrency(rate.collectionFee)} collection`}
+              {formatCurrency(rate.baseCharge)} {t('labRatesPage.base')}
+              {Number(rate.collectionFee) > 0 && ` + ${formatCurrency(rate.collectionFee)} ${t('labRatesPage.collection')}`}
             </span>
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <button type="button" onClick={() => setEditing(true)} className="text-brand hover:underline">Edit</button>
-            <button type="button" onClick={handleDelete} className="text-danger hover:underline">Delete</button>
+            <button type="button" onClick={() => setEditing(true)} className="text-brand hover:underline">{t('common.edit')}</button>
+            <button type="button" onClick={handleDelete} className="text-danger hover:underline">{t('common.delete')}</button>
           </div>
         </div>
       )}

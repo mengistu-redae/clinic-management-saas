@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useClinicsDirectory, useCreateLabRequest } from '../../api/queries.js';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 
@@ -15,6 +16,7 @@ const inputClass =
  * flow. No pricing shown - this is a request, not yet an order.
  */
 export default function RequestLabTest() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: clinics, isLoading: clinicsLoading } = useClinicsDirectory();
   const createRequest = useCreateLabRequest();
@@ -39,30 +41,27 @@ export default function RequestLabTest() {
     setFormError(null);
     const names = testNames.map((n) => n.trim()).filter(Boolean);
     if (!clinicId || names.length === 0) {
-      setFormError('Pick a clinic and name at least one test.');
+      setFormError(t('requestLabTest.errorPickClinic'));
       return;
     }
     try {
       const created = await createRequest.mutateAsync({ clinicId, testNames: names, notes: notes.trim() || undefined });
       navigate(`/my-lab-orders/${created.order.id}`);
     } catch (err) {
-      setFormError(err.message || 'Could not submit your request. Please try again.');
+      setFormError(err.message || t('requestLabTest.errorSubmit'));
     }
   }
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="mb-2 text-2xl font-bold text-ink">Request a lab test</h1>
-      <p className="mb-6 text-sm text-ink-muted">
-        Tell the clinic what you'd like tested - staff will confirm it, assign a provider, and price it once you're
-        in for the visit.
-      </p>
+      <h1 className="mb-2 text-2xl font-bold text-ink">{t('requestLabTest.title')}</h1>
+      <p className="mb-6 text-sm text-ink-muted">{t('requestLabTest.subtitle')}</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-surface p-4">
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Clinic</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('requestLabTest.clinic')}</span>
           <select value={clinicId} onChange={(e) => setClinicId(e.target.value)} className={inputClass} disabled={clinicsLoading}>
-            <option value="">{clinicsLoading ? 'Loading…' : 'Select a clinic…'}</option>
+            <option value="">{clinicsLoading ? t('requestLabTest.loading') : t('requestLabTest.selectClinic')}</option>
             {(clinics || []).map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
@@ -70,22 +69,22 @@ export default function RequestLabTest() {
         </label>
 
         <div>
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Tests</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('requestLabTest.tests')}</span>
           <div className="flex flex-col gap-2">
             {testNames.map((name, i) => (
               <div key={i} className="flex items-center gap-2">
                 <input value={name} onChange={(e) => updateTestName(i, e.target.value)} placeholder="e.g. Cholesterol panel" className={inputClass} />
                 {testNames.length > 1 && (
-                  <button type="button" onClick={() => removeTestName(i)} className="shrink-0 text-xs text-danger hover:underline">Remove</button>
+                  <button type="button" onClick={() => removeTestName(i)} className="shrink-0 text-xs text-danger hover:underline">{t('labOrderTestsEditor.remove')}</button>
                 )}
               </div>
             ))}
           </div>
-          <button type="button" onClick={addTestName} className="mt-2 text-xs font-semibold text-brand hover:underline">+ Add another test</button>
+          <button type="button" onClick={addTestName} className="mt-2 text-xs font-semibold text-brand hover:underline">{t('requestLabTest.addAnotherTest')}</button>
         </div>
 
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Notes (optional)</span>
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('requestLabTest.notes')}</span>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputClass} />
         </label>
 
@@ -94,7 +93,7 @@ export default function RequestLabTest() {
           disabled={createRequest.isPending}
           className="self-start rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {createRequest.isPending ? 'Submitting…' : 'Submit request'}
+          {createRequest.isPending ? t('requestLabTest.submitting') : t('requestLabTest.submit')}
         </button>
       </form>
       {formError && <div className="mt-4"><ErrorBanner message={formError} /></div>}

@@ -1,5 +1,8 @@
 package com.clinicops.appointment;
 
+import com.clinicops.analytics.DailyCount;
+import com.clinicops.analytics.ProviderAppointmentCount;
+import com.clinicops.analytics.StatusCount;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -105,4 +108,31 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
             @Param("providerId") UUID providerId,
             @Param("dayStart") Instant dayStart,
             @Param("dayEnd") Instant dayEnd);
+
+    // ---- clinic-admin analytics dashboard (frontend phase O) - see ClinicAnalyticsController ----
+
+    /**
+     * Appointments booked per calendar day since `since` - a booking
+     * -activity trend, not a schedule-density one (deliberately keyed off
+     * bookedAt, not the slot's own start time, so this needs no join to
+     * slots). Day boundaries are UTC, same as every other day-math in this
+     * app (SlotGenerator/AvailabilityController/my-schedule) - this app has
+     * no per-clinic timezone concept yet.
+     */
+    @Query(value = """
+            SELECT CAST(booked_at AS date) AS day, COUNT(*) AS total
+            FROM appointments
+            WHERE tenant_id = :tenantId AND booked_at >= :since
+            GROUP BY CAST(booked_at AS date)
+            ORDER BY day
+            """, nativeQuery = true)
+    List<DailyCount> findDailyAppointmentVolume(@Param("tenantId") UUID tenantId, @Param("since") Instant since);
+
+    /** Current snapshot, not time-windowed - every appointment this tenant has, grouped by its live status. */
+    @Query("SELECT a.status AS status, COUNT(a) AS total FROM Appointment a WHERE a.tenantId = :tenantId GROUP BY a.status")
+    List<StatusCount> countByStatus(@Param("tenantId") UUID tenantId);
+
+    /** Appointment volume per provider since `since` - the utilization panel; the frontend resolves providerId to a name via its own already-fetched provider list. */
+    @Query("SELECT a.providerId AS providerId, COUNT(a) AS total FROM Appointment a WHERE a.tenantId = :tenantId AND a.bookedAt >= :since GROUP BY a.providerId")
+    List<ProviderAppointmentCount> countByProviderSince(@Param("tenantId") UUID tenantId, @Param("since") Instant since);
 }

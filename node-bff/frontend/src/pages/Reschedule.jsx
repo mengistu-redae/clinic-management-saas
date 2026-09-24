@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useMyAppointment, useClinicProviders, useRescheduleMyAppointment } from '../api/queries.js';
 import { ApiError } from '../api/client.js';
 import SlotPicker from '../components/booking/SlotPicker.jsx';
@@ -16,6 +17,7 @@ const selectClass =
  * this same clinic).
  */
 export default function Reschedule() {
+  const { t } = useTranslation();
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -36,11 +38,11 @@ export default function Reschedule() {
       navigate(`/appointments/${id}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setRescheduleError(err.message || 'That slot is no longer available. Pick another.');
+        setRescheduleError(err.message || t('reschedule.slotTaken'));
         setSelectedSlot(null);
         return;
       }
-      setRescheduleError(err.message || 'Could not reschedule. Please try again.');
+      setRescheduleError(err.message || t('reschedule.genericError'));
     }
   }
 
@@ -53,13 +55,13 @@ export default function Reschedule() {
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="mb-1 text-2xl font-bold text-ink">Reschedule appointment</h1>
+      <h1 className="mb-1 text-2xl font-bold text-ink">{t('reschedule.title')}</h1>
       <p className="mb-6 text-sm text-ink-muted">
-        Ref <span className="font-mono">{appointment.appointmentRef}</span> - pick a new time.
+        {t('reschedule.refLabel')} <span className="font-mono">{appointment.appointmentRef}</span> - {t('reschedule.pickNewTime')}
       </p>
 
       <label className="mb-4 block">
-        <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Provider</span>
+        <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('reschedule.provider')}</span>
         <select
           value={effectiveProviderId}
           onChange={(e) => {
@@ -95,7 +97,7 @@ export default function Reschedule() {
             onClick={handleConfirm}
             className="rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {reschedule.isPending ? 'Rescheduling…' : 'Confirm new time'}
+            {reschedule.isPending ? t('reschedule.rescheduling') : t('reschedule.confirmNewTime')}
           </button>
         </div>
       )}

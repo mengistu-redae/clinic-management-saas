@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useClinicBranding, useUpdateClinicBranding } from '../../api/queries.js';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
@@ -20,6 +21,7 @@ const str = (v) => (v == null ? '' : String(v));
  * something's been saved here, which is harmless to resave as-is.
  */
 export default function ClinicAdminBranding() {
+  const { t } = useTranslation();
   const { data, isLoading, isError, error, refetch } = useClinicBranding(true);
   const updateBranding = useUpdateClinicBranding();
 
@@ -48,14 +50,14 @@ export default function ClinicAdminBranding() {
     event.preventDefault();
     setFormError(null);
     setSaved(false);
-    for (const [k, label] of [['brandColor', 'Brand colour'], ['accentColor', 'Accent colour']]) {
+    for (const [k, label] of [['brandColor', t('brandingPage.brandColor')], ['accentColor', t('brandingPage.accentColor')]]) {
       if (form[k].trim() && !HEX.test(form[k].trim())) {
-        setFormError(`${label} must be a hex value like #1D4ED8.`);
+        setFormError(t('brandingPage.errorColorHex', { label }));
         return;
       }
     }
     if (form.logoUrl.trim() && !/^https?:\/\/.+/.test(form.logoUrl.trim())) {
-      setFormError('Logo URL must start with http:// or https://.');
+      setFormError(t('brandingPage.errorLogoUrl'));
       return;
     }
     try {
@@ -68,7 +70,7 @@ export default function ClinicAdminBranding() {
       });
       setSaved(true);
     } catch (err) {
-      setFormError(err.message || 'Could not save branding.');
+      setFormError(err.message || t('brandingPage.errorSave'));
     }
   }
 
@@ -80,17 +82,14 @@ export default function ClinicAdminBranding() {
 
   return (
     <div className="max-w-2xl">
-      <p className="mb-6 text-sm text-ink-muted">
-        Your logo, colours and patient-facing name. Applied to the staff workspace and, once used there, patient
-        -facing pages. Leave a field blank to use the platform default.
-      </p>
+      <p className="mb-6 text-sm text-ink-muted">{t('brandingPage.intro')}</p>
 
       <form onSubmit={handleSave} className="flex flex-col gap-6">
-        <Section title="Identity">
-          <Field label="Display name" hint="Shown instead of the clinic's legal name">
+        <Section title={t('brandingPage.identitySection')}>
+          <Field label={t('brandingPage.displayName')} hint={t('brandingPage.displayNameHint')}>
             <input value={form.displayName} onChange={set('displayName')} placeholder="Clinic Management" className={inputClass} />
           </Field>
-          <Field label="Logo URL" hint="A hosted image (http/https)">
+          <Field label={t('brandingPage.logoUrl')} hint={t('brandingPage.logoUrlHint')}>
             <input value={form.logoUrl} onChange={set('logoUrl')} placeholder="https://…/logo.png" className={inputClass} />
           </Field>
           {form.logoUrl.trim() && (
@@ -100,17 +99,17 @@ export default function ClinicAdminBranding() {
               className="h-10 w-auto max-w-[10rem] rounded border border-slate-200 bg-white object-contain p-1"
             />
           )}
-          <Field label="Footer note" hint="Shown on tracking pages">
+          <Field label={t('brandingPage.footerNote')} hint={t('brandingPage.footerNoteHint')}>
             <textarea value={form.footerNote} onChange={set('footerNote')} rows={2} className={inputClass} />
           </Field>
         </Section>
 
-        <Section title="Colours">
-          <ColorField label="Brand colour" value={form.brandColor} onChange={set('brandColor')} placeholder="#1D4ED8" />
-          <ColorField label="Accent colour" value={form.accentColor} onChange={set('accentColor')} placeholder="#F59E0B" />
+        <Section title={t('brandingPage.colorsSection')}>
+          <ColorField label={t('brandingPage.brandColor')} value={form.brandColor} onChange={set('brandColor')} placeholder="#1D4ED8" />
+          <ColorField label={t('brandingPage.accentColor')} value={form.accentColor} onChange={set('accentColor')} placeholder="#F59E0B" />
         </Section>
 
-        <Section title="Preview">
+        <Section title={t('brandingPage.previewSection')}>
           <div
             className="overflow-hidden rounded-xl border border-slate-200"
             style={{ ...themeVars(previewBrand, 'brand'), ...themeVars(previewAccent, 'accent') }}
@@ -120,8 +119,8 @@ export default function ClinicAdminBranding() {
               <span className="text-sm font-semibold">{form.displayName.trim() || 'Clinic Management'}</span>
             </div>
             <div className="flex items-center justify-between p-4">
-              <span className="text-sm text-ink-muted">Dashboard</span>
-              <span className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white">Book for a walk-in</span>
+              <span className="text-sm text-ink-muted">{t('nav.dashboard')}</span>
+              <span className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white">{t('nav.frontDesk.bookWalkIn')}</span>
             </div>
           </div>
         </Section>
@@ -130,9 +129,9 @@ export default function ClinicAdminBranding() {
 
         <div className="flex items-center gap-3">
           <button type="submit" disabled={updateBranding.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-            {updateBranding.isPending ? 'Saving…' : 'Save branding'}
+            {updateBranding.isPending ? t('settingsPage.saving') : t('brandingPage.saveBranding')}
           </button>
-          {saved && <span className="text-sm text-success">Saved. Reload to see the workspace theme.</span>}
+          {saved && <span className="text-sm text-success">{t('brandingPage.saved')}</span>}
         </div>
       </form>
     </div>

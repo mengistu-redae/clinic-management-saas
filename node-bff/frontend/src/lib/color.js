@@ -25,23 +25,37 @@ function mix(channels, target, amount) {
 /**
  * Derive dark/light variants from a base channel string, matching roughly
  * how the default brand-dark / brand-light relate to brand in index.css.
+ *
+ * `light` (the pill/badge-background tint, e.g. `bg-brand-light text-brand`)
+ * is the one variant that actually looks wrong unmodified once the Light/
+ * Dark/System theme toggle (frontend phase N) puts it on a dark card - a
+ * pale-tint-toward-white badge disappears against a light card in reverse.
+ * So when `uiTheme` is `'dark'` it's mixed toward black instead of white
+ * (a less extreme amount - 0.65, not 0.92 - since mixing as far toward
+ * black as the light-theme tint mixes toward white reads as near-invisible
+ * against this app's own dark card background). `dark` (the button-hover
+ * darken) is deliberately left theme-independent - a saturated brand color
+ * darkened slightly for a hover state reads fine as a button background in
+ * either theme, so it wasn't worth a second set of tuning here.
  */
-export function deriveShades(channels) {
+export function deriveShades(channels, uiTheme = 'light') {
   return {
     dark: mix(channels, 'black', 0.28),
-    light: mix(channels, 'white', 0.92),
+    light: uiTheme === 'dark' ? mix(channels, 'black', 0.65) : mix(channels, 'white', 0.92),
   };
 }
 
 /**
  * Build the `{ '--brand': ..., '--brand-dark': ..., '--brand-light': ... }`
  * style object for a base hex, or `{}` if the hex is invalid/absent. Pass
- * `prefix` 'brand' or 'accent'.
+ * `prefix` 'brand' or 'accent', and the currently-resolved UI theme
+ * ('light'|'dark', see theme/ThemeProvider.jsx) so `light`'s tint direction
+ * matches the card it'll actually sit on.
  */
-export function themeVars(hex, prefix) {
+export function themeVars(hex, prefix, uiTheme = 'light') {
   const base = hexToChannels(hex);
   if (!base) return {};
-  const { dark, light } = deriveShades(base);
+  const { dark, light } = deriveShades(base, uiTheme);
   return {
     [`--${prefix}`]: base,
     [`--${prefix}-dark`]: dark,

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useClinicBranding } from '../api/queries.js';
 import { themeVars } from '../lib/color.js';
+import { useTheme } from './ThemeProvider.jsx';
 
 const BrandingContext = createContext(null);
 
@@ -26,6 +27,12 @@ export function BrandingProvider({ children }) {
   const isStaff = authenticated && (hasRole('clinic_admin') || hasRole('front_desk') || hasRole('provider'));
 
   const { data } = useClinicBranding(isStaff);
+  // ThemeProvider must wrap this in main.jsx - resolvedTheme feeds
+  // themeVars() below so a clinic's own brand/accent -light badge tint
+  // mixes toward black (dark theme) or white (light theme) to match
+  // whichever card it's actually rendered on. Re-runs on every theme
+  // switch, not just on branding load - see lib/color.js's deriveShades.
+  const { resolvedTheme } = useTheme();
 
   useEffect(() => {
     const root = document.documentElement;
@@ -33,10 +40,13 @@ export function BrandingProvider({ children }) {
       VARS.forEach((v) => root.style.removeProperty(v));
       return undefined;
     }
-    const vars = { ...themeVars(data.brandColor, 'brand'), ...themeVars(data.accentColor, 'accent') };
+    const vars = {
+      ...themeVars(data.brandColor, 'brand', resolvedTheme),
+      ...themeVars(data.accentColor, 'accent', resolvedTheme),
+    };
     Object.entries(vars).forEach(([k, val]) => root.style.setProperty(k, val));
     return () => VARS.forEach((v) => root.style.removeProperty(v));
-  }, [isStaff, data]);
+  }, [isStaff, data, resolvedTheme]);
 
   return (
     <BrandingContext.Provider value={isStaff ? (data ?? null) : null}>

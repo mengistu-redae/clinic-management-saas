@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRooms, useCreateRoom, useUpdateRoom } from '../../api/queries.js';
 import StatusPill from '../../components/StatusPill.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
@@ -10,6 +11,7 @@ const inputClass =
 
 /** clinic-admin room management - GET/POST/POST .../update RoomController. All statuses shown, same reasoning as Providers.jsx. */
 export default function ClinicAdminRooms() {
+  const { t } = useTranslation();
   const { data: rooms, isLoading, isError, error, refetch } = useRooms(true);
   const createRoom = useCreateRoom();
 
@@ -24,27 +26,27 @@ export default function ClinicAdminRooms() {
     event.preventDefault();
     setFormError(null);
     if (!name.trim()) {
-      setFormError('Room name is required.');
+      setFormError(t('rooms.errorNameRequired'));
       return;
     }
     try {
       await createRoom.mutateAsync({ name: name.trim() });
       setName('');
     } catch (err) {
-      setFormError(err.message || 'Could not create room.');
+      setFormError(err.message || t('rooms.errorCreate'));
     }
   }
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-ink">Rooms</h1>
+      <h1 className="mb-6 text-2xl font-bold text-ink">{t('nav.clinicAdmin.rooms')}</h1>
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
-        <Field label="Room name">
+        <Field label={t('rooms.roomName')}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Room 1" className={`${inputClass} w-48`} />
         </Field>
         <button type="submit" disabled={createRoom.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-          {createRoom.isPending ? 'Adding…' : 'Add room'}
+          {createRoom.isPending ? t('common.adding') : t('rooms.addRoom')}
         </button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
@@ -52,7 +54,7 @@ export default function ClinicAdminRooms() {
       {isLoading && <Skeleton className="h-24 w-full" />}
       {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {!isLoading && !isError && rooms?.length === 0 && (
-        <EmptyState title="No rooms yet" description="Add your first room above." />
+        <EmptyState title={t('rooms.emptyTitle')} description={t('rooms.emptyDescription')} />
       )}
 
       {!isLoading && !isError && rooms?.length > 0 && (
@@ -82,6 +84,7 @@ export default function ClinicAdminRooms() {
 }
 
 function RoomRow({ room, editing, editName, onEditNameChange, onStartEdit, onCancelEdit, onError, afterSave }) {
+  const { t } = useTranslation();
   const updateRoom = useUpdateRoom(room.id);
 
   async function saveEdit() {
@@ -90,7 +93,7 @@ function RoomRow({ room, editing, editName, onEditNameChange, onStartEdit, onCan
       await updateRoom.mutateAsync({ name: editName.trim() });
       afterSave();
     } catch (err) {
-      onError(err.message || 'Could not save changes.');
+      onError(err.message || t('common.errorSaveChanges'));
     }
   }
 
@@ -99,7 +102,7 @@ function RoomRow({ room, editing, editName, onEditNameChange, onStartEdit, onCan
     try {
       await updateRoom.mutateAsync({ status: room.status === 'active' ? 'inactive' : 'active' });
     } catch (err) {
-      onError(err.message || 'Could not update this room.');
+      onError(err.message || t('rooms.errorUpdate'));
     }
   }
 
@@ -107,14 +110,14 @@ function RoomRow({ room, editing, editName, onEditNameChange, onStartEdit, onCan
     <div className="rounded-xl border border-slate-200 bg-surface p-4">
       {editing ? (
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="Room name">
+          <Field label={t('rooms.roomName')}>
             <input value={editName} onChange={(e) => onEditNameChange(e.target.value)} className={`${inputClass} w-48`} />
           </Field>
           <button type="button" onClick={saveEdit} disabled={updateRoom.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-            Save
+            {t('common.save')}
           </button>
           <button type="button" onClick={onCancelEdit} className="text-sm text-ink-muted hover:underline">
-            Cancel
+            {t('common.cancel')}
           </button>
         </div>
       ) : (
@@ -124,9 +127,9 @@ function RoomRow({ room, editing, editName, onEditNameChange, onStartEdit, onCan
             <span className="text-sm font-semibold text-ink">{room.name}</span>
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <button type="button" onClick={onStartEdit} className="text-brand hover:underline">Edit</button>
+            <button type="button" onClick={onStartEdit} className="text-brand hover:underline">{t('common.edit')}</button>
             <button type="button" onClick={toggleActive} className="text-ink-muted hover:underline">
-              {room.status === 'active' ? 'Deactivate' : 'Reactivate'}
+              {room.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
             </button>
           </div>
         </div>
