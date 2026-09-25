@@ -134,7 +134,12 @@ export default function ClinicAdminDashboard() {
 
         {!analytics.isLoading && !analytics.isError && analytics.data && (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {/* A single stat card - the 5-column grid the row above uses
+                was leftover copy-paste and left 4 empty columns beside it
+                at desktop width (real bug found in review, not a
+                hypothetical). A plain max-width wrapper sizes it like one
+                card from that row instead. */}
+            <div className="max-w-xs">
               <StatCard
                 label={t('clinicAdminDashboard.revenueWindow', { days: windowDays })}
                 value={formatCurrency(revenueTotal)}
