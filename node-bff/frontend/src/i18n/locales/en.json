@@ -59,7 +59,10 @@
   },
   "publicHome": {
     "title": "Clinic Management",
-    "subtitle": "Book an appointment as a guest, or sign in as clinic staff or a patient to continue."
+    "subtitle": "Book an appointment as a guest, or track an existing appointment or lab order below.",
+    "trackAppointmentHint": "Look up an appointment using your reference and phone number.",
+    "trackLabOrderHint": "Check the status of a lab order using your reference and phone number.",
+    "haveAccount": "Already have an account?"
   },
   "notFound": {
     "title": "Page not found",

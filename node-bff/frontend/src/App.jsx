@@ -38,13 +38,55 @@ import MyLabOrderDetail from './pages/patient/MyLabOrderDetail.jsx';
 import TrackLabOrder from './pages/TrackLabOrder.jsx';
 import PlatformAdminClinics from './pages/platform-admin/Clinics.jsx';
 
-/** Logged-out landing at "/" - PublicShell's own header/nav carries the wayfinding (Book/Track/Log in). */
+/**
+ * Logged-out landing at "/" - previously title+subtitle only, with every
+ * actual action (book/track/log in) reachable solely from PublicShell's
+ * small header nav. Real CTAs added here so the body of the page - not
+ * just its header - carries the wayfinding: a primary "Book an
+ * appointment" button, two secondary track-something cards restating
+ * (not replacing) the header nav links, and a plain sign-in line for
+ * returning staff/patients.
+ */
 function PublicHome() {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col items-center gap-4 py-16 text-center">
-      <h1 className="text-2xl font-semibold text-ink">{t('publicHome.title')}</h1>
-      <p className="max-w-sm text-sm text-ink-muted">{t('publicHome.subtitle')}</p>
+    <div className="flex flex-col items-center gap-10 py-12 text-center">
+      <div className="flex flex-col items-center gap-3">
+        <h1 className="text-3xl font-bold text-ink">{t('publicHome.title')}</h1>
+        <p className="max-w-md text-sm text-ink-muted">{t('publicHome.subtitle')}</p>
+      </div>
+
+      <Link
+        to="/book"
+        className="rounded-lg bg-brand px-6 py-3 text-base font-semibold text-white hover:bg-brand-dark"
+      >
+        {t('publicNav.bookAppointment')}
+      </Link>
+
+      <div className="grid w-full max-w-3xl gap-4 sm:grid-cols-2">
+        <Link
+          to="/track-appointment"
+          className="rounded-xl border border-slate-200 bg-surface p-5 text-left hover:border-brand/40 hover:bg-slate-50"
+        >
+          <p className="text-sm font-semibold text-ink">{t('publicNav.trackAppointment')}</p>
+          <p className="mt-1 text-xs text-ink-muted">{t('publicHome.trackAppointmentHint')}</p>
+        </Link>
+        <Link
+          to="/track-lab-order"
+          className="rounded-xl border border-slate-200 bg-surface p-5 text-left hover:border-brand/40 hover:bg-slate-50"
+        >
+          <p className="text-sm font-semibold text-ink">{t('publicNav.trackLabOrder')}</p>
+          <p className="mt-1 text-xs text-ink-muted">{t('publicHome.trackLabOrderHint')}</p>
+        </Link>
+      </div>
+
+      <p className="text-xs text-ink-muted">
+        {t('publicHome.haveAccount')}{' '}
+        <a href="/auth/login" className="font-medium text-brand hover:underline">
+          {t('publicNav.logIn')}
+        </a>
+        .
+      </p>
     </div>
   );
 }
