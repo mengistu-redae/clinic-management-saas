@@ -1,6 +1,9 @@
 import { Link, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import PreferencesMenu from '../components/PreferencesMenu.jsx';
+import IconMenu from '../components/IconMenu.jsx';
+import LanguageToggle from '../components/LanguageToggle.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
+import { LanguageIcon, ThemeIcon } from '../components/icons.jsx';
 
 /**
  * Logged-out shell - a header with nav (booking/tracking are both public,
@@ -39,7 +42,12 @@ export default function PublicShell() {
             </nav>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <PreferencesMenu />
+            <IconMenu icon={<LanguageIcon className="h-5 w-5" />} label={t('language.label')}>
+              <LanguageToggle />
+            </IconMenu>
+            <IconMenu icon={<ThemeIcon className="h-5 w-5" />} label={t('theme.label')}>
+              <ThemeToggle />
+            </IconMenu>
             <a
               href="/auth/login"
               className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark"

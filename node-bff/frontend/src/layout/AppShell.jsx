@@ -2,7 +2,10 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useBranding } from '../theme/BrandingProvider.jsx';
-import PreferencesMenu from '../components/PreferencesMenu.jsx';
+import IconMenu from '../components/IconMenu.jsx';
+import LanguageToggle from '../components/LanguageToggle.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
+import { LanguageIcon, ThemeIcon } from '../components/icons.jsx';
 
 const navLinkClass = ({ isActive }) =>
   `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -116,7 +119,12 @@ export default function AppShell() {
             </nav>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <PreferencesMenu />
+            <IconMenu icon={<LanguageIcon className="h-5 w-5" />} label={t('language.label')}>
+              <LanguageToggle />
+            </IconMenu>
+            <IconMenu icon={<ThemeIcon className="h-5 w-5" />} label={t('theme.label')}>
+              <ThemeToggle />
+            </IconMenu>
             <div className="text-right leading-tight">
               <p className="text-sm font-medium text-ink">{user?.preferred_username}</p>
               {user?.email && <p className="text-xs text-ink-muted">{user.email}</p>}
