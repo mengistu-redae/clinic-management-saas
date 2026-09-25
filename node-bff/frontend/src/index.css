@@ -39,6 +39,7 @@
   --brand: 29 78 216;         /* #1D4ED8 */
   --brand-dark: 30 58 138;    /* #1E3A8A */
   --brand-light: 239 244 255; /* #EFF4FF */
+  --brand-text: 29 78 216;    /* = --brand; text-brand reads fine unmodified on a light/white surface */
   --accent: 13 148 136;       /* #0D9488 */
   --accent-dark: 15 118 110;  /* #0F766E */
   --accent-light: 240 253 250;/* #F0FDFA */
@@ -69,16 +70,32 @@
  * brand/accent/brand-dark/accent-dark are deliberately left unchanged: a
  * saturated brand-colored button with white text reads fine in both
  * themes, and re-tuning every clinic's own custom brand color for two
- * themes felt like real design work rather than plumbing - only the pale
- * `-light` tint (used purely as a pill/badge background, e.g. `bg-brand
- * -light text-brand`) actually looks wrong unmodified against a dark card,
- * so only that gets a dark value here (and, for a signed-in clinic's own
- * override, in lib/color.js's theme-aware deriveShades instead of here).
+ * themes felt like real design work rather than plumbing. Two derived
+ * variants DO get their own dark value here, because each is read
+ * against a different, darker background than the raw brand color was
+ * ever tuned for: the pale `-light` tint (a pill/badge background, e.g.
+ * `bg-brand-light text-brand`) and, since this session, `-text` (plain
+ * `text-brand` links/headings sitting directly on a dark card/page) -
+ * see this block's own `--brand-text` comment for the real contrast
+ * numbers behind that one. For a signed-in clinic's own custom brand
+ * color, both get computed instead in lib/color.js's theme-aware
+ * deriveShades, not hardcoded here.
  */
 :root.dark {
   color-scheme: dark;
   --brand-light: 23 37 84;      /* dark navy tint, was #EFF4FF */
   --accent-light: 4 47 46;      /* dark teal tint, was #F0FDFA */
+  /* Real bug found and fixed here, not a stylistic tweak: plain
+     `text-brand` (nav links, "View all", the header wordmark, etc.) was
+     reusing --brand unchanged, which measures ~2.18:1 against both this
+     dark surface and against --brand-light's own dark navy tint above -
+     a real WCAG AA failure (needs 4.5:1 for normal text), not eyeballed.
+     This value is `lib/color.js`'s own lightenForDarkText(29 78 216)
+     output (mix 35% toward white -> 4.55:1) - kept in sync by hand since
+     this is the platform default, not a per-tenant runtime value; a
+     signed-in clinic's own custom brand color gets its own computed
+     value from that same function via BrandingProvider instead. */
+  --brand-text: 108 140 230;    /* #6C8CE6, ~4.55:1 vs this surface - was #1D4ED8 (~2.18:1) */
 
   --surface: 30 41 59;        /* slate-800 #1E293B - card background */
   --ink: 241 245 249;         /* slate-100 #F1F5F9 - primary text */

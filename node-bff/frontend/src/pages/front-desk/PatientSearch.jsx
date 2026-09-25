@@ -102,7 +102,7 @@ export default function PatientSearch() {
         <button
           type="button"
           onClick={() => setShowRegister(true)}
-          className="text-sm font-medium text-brand hover:underline"
+          className="text-sm font-medium text-brand-text hover:underline"
         >
           {t('patientSearch.notListed')}
         </button>

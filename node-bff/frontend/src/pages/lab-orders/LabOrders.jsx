@@ -108,7 +108,7 @@ export default function LabOrders() {
                   <span className="font-mono text-xs text-ink-muted">{r.orderRef}</span>
                   <p className="text-sm font-semibold text-ink">{patientById[r.patientId] ? `${patientById[r.patientId].firstName} ${patientById[r.patientId].lastName}` : '…'}</p>
                 </div>
-                <span className="text-sm font-medium text-brand">{t('labOrdersPage.review')} &rsaquo;</span>
+                <span className="text-sm font-medium text-brand-text">{t('labOrdersPage.review')} &rsaquo;</span>
               </Link>
             ))}
           </div>
@@ -119,7 +119,7 @@ export default function LabOrders() {
         <button
           type="button"
           onClick={() => setShowCreate((v) => !v)}
-          className="rounded-lg border border-brand/40 px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand-light/40"
+          className="rounded-lg border border-brand/40 px-3 py-1.5 text-sm font-medium text-brand-text hover:bg-brand-light/40"
         >
           {showCreate ? t('labOrdersPage.close') : t('labOrdersPage.newLabOrder')}
         </button>

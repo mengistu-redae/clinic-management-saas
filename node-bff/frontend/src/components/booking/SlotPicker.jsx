@@ -55,7 +55,7 @@ export default function SlotPicker({ clinicId, providerId, appointmentTypeId, se
                 className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
                   selectedSlotId === slot.id
                     ? 'border-brand bg-brand text-white'
-                    : 'border-slate-300 text-ink hover:border-brand hover:text-brand'
+                    : 'border-slate-300 text-ink hover:border-brand hover:text-brand-text'
                 }`}
               >
                 {formatTime(slot.startTime)}

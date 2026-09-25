@@ -189,7 +189,7 @@ function ClinicRow({ clinic }) {
             <p className="text-xs text-ink-muted">{t('clinicsPage.onboardedPrefix')} {formatDateTime(clinic.createdAt)}</p>
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <button type="button" onClick={() => { setRowError(null); setName(clinic.name); setEditing(true); }} className="text-brand hover:underline">
+            <button type="button" onClick={() => { setRowError(null); setName(clinic.name); setEditing(true); }} className="text-brand-text hover:underline">
               {t('common.edit')}
             </button>
             <button type="button" onClick={toggleActive} disabled={pending} className="text-ink-muted hover:underline disabled:opacity-50">

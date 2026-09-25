@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 const tabClass = ({ isActive }) =>
   `border-b-2 px-1 pb-2 text-sm font-medium transition-colors ${
-    isActive ? 'border-brand text-brand' : 'border-transparent text-ink-muted hover:text-ink'
+    isActive ? 'border-brand text-brand-text' : 'border-transparent text-ink-muted hover:text-ink'
   }`;
 
 /**

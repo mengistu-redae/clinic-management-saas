@@ -17,7 +17,7 @@ export default function PublicShell() {
       <header className="border-b border-slate-200 bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:gap-x-8">
-            <Link to="/" className="text-lg font-bold text-brand">
+            <Link to="/" className="text-lg font-bold text-brand-text">
               {t('app.brandFallback')}
             </Link>
             <nav className="flex flex-wrap items-center gap-1">

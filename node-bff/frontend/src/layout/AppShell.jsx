@@ -6,7 +6,7 @@ import PreferencesMenu from '../components/PreferencesMenu.jsx';
 
 const navLinkClass = ({ isActive }) =>
   `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-    isActive ? 'bg-brand-light text-brand' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
+    isActive ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
   }`;
 
 /**
@@ -26,7 +26,7 @@ export default function AppShell() {
       <header className="border-b border-slate-200 bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:gap-x-8">
-            <NavLink to="/" className="flex items-center gap-2 text-lg font-bold text-brand">
+            <NavLink to="/" className="flex items-center gap-2 text-lg font-bold text-brand-text">
               {branding?.logoUrl && (
                 <img src={branding.logoUrl} alt="" className="h-7 w-auto max-w-[8rem] object-contain" />
               )}

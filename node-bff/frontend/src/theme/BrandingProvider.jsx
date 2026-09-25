@@ -8,8 +8,8 @@ import { useActiveClinicZone } from './TimezoneProvider.jsx';
 const BrandingContext = createContext(null);
 
 const VARS = [
-  '--brand', '--brand-dark', '--brand-light',
-  '--accent', '--accent-dark', '--accent-light',
+  '--brand', '--brand-dark', '--brand-light', '--brand-text',
+  '--accent', '--accent-dark', '--accent-light', '--accent-text',
 ];
 
 /**

@@ -76,7 +76,7 @@ export default function PatientDashboard() {
           </Link>
           <Link
             to="/my-lab-orders/request"
-            className="rounded-lg border border-brand/40 px-4 py-2 text-sm font-medium text-brand hover:bg-brand-light/40"
+            className="rounded-lg border border-brand/40 px-4 py-2 text-sm font-medium text-brand-text hover:bg-brand-light/40"
           >
             {t('myLabOrders.requestTest')}
           </Link>
@@ -101,7 +101,7 @@ export default function PatientDashboard() {
           title={t('patientDashboard.myAppointmentsPanel')}
           action={
             myAppointments.length > 0 && (
-              <Link to="/my-appointments" className="text-xs font-medium text-brand hover:underline">
+              <Link to="/my-appointments" className="text-xs font-medium text-brand-text hover:underline">
                 {t('frontDeskDashboard.viewAll')}
               </Link>
             )
@@ -133,7 +133,7 @@ export default function PatientDashboard() {
           title={t('patientDashboard.myLabOrdersPanel')}
           action={
             myLabOrders.length > 0 && (
-              <Link to="/my-lab-orders" className="text-xs font-medium text-brand hover:underline">
+              <Link to="/my-lab-orders" className="text-xs font-medium text-brand-text hover:underline">
                 {t('frontDeskDashboard.viewAll')}
               </Link>
             )

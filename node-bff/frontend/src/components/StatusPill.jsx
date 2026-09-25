@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
  */
 const STYLES = {
   // appointments
-  booked: 'bg-brand-light text-brand',
+  booked: 'bg-brand-light text-brand-text',
   checked_in: 'bg-warning-light text-warning',
   roomed: 'bg-warning-light text-warning',
   with_provider: 'bg-warning-light text-warning',
@@ -19,7 +19,7 @@ const STYLES = {
   cancelled: 'bg-slate-100 text-ink-muted',
   // lab orders
   requested: 'bg-slate-100 text-ink-muted',
-  ordered: 'bg-brand-light text-brand',
+  ordered: 'bg-brand-light text-brand-text',
   specimen_collected: 'bg-warning-light text-warning',
   in_transit: 'bg-warning-light text-warning',
   resulted: 'bg-accent-light text-accent',

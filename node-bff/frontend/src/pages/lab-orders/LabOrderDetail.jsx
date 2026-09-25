@@ -325,7 +325,7 @@ export default function LabOrderDetail() {
             )}
 
             {status === 'ordered' && (
-              <button type="button" onClick={startEdit} className="mt-4 text-sm text-brand hover:underline">{t('labOrderDetail.editOrder')}</button>
+              <button type="button" onClick={startEdit} className="mt-4 text-sm text-brand-text hover:underline">{t('labOrderDetail.editOrder')}</button>
             )}
           </>
         )}

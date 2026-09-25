@@ -63,7 +63,7 @@ export default function FrontDeskDashboard() {
       <div className="rounded-xl border border-slate-200 bg-surface p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <p className="text-sm font-semibold text-ink">{t('frontDeskDashboard.recentAppointments')}</p>
-          <Link to="/front-desk/appointments" className="text-xs font-medium text-brand hover:underline">
+          <Link to="/front-desk/appointments" className="text-xs font-medium text-brand-text hover:underline">
             {t('frontDeskDashboard.viewAll')}
           </Link>
         </div>

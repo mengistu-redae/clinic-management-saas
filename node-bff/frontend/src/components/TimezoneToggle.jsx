@@ -32,7 +32,7 @@ export default function TimezoneToggle() {
             onClick={() => setMode(opt.value)}
             aria-pressed={mode === opt.value}
             className={`rounded-md px-2.5 py-1 transition-colors ${
-              mode === opt.value ? 'bg-brand-light text-brand' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
+              mode === opt.value ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
             }`}
           >
             {opt.label}

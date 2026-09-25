@@ -11,7 +11,7 @@ const inputClass =
 
 const STATUS_STYLE = {
   pending: 'bg-slate-100 text-ink-muted',
-  accepted: 'bg-brand-light text-brand',
+  accepted: 'bg-brand-light text-brand-text',
   scheduled: 'bg-warning-light text-warning',
   completed: 'bg-success-light text-success',
   declined: 'bg-danger-light text-danger',
@@ -99,7 +99,7 @@ export default function Referrals() {
         <button
           type="button"
           onClick={() => setShowCreate((v) => !v)}
-          className="rounded-lg border border-brand/40 px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand-light/40"
+          className="rounded-lg border border-brand/40 px-3 py-1.5 text-sm font-medium text-brand-text hover:bg-brand-light/40"
         >
           {showCreate ? t('labOrdersPage.close') : t('referralsPage.newReferral')}
         </button>

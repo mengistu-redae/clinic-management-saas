@@ -112,7 +112,7 @@ export default function ClinicAdminDashboard() {
                 onClick={() => setWindowDays(d)}
                 aria-pressed={windowDays === d}
                 className={`rounded-md px-2.5 py-1 transition-colors ${
-                  windowDays === d ? 'bg-brand-light text-brand' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
+                  windowDays === d ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
                 }`}
               >
                 {t(`clinicAnalytics.days${d}`)}

@@ -127,7 +127,7 @@ function RoomRow({ room, editing, editName, onEditNameChange, onStartEdit, onCan
             <span className="text-sm font-semibold text-ink">{room.name}</span>
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <button type="button" onClick={onStartEdit} className="text-brand hover:underline">{t('common.edit')}</button>
+            <button type="button" onClick={onStartEdit} className="text-brand-text hover:underline">{t('common.edit')}</button>
             <button type="button" onClick={toggleActive} className="text-ink-muted hover:underline">
               {room.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
             </button>

@@ -70,7 +70,7 @@ export default function AppointmentDetail() {
     return !authenticated ? (
       <div className="mx-auto max-w-xl rounded-xl border border-slate-200 bg-surface p-5 text-sm text-ink-muted">
         {t('appointmentDetail.notAvailableGuest')}{' '}
-        <Link to="/track-appointment" className="text-brand hover:underline">
+        <Link to="/track-appointment" className="text-brand-text hover:underline">
           {t('publicNav.trackAppointment')}
         </Link>
         .
@@ -111,7 +111,7 @@ export default function AppointmentDetail() {
         <div className="mt-4 rounded-lg border border-slate-200 bg-surface p-3 text-sm text-ink-muted">
           {t('appointmentDetail.bookedWithoutAccountPrefix')}{' '}
           <span className="font-mono text-ink">{appointment.appointmentRef}</span> {t('appointmentDetail.bookedWithoutAccountSuffix')}{' '}
-          <Link to="/track-appointment" className="text-brand hover:underline">
+          <Link to="/track-appointment" className="text-brand-text hover:underline">
             {t('publicNav.trackAppointment')}
           </Link>
           .

@@ -176,12 +176,12 @@ function AllergyRow({ allergy, patientId, canWrite }) {
           <Badge style={SEVERITY_STYLE[allergy.severity] || SEVERITY_STYLE.moderate}>{t(`patientChart.${allergy.severity}`, { defaultValue: allergy.severity })}</Badge>
           <Badge style={ALLERGY_STATUS_STYLE[allergy.status] || ALLERGY_STATUS_STYLE.active}>{t(`status.${allergy.status}`, { defaultValue: allergy.status })}</Badge>
           {canWrite && allergy.status !== 'resolved' && (
-            <button type="button" disabled={updateAllergy.isPending} onClick={() => changeStatus('resolved')} className="text-xs font-medium text-brand hover:underline disabled:opacity-50">
+            <button type="button" disabled={updateAllergy.isPending} onClick={() => changeStatus('resolved')} className="text-xs font-medium text-brand-text hover:underline disabled:opacity-50">
               {t('patientChart.markResolved')}
             </button>
           )}
           {canWrite && allergy.status === 'resolved' && (
-            <button type="button" disabled={updateAllergy.isPending} onClick={() => changeStatus('active')} className="text-xs font-medium text-brand hover:underline disabled:opacity-50">
+            <button type="button" disabled={updateAllergy.isPending} onClick={() => changeStatus('active')} className="text-xs font-medium text-brand-text hover:underline disabled:opacity-50">
               {t('common.reactivate')}
             </button>
           )}

@@ -21,6 +21,13 @@ export default {
           DEFAULT: 'rgb(var(--brand) / <alpha-value>)',
           dark: 'rgb(var(--brand-dark) / <alpha-value>)',
           light: 'rgb(var(--brand-light) / <alpha-value>)',
+          // Plain-text/link color (text-brand-text) - a real contrast bug
+          // fix: text-brand reused the saturated --brand value unchanged
+          // in dark mode, measuring ~2.18:1 against a dark card (WCAG AA
+          // needs 4.5:1 for normal text) - see index.css's own comment
+          // and lib/color.js's lightenForDarkText for the actual numbers.
+          // Equals --brand in light mode (no change there).
+          text: 'rgb(var(--brand-text) / <alpha-value>)',
         },
         accent: {
           DEFAULT: 'rgb(var(--accent) / <alpha-value>)',

@@ -82,7 +82,7 @@ function PublicHome() {
 
       <p className="text-xs text-ink-muted">
         {t('publicHome.haveAccount')}{' '}
-        <a href="/auth/login" className="font-medium text-brand hover:underline">
+        <a href="/auth/login" className="font-medium text-brand-text hover:underline">
           {t('publicNav.logIn')}
         </a>
         .
@@ -128,7 +128,7 @@ function NotFound() {
   return (
     <div className="py-16 text-center">
       <p className="text-xl font-semibold text-ink">{t('notFound.title')}</p>
-      <Link to="/" className="mt-2 inline-block text-sm text-brand hover:underline">
+      <Link to="/" className="mt-2 inline-block text-sm text-brand-text hover:underline">
         {t('notFound.backHome')}
       </Link>
     </div>

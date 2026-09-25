@@ -165,7 +165,7 @@ function TierRow({ tier }) {
         {t('feePoliciesPage.tierLabel', { hours: tier.cutoffHours, percent: tier.feePercent })}
       </span>
       <div className="flex items-center gap-3 text-sm">
-        <button type="button" onClick={() => setEditing(true)} className="text-brand hover:underline">{t('common.edit')}</button>
+        <button type="button" onClick={() => setEditing(true)} className="text-brand-text hover:underline">{t('common.edit')}</button>
         <button type="button" onClick={handleDelete} className="text-danger hover:underline">{t('common.delete')}</button>
       </div>
       {rowError && <div className="mt-2"><ErrorBanner message={rowError} /></div>}

@@ -22,7 +22,7 @@ export default function LanguageToggle() {
         onClick={() => setLanguage('en')}
         aria-pressed={language === 'en'}
         className={`rounded-md px-2.5 py-1 transition-colors ${
-          language === 'en' ? 'bg-brand-light text-brand' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
+          language === 'en' ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
         }`}
       >
         English
@@ -33,7 +33,7 @@ export default function LanguageToggle() {
         aria-pressed={language === 'am'}
         lang="am"
         className={`rounded-md px-2.5 py-1 transition-colors ${
-          language === 'am' ? 'bg-brand-light text-brand' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
+          language === 'am' ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
         }`}
       >
         አማርኛ

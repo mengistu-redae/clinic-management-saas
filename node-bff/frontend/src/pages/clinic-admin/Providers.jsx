@@ -252,7 +252,7 @@ function ProviderRow({ provider, roomById, rooms }) {
             </div>
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <button type="button" onClick={startEdit} className="text-brand hover:underline">{t('common.edit')}</button>
+            <button type="button" onClick={startEdit} className="text-brand-text hover:underline">{t('common.edit')}</button>
             <button type="button" onClick={toggleActive} className="text-ink-muted hover:underline">
               {provider.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
             </button>

@@ -202,7 +202,7 @@ export default function Encounter() {
           action={
             <Link
               to={hasRole('clinic_admin') ? `/front-desk/appointments/${id}` : '/provider'}
-              className="text-sm font-medium text-brand hover:underline"
+              className="text-sm font-medium text-brand-text hover:underline"
             >
               {hasRole('clinic_admin') ? t('encounterPage.backToAppointment') : t('encounterPage.backToSchedule')}
             </Link>
@@ -251,7 +251,7 @@ export default function Encounter() {
                         type="button"
                         disabled={signEncounter.isPending}
                         onClick={handleSign}
-                        className="self-start rounded-lg border border-brand px-4 py-2 text-sm font-semibold text-brand hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-50"
+                        className="self-start rounded-lg border border-brand px-4 py-2 text-sm font-semibold text-brand-text hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {signEncounter.isPending ? t('encounterPage.signing') : t('encounterPage.signEncounterBtn')}
                       </button>
@@ -347,7 +347,7 @@ export default function Encounter() {
                   </div>
                 ))}
                 {!signed && (
-                  <button type="button" onClick={addLine} className="self-start text-sm font-semibold text-brand hover:underline">
+                  <button type="button" onClick={addLine} className="self-start text-sm font-semibold text-brand-text hover:underline">
                     {t('encounterPage.addMedication')}
                   </button>
                 )}

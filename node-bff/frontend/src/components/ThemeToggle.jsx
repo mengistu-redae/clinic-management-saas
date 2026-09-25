@@ -26,7 +26,7 @@ export default function ThemeToggle() {
           onClick={() => setTheme(opt.value)}
           aria-pressed={theme === opt.value}
           className={`rounded-md px-2.5 py-1 transition-colors ${
-            theme === opt.value ? 'bg-brand-light text-brand' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
+            theme === opt.value ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
           }`}
         >
           {opt.label}

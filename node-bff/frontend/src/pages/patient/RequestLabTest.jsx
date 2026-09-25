@@ -80,7 +80,7 @@ export default function RequestLabTest() {
               </div>
             ))}
           </div>
-          <button type="button" onClick={addTestName} className="mt-2 text-xs font-semibold text-brand hover:underline">{t('requestLabTest.addAnotherTest')}</button>
+          <button type="button" onClick={addTestName} className="mt-2 text-xs font-semibold text-brand-text hover:underline">{t('requestLabTest.addAnotherTest')}</button>
         </div>
 
         <label className="block">

@@ -53,7 +53,7 @@ export default function LabOrderTestsEditor({ lines, onChange, labRates }) {
           </button>
         </div>
       ))}
-      <button type="button" onClick={addLine} className="self-start text-xs font-semibold text-brand hover:underline">
+      <button type="button" onClick={addLine} className="self-start text-xs font-semibold text-brand-text hover:underline">
         {t('labOrderTestsEditor.addTest')}
       </button>
       {labRates && labRates.length > 0 && (
