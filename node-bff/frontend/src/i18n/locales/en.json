@@ -48,6 +48,9 @@
     "en": "English",
     "am": "Amharic"
   },
+  "preferencesMenu": {
+    "trigger": "Preferences"
+  },
   "timezone": {
     "label": "Timezone",
     "browser": "Browser",

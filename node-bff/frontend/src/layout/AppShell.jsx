@@ -2,9 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useBranding } from '../theme/BrandingProvider.jsx';
-import ThemeToggle from '../components/ThemeToggle.jsx';
-import LanguageToggle from '../components/LanguageToggle.jsx';
-import TimezoneToggle from '../components/TimezoneToggle.jsx';
+import PreferencesMenu from '../components/PreferencesMenu.jsx';
 
 const navLinkClass = ({ isActive }) =>
   `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -118,9 +116,7 @@ export default function AppShell() {
             </nav>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <LanguageToggle />
-            <ThemeToggle />
-            <TimezoneToggle />
+            <PreferencesMenu />
             <div className="text-right leading-tight">
               <p className="text-sm font-medium text-ink">{user?.preferred_username}</p>
               {user?.email && <p className="text-xs text-ink-muted">{user.email}</p>}
