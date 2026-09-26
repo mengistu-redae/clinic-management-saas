@@ -344,4 +344,31 @@ class AppointmentControllerIntegrationTest extends AbstractIntegrationTest {
         String seriesId = objectMapper.readTree(firstAttempt).get("series").get("id").asText();
         assertThat(appointmentRepository.findAllBySeriesId(UUID.fromString(seriesId))).hasSize(2);
     }
+
+    @Test
+    void worklistCarriesRealStartTimeAndGuestContactNameForStaff() throws Exception {
+        Fixture fixture = seedClinicWithOpenSlot("appt-worklist-" + UUID.randomUUID(), "Worklist Clinic");
+        var request = new CreateGuestAppointmentRequest(
+                fixture.slot().getId(), fixture.provider().getId(), fixture.type().getId(),
+                "Worklist Guest", "+15557778888", null, "idem-worklist-1");
+
+        mockMvc.perform(post("/api/appointments/guest")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/appointments/worklist")
+                        .with(asFrontDesk("fd-1", fixture.clinic().getKeycloakOrgId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].contactName").value("Worklist Guest"))
+                .andExpect(jsonPath("$[0].startTime").isNotEmpty());
+
+        // A provider can read it too, but a patient token is refused.
+        mockMvc.perform(get("/api/appointments/worklist")
+                        .with(asProvider("prov-1", fixture.clinic().getKeycloakOrgId())))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/appointments/worklist").with(asPatient("patient-1")))
+                .andExpect(status().isForbidden());
+    }
 }

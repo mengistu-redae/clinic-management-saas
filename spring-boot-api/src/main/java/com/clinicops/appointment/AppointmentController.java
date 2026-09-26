@@ -141,6 +141,24 @@ public class AppointmentController {
         return appointmentRepository.findAllByTenantId(TenantContext.require());
     }
 
+    /**
+     * Richer counterpart of GET /api/appointments for a dashboard-style
+     * worklist widget - a real startTime plus a guest's own contactName,
+     * neither of which the plain tenant-wide list carries (see
+     * AppointmentWorklistView's javadoc). A new, separate endpoint rather
+     * than changing /api/appointments itself - that one already has other
+     * consumers (clinic-admin's dashboard counts, the full front-desk
+     * Appointments.jsx list) that read fields this narrower projection
+     * doesn't carry (slotId, customerUserId, etc.); AppointmentWithSlotView
+     * drew the identical line for the patient-facing endpoints back in
+     * frontend phase B, for the same reason.
+     */
+    @GetMapping("/api/appointments/worklist")
+    @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PROVIDER')")
+    public List<AppointmentWorklistView> appointmentsWorklist() {
+        return appointmentRepository.findAllByTenantIdWithSlot(TenantContext.require());
+    }
+
     @GetMapping("/api/appointments/{id}")
     @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PROVIDER')")
     public Appointment appointment(@PathVariable UUID id) {
@@ -159,7 +177,7 @@ public class AppointmentController {
      */
     @GetMapping("/api/my-schedule")
     @PreAuthorize("hasRole('PROVIDER')")
-    public List<Appointment> mySchedule(
+    public List<AppointmentWorklistView> mySchedule(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();

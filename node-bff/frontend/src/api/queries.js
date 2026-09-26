@@ -94,6 +94,15 @@ export function useAppointments(enabled) {
   });
 }
 
+/** Richer worklist counterpart of useAppointments - real startTime + guest contactName, see AppointmentController.appointmentsWorklist. */
+export function useAppointmentsWorklist(enabled) {
+  return useQuery({
+    queryKey: ['appointments-worklist'],
+    queryFn: () => apiGet('/api/appointments/worklist'),
+    enabled,
+  });
+}
+
 export function useProviders(enabled, status) {
   return useQuery({
     queryKey: ['providers', status ?? 'all'],

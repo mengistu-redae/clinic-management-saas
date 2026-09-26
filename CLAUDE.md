@@ -1885,6 +1885,61 @@ clinic_admin (only the provider-scoped one exists), are natural, small
 pieces of the *next* frontend phase (the one that builds real time-sorted
 schedule/booking views), not this one.
 
+**Front-desk/provider dashboard widget gap closed** (built 2026-09-26) -
+the `startTime`-on-dashboards half of the scope boundary just above,
+closed for the front-desk "recent appointments" and provider "today's
+schedule" widgets specifically (found in a source-level UI review of every
+role's dashboard - both widgets showed only a ref + status, with no
+patient name or real appointment time, making the provider one in
+particular a much less useful worklist than the ordering already implied).
+No tenant-wide "today" endpoint was added - that half of the original
+scope boundary is still open.
+
+- **`AppointmentWorklistView`** (new projection interface,
+  `com.clinicops.appointment`) - the staff-worklist counterpart of
+  `AppointmentWithSlotView` (phase B): same join-with-`slots`-for-a-real
+  -`startTime` shape, plus `contactName`/`contactPhone` so a guest booking
+  shows a real name with no second lookup. Backs two call sites: a new
+  `GET /api/appointments/worklist` (`front_desk`/`clinic_admin`/`provider`,
+  same role gate as the plain tenant-wide `GET /api/appointments`, which
+  stays completely untouched - it has other consumers reading fields this
+  narrower projection doesn't carry) and the *existing* `GET /api/my-schedule`,
+  whose `findProviderSchedule` query and declared return type were widened
+  in place from bare `Appointment` to this view (one frontend consumer,
+  safe to change directly). A `patientId` case still resolves to a name
+  client-side via the caller's own `GET /api/patients` id->name `Map` -
+  the same pattern `front-desk/Appointments.jsx` already established, not
+  a server-side join to `patients`.
+- **Frontend** - `front-desk/Dashboard.jsx` switched from `useAppointments`
+  to a new `useAppointmentsWorklist` hook and gained the same
+  `usePatients()` + id->name `Map` lookup `Appointments.jsx` uses; each
+  "recent appointments" row now shows the patient/guest name and
+  `formatDateTime(a.startTime)` alongside the existing channel badge and
+  `StatusPill`. `provider/Dashboard.jsx` gained the identical name lookup
+  (confirmed live in source that `PROVIDER` already has `GET /api/patients`
+  read access, phase 2); each "Today's Schedule" row now leads with
+  `formatTime(a.startTime)` (time-first, since this list's whole point is
+  visit order) then the name, reusing `frontDeskAppointments.guest` for the
+  guest-fallback text rather than adding a duplicate key.
+- Backend: `mvn clean test-compile` confirmed clean (no output) both right
+  after the projection/endpoint change and again after adding
+  `AppointmentControllerIntegrationTest.worklistCarriesRealStartTimeAndGuestContactNameForStaff`
+  (role gate + `contactName`/`startTime` assertions) - the three existing
+  tests referencing `findProviderSchedule`/`mySchedule`
+  (`ProviderScheduleIntegrationTest`, `ProviderControllerIntegrationTest`,
+  `TenantIsolationIntegrationTest`) only ever asserted `status`/`providerId`/
+  HTTP status, never a bare-`Appointment`-only field, so none needed
+  changes. No new `TenantIsolationIntegrationTest` case - the new endpoint
+  resolves entirely off the caller's own token
+  (`TenantContext.require()`), same as the plain `GET /api/appointments`
+  list, which this suite already excludes from its per-resource
+  id-addressed cross-tenant checks for the identical reason. `npm run
+  build`/`npm test` (24/24) both clean.
+- **Not verified in a real browser this session** - the Chrome browser
+  extension stayed disconnected the entire session; this was confirmed
+  correct via source review, a real `mvn clean test-compile`, and a real
+  `npm run build`/`npm test`, not a live click-through.
+
 **clinic_admin encounter-access fix** (built 2026-09-15) - closed the one
 remaining gap from "Frontend covers every module..." below: `clinic_admin`
 had full backend access to `EncounterController` (no ownership check,

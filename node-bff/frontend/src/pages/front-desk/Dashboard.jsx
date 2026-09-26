@@ -1,27 +1,49 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAppointments } from '../../api/queries.js';
+import { useAppointmentsWorklist, usePatients } from '../../api/queries.js';
 import StatCard from '../../components/StatCard.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
+import { formatDateTime } from '../../lib/format.js';
 
 const ACTIVE_STATUSES = ['booked', 'checked_in', 'roomed', 'with_provider'];
 
 /**
- * Front-desk landing page - see GET /api/appointments (tenant-wide list).
- * "Active" counts (not yet checked_out/cancelled/no_show) stand in for a
- * "today" view - Appointment carries no slot start-time in its response
- * shape, so a real date-scoped worklist is deferred to the deep front-desk
- * phase (see the frontend plan's "Deliberate scope boundary" note).
+ * Front-desk landing page - see GET /api/appointments/worklist (a real
+ * startTime + guest contactName, unlike the plain tenant-wide list - see
+ * AppointmentWorklistView's javadoc). Patient names for a patientId case
+ * resolve via the same id->name Map pattern front-desk/Appointments.jsx
+ * already established. "Active" counts (not yet checked_out/cancelled/
+ * no_show) still stand in for a "today" view.
  */
 export default function FrontDeskDashboard() {
   const { t } = useTranslation();
-  const { data, isLoading, isError, error, refetch } = useAppointments(true);
+  const appointments = useAppointmentsWorklist(true);
+  const patients = usePatients();
+  const { data, isLoading: appointmentsLoading, isError: appointmentsError, error, refetch } = appointments;
+
+  const patientNames = useMemo(() => {
+    const map = new Map();
+    (patients.data || []).forEach((p) => map.set(p.id, `${p.firstName} ${p.lastName}`));
+    return map;
+  }, [patients.data]);
+
+  const isLoading = appointmentsLoading || patients.isLoading;
+  const isError = appointmentsError || patients.isError;
 
   if (isError) {
-    return <ErrorBanner message={error?.message} onRetry={refetch} />;
+    return (
+      <ErrorBanner
+        message={error?.message || patients.error?.message}
+        onRetry={() => {
+          refetch();
+          patients.refetch();
+        }}
+      />
+    );
   }
   if (isLoading) {
     return (
@@ -75,11 +97,20 @@ export default function FrontDeskDashboard() {
               <li key={a.id}>
                 <Link
                   to={`/front-desk/appointments/${a.id}`}
-                  className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 hover:border-slate-200 hover:bg-slate-50"
+                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2 hover:border-slate-200 hover:bg-slate-50"
                 >
-                  <span className="font-mono text-sm text-ink">{a.appointmentRef}</span>
-                  <span className="text-xs capitalize text-ink-muted">{t(`channel.${a.channel}`, { defaultValue: a.channel.replace(/_/g, ' ') })}</span>
-                  <StatusPill status={a.status} />
+                  <div>
+                    <p className="text-sm font-medium text-ink">
+                      {(a.patientId && patientNames.get(a.patientId)) || a.contactName || t('frontDeskAppointments.guest')}
+                    </p>
+                    <p className="font-mono text-xs text-ink-muted">
+                      {a.appointmentRef} · {formatDateTime(a.startTime)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-xs capitalize text-ink-muted">{t(`channel.${a.channel}`, { defaultValue: a.channel.replace(/_/g, ' ') })}</span>
+                    <StatusPill status={a.status} />
+                  </div>
                 </Link>
               </li>
             ))}

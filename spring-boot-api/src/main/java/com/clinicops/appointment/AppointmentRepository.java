@@ -17,6 +17,29 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
 
     List<Appointment> findAllByTenantId(UUID tenantId);
 
+    /**
+     * Staff-worklist counterpart of findAllByTenantId - joined with slots
+     * for a real startTime/endTime plus contactName/contactPhone, so a
+     * dashboard's own "recent appointments" widget can show who and when
+     * without a second per-row lookup for a guest booking - see
+     * AppointmentWorklistView's own javadoc. Backs
+     * GET /api/appointments/worklist; the plain tenant-wide GET
+     * /api/appointments stays untouched (bare Appointment, used by more
+     * call sites than just this one dashboard widget).
+     */
+    @Query(value = """
+            SELECT a.id as id, a.tenant_id as tenantId, a.patient_id as patientId,
+                   a.provider_id as providerId, a.appointment_type_id as appointmentTypeId,
+                   a.channel as channel, a.status as status, a.appointment_ref as appointmentRef,
+                   a.clinic_ref as clinicRef, a.contact_name as contactName, a.contact_phone as contactPhone,
+                   s.start_time as startTime, s.end_time as endTime,
+                   a.booked_at as bookedAt, a.cancelled_at as cancelledAt, a.cancellation_reason as cancellationReason
+            FROM appointments a JOIN slots s ON a.slot_id = s.id
+            WHERE a.tenant_id = :tenantId
+            ORDER BY a.booked_at DESC
+            """, nativeQuery = true)
+    List<AppointmentWorklistView> findAllByTenantIdWithSlot(@Param("tenantId") UUID tenantId);
+
     Optional<Appointment> findByIdAndTenantId(UUID id, UUID tenantId);
 
     Optional<Appointment> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
@@ -93,17 +116,28 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
 
     /**
      * A provider's own worklist for one day - see GET /api/my-schedule.
-     * Native/joined the same way as flipStaleBookedToNoShow, since
-     * Appointment has no mapped relation to Slot.
+     * Returns AppointmentWorklistView (not bare Appointment) so the
+     * dashboard can show a real startTime and a guest's contactName
+     * without a second lookup - a real gap found in UI review (the list
+     * previously showed only a reference + status, nothing telling a
+     * provider who's next or in what order beyond the query's own
+     * ORDER BY). Same join shape flipStaleBookedToNoShow already uses,
+     * since Appointment has no mapped relation to Slot.
      */
     @Query(value = """
-            SELECT a.* FROM appointments a
+            SELECT a.id as id, a.tenant_id as tenantId, a.patient_id as patientId,
+                   a.provider_id as providerId, a.appointment_type_id as appointmentTypeId,
+                   a.channel as channel, a.status as status, a.appointment_ref as appointmentRef,
+                   a.clinic_ref as clinicRef, a.contact_name as contactName, a.contact_phone as contactPhone,
+                   s.start_time as startTime, s.end_time as endTime,
+                   a.booked_at as bookedAt, a.cancelled_at as cancelledAt, a.cancellation_reason as cancellationReason
+            FROM appointments a
             JOIN slots s ON a.slot_id = s.id
             WHERE a.tenant_id = :tenantId AND a.provider_id = :providerId
               AND s.start_time >= :dayStart AND s.start_time < :dayEnd
             ORDER BY s.start_time
             """, nativeQuery = true)
-    List<Appointment> findProviderSchedule(
+    List<AppointmentWorklistView> findProviderSchedule(
             @Param("tenantId") UUID tenantId,
             @Param("providerId") UUID providerId,
             @Param("dayStart") Instant dayStart,
