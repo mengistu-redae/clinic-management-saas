@@ -11,7 +11,9 @@
       { "name": "clinic_admin", "description": "Manages one clinic's providers, rooms, fee policies and settings" },
       { "name": "provider", "description": "Clinician - documents visits, orders labs" },
       { "name": "front_desk", "description": "Clinic counter staff - books/reschedules/checks in walk-in patients" },
-      { "name": "patient", "description": "Self-service patient, not tied to any single clinic" }
+      { "name": "patient", "description": "Self-service patient, not tied to any single clinic" },
+      { "name": "pharmacist", "description": "Manages the medication catalog/stock and dispenses against prescriptions" },
+      { "name": "accountant", "description": "Manages the clinic's ledger, budgets, and payroll (accounting + finance modules)" }
     ]
   },
   "clients": [

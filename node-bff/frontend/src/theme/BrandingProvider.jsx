@@ -13,8 +13,11 @@ const VARS = [
 ];
 
 /**
- * Themes the staff workspace (clinic_admin / front_desk / provider) with the
- * signed-in user's own clinic branding: fetches GET /api/clinic/branding
+ * Themes the staff workspace (clinic_admin / front_desk / provider /
+ * pharmacist / accountant - the latter two added in phase 20, which also
+ * widened ClinicBrandingController's own @PreAuthorize to match, otherwise
+ * these two new roles would 403 fetching their own clinic's branding) with
+ * the signed-in user's own clinic branding: fetches GET /api/clinic/branding
  * (matches that endpoint's own @PreAuthorize - platform_admin isn't tied to
  * a single clinic, patient stays on the platform default) and writes the
  * brand/accent CSS vars onto document.documentElement. Closes a loose end
@@ -25,7 +28,7 @@ const VARS = [
  */
 export function BrandingProvider({ children }) {
   const { authenticated, hasRole } = useAuth();
-  const isStaff = authenticated && (hasRole('clinic_admin') || hasRole('front_desk') || hasRole('provider'));
+  const isStaff = authenticated && (hasRole('clinic_admin') || hasRole('front_desk') || hasRole('provider') || hasRole('pharmacist') || hasRole('accountant'));
 
   const { data } = useClinicBranding(isStaff);
   // ThemeProvider must wrap this in main.jsx - resolvedTheme feeds

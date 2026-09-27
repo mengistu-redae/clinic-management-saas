@@ -24,7 +24,7 @@ public class ClinicBrandingController {
     }
 
     @GetMapping("/api/clinic/branding")
-    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'PROVIDER')")
+    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'PROVIDER', 'PHARMACIST', 'ACCOUNTANT')")
     public ClinicBrandingView branding() {
         return clinicSettingsService.getBranding(TenantContext.require());
     }

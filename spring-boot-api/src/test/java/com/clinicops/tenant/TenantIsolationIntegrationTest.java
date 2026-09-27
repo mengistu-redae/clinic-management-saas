@@ -314,6 +314,31 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void medicationsAndStockBatchesAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("medication");
+        com.clinicops.pharmacy.Medication medication = createMedication(a.getId(), "Amoxicillin 500mg");
+        com.clinicops.pharmacy.StockBatch batch = createStockBatch(a.getId(), medication.getId(), 100);
+
+        Clinic b = clinicB("medication");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/clinic/medications/" + medication.getId()).with(asPharmacist("pharm", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/update").with(asPharmacist("pharm", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.UpdateMedicationRequest(
+                                null, null, null, null, null, "inactive"))))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/clinic/medications/" + medication.getId() + "/stock-batches").with(asPharmacist("pharm", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/stock-batches/" + batch.getId() + "/write-off")
+                        .with(asPharmacist("pharm", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.WriteOffStockBatchRequest("expired", "cross-tenant probe"))))
+                .andExpect(status().isNotFound());
+    }
+
     /**
      * The other half of the tenancy invariant: not just "clinic B can't see
      * clinic A's rows" but "a deactivated clinic's own staff are locked out

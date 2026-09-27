@@ -555,6 +555,30 @@ Timezone display built 2026-09-24**, once phase 18 unblocked it. See
     request. See "Phase 19" below and "Frontend phase O" under
     "## Frontend" below.
 
+**New module set (sketched + phase 1 built 2026-09-27)** - the user asked
+to add pharmacy, accounting, and finance modules, with the roles to run
+them. Two rounds of direct questions were put to the user before designing
+anything (full/inventory pharmacy vs. a log-only slice; accounting and
+finance merged vs. two distinct modules; how many new realm roles) - all
+three resolved with the broader/more capable option. Delivered as three
+separate sequential phases against one shared design (see the plan
+document referenced below) - Pharmacy first (this session), Accounting
+next (Finance reads its ledger, so it has to come after), Finance last.
+
+20. **Pharmacy - medication catalog, batch-tracked stock, dispensing**
+    (built 2026-09-27) - a new `pharmacist` realm role; `com.clinicops.pharmacy`
+    (`Medication`/`StockBatch`/`DispenseRecord`) dispenses against the
+    existing `Prescription` (phase 4/11) without touching billing at all.
+    See "Phase 20: pharmacy" below.
+21. **Accounting** (not yet built) - chart of accounts + a real
+    double-entry journal, a new `accountant` realm role (shared with
+    Finance below), auto-posts a journal entry when an existing
+    `Payment`/`Refund` happens (the ledger picks up real cash events, it
+    doesn't create new ones).
+22. **Finance** (not yet built) - budgets, minimal payroll (salary + a
+    monthly pay-run action), and P&L/budget-vs-actual reporting, built on
+    top of phase 21's ledger.
+
 Lower priority / only if the product genuinely wants full-EHR breadth:
 immunizations, structured physical-exam findings, discharge summaries -
 these fit an inpatient/full-EHR shape more than this app's outpatient-
@@ -1397,6 +1421,184 @@ code (owner scope, generation trigger, `taxRatePercent` wiring) - see
 
 No frontend UI yet - same "backend first" scope boundary as every
 EHR-leaning phase before it.
+
+## Phase 20: pharmacy
+
+First phase of the new pharmacy/accounting/finance module set (see the
+phase-plan entry above for the two rounds of scoping questions this whole
+set was built against - full plan document referenced there). New realm
+role `pharmacist`; `clinic_admin` overrides every endpoint here with no
+ownership check, same as everywhere else. New migration `V17__pharmacy.sql`.
+
+- **`com.clinicops.pharmacy`** - `Medication` (the catalog: name/form/
+  unitPrice/reorderThreshold, soft-deactivate only, same reasoning as
+  Room/AppointmentType - referenced by FK from StockBatch/DispenseRecord
+  with no cascade), `StockBatch` (one received lot -
+  `quantityReceived`/`quantityOnHand`/`expiryDate`, status
+  active/depleted/expired/recalled, no delete endpoint at all - real
+  inventory/audit weight, same precedent as `Allergy`), `DispenseRecord`
+  (genuinely append-only, no update/delete anywhere, same shape as
+  `AppointmentCancellation`/`ConsentRecord`/`PhiAccessLog`).
+  - **Deliberately no drug-name-matching logic** - a `Prescription`
+    (`com.clinicops.encounter`, phase 4/11) stays exactly as it always
+    was, free-text `medicationName` a provider writes; a pharmacist reads
+    that text and manually picks the corresponding catalog `Medication`
+    (and a specific `StockBatch` - no automatic FEFO allocation) when
+    dispensing. Two independent entities, joined only by a human's own
+    judgment, not a foreign key or a fuzzy-match algorithm.
+  - **`DispenseService`** (`com.clinicops.pharmacy`) - a single bean, plain
+    `@Transactional`, same "not a contended resource" reasoning
+    `EncounterService` already gives for skipping the Redis-lock
+    split-bean pattern. Validates the picked batch belongs to the picked
+    medication (400), enough `quantityOnHand` remains
+    (`InsufficientStockException`, 409), and - only when the prescription
+    itself has a prescribed total set - that this dispense wouldn't push
+    the cumulative dispensed-so-far past it (400, computed via
+    `DispenseRecordRepository.sumQuantityByPrescriptionId`, same "compute
+    the running total in a query" shape `RefundRepository.
+    sumAmountByPaymentId` already established). Decrements the batch and
+    auto-flips it to `depleted` at exactly zero.
+  - **`PrescriptionRepository.findPendingDispense`** (new, lives with
+    `Prescription` in `com.clinicops.encounter`, not in the pharmacy
+    package - same "the projection lives with its entity's repository"
+    precedent `AppointmentWorklistView` already set) - a native query
+    joining `prescriptions`/`encounters`/`appointments` for a real
+    `patientId`/`contactName` (no JPA relation exists between any of
+    these), returning every `status = 'active'` prescription whose
+    prescribed total (if any) still exceeds its live dispensed-so-far sum.
+    Backs `GET /api/pharmacy/queue` (`MedicationController`'s sibling
+    `DispenseController`) - the pharmacist's own worklist.
+  - **`MedicationController`** - `GET/POST /api/clinic/medications`,
+    `GET /{id}`, `POST /{id}/update` (same phase-5 CRUD shape everywhere
+    else uses); nested `GET/POST .../{id}/stock-batches` (receive stock)
+    and `POST .../stock-batches/{id}/write-off` (a dedicated action
+    endpoint, same convention as deactivate/reactivate elsewhere - sets
+    status to expired/recalled with a reason and zeroes quantityOnHand).
+  - **`DispenseController`** - `GET /api/pharmacy/queue`,
+    `POST /api/prescriptions/{id}/dispense`. `pharmacist`+`clinic_admin`
+    throughout, no other role has any access.
+  - **Low-stock/expiring-soon stayed a per-medication client-side badge on
+    the Medications page itself, not a separate dashboard-level banner** -
+    a genuine simplification made while building, not in the original
+    sketch: a cross-medication aggregate view would need a new bulk
+    query (every medication's batches at once), and the per-medication
+    view already has everything it needs from data the page fetches
+    anyway (each row's own nested stock-batches panel).
+- **Frontend** (`pages/pharmacist/`, new) - `Dashboard.jsx` (`/pharmacist`)
+  is the dispense queue itself: a stat card (pending-dispense count) +
+  `DataTable` (search/sort, the modern-UI-redesign primitives built earlier
+  this session) with `renderExpanded` opening a small dispense form
+  (medication select → that medication's own active/in-stock batches →
+  quantity). `Medications.jsx` (`/pharmacist/medications`) is the catalog,
+  same `DataTable`+`renderExpanded` shape `clinic-admin/Providers.jsx`
+  already established for its own nested panels - each row expands into
+  an edit form plus the stock-batches sub-panel (list + receive-stock form
+  + per-batch write-off buttons + the low-stock/expiring badges above).
+  `layout/Sidebar.jsx` gained a `pharmacist` nav group (Dashboard,
+  Medications) and one shared link for `clinic_admin`
+  (`/pharmacist/medications`, matching the existing "clinic_admin gets a
+  UI path into a module it overrides, not just backend access" precedent
+  set by the clinic_admin encounter-access fix).
+  - **A real, pre-existing gap fixed along the way**:
+    `theme/BrandingProvider.jsx`'s `isStaff` check only listed
+    `clinic_admin`/`front_desk`/`provider` - adding `pharmacist`/
+    `accountant` there without also widening
+    `ClinicBrandingController`'s own `@PreAuthorize` (still only those
+    original three roles) would have made the frontend fetch branding for
+    two roles the backend would 403 on. Both sides fixed together.
+- **Roles**: `pharmacist` and `accountant` (used starting phase 21) added
+  as real Keycloak realm roles on the running dev instance, plus demo
+  users `demo-pharmacist`/`demo-accountant` (password `DemoPass123!`,
+  joined to the Demo Clinic Organization) - see the
+  `demo-keycloak-credentials` memory, updated. Both roles also added to
+  `infra/keycloak/realm-export.json` for a from-scratch environment
+  (unlike `demo-front-desk`, whose role already existed there - only the
+  demo *users* are a live-only gap, same as that one).
+- **Tests**: `DispenseServiceTest` (pure Mockito, 6 cases - successful
+  dispense, exact-zero depletion, insufficient stock, exceeding the
+  prescribed total, a batch belonging to a different medication, an
+  unknown prescription - genuinely run locally, `Failures: 0`) +
+  `MedicationControllerIntegrationTest`/`DispenseControllerIntegrationTest`
+  (CRUD, invalid form/status 400, role gate, cross-tenant 404, the queue
+  excluding an already-fully-dispensed prescription, insufficient-stock
+  409) + one `TenantIsolationIntegrationTest` case
+  (`medicationsAndStockBatchesAreNotReadableOrWritableFromAnotherTenant`).
+  Confirmed via a clean `mvn clean test-compile` and by checking every
+  other, unrelated integration test class in the same run failed
+  identically (`Could not find a valid Docker environment`) - not a
+  regression from this phase's own code, same as every prior phase.
+- **Live-verified against the real running stack** - `docker compose up
+  -d --build --force-recreate spring-boot-api node-bff` (both healthy),
+  `V17` confirmed applied via `flyway_schema_history`
+  (`success = t`), and `GET /api/pharmacy/queue`/`GET /api/clinic/
+  medications` both confirmed reachable through the real nginx/node-bff
+  chain (`401`, not `404`, with no session - the routes exist and require
+  auth, exactly as expected). The two new demo Keycloak accounts were
+  confirmed correct via the admin API (role mapping + Organization
+  membership) but **not** via an actual browser login - the Chrome
+  extension stayed disconnected the entire session (the same gap this
+  session's own UI-redesign phase already flagged) - a real click-through
+  as `demo-pharmacist` (create a medication, receive stock, dispense
+  against a real prescription, confirm the queue/stock numbers update)
+  is still owed once the extension reconnects.
+
+**The owed `demo-pharmacist` click-through happened 2026-09-27 (later
+session, extension reconnected) - a real bug was found and fixed.** Logging
+in as `demo-pharmacist`/`DemoPass123!` through the actual browser worked
+(role/org membership confirmed correct), but the dashboard's dispense queue
+table went blank behind a raw `Request failed with status 403` banner a
+few seconds after every load - reproduced live, including once mid-entry
+(the in-progress medication/batch selection in an open dispense form was
+lost when the table blanked underneath it).
+
+- **Root cause**: `pages/pharmacist/Dashboard.jsx` called `usePatients()`
+  (`GET /api/patients`) to resolve each queue row's `patientId` to a name -
+  the same client-side id->name-`Map` pattern `front-desk/Dashboard.jsx`/
+  `Appointments.jsx` already use. But `PatientController`'s read gate is
+  `front_desk`/`clinic_admin`/`provider` only (pinned since phase 2) -
+  `pharmacist` was never added, so the call always 403s. `DataTable`
+  treats any truthy `error` prop as "replace the whole table with just the
+  `ErrorBanner`" (by design, for the normal case of the table's own data
+  failing to load) - here it wiped out the entire worklist over a
+  secondary, non-essential lookup, not the queue data itself.
+- **Fix: embed the name server-side, not widen `PatientController`** -
+  `PrescriptionRepository.findPendingDispense`'s native query gained a
+  `LEFT JOIN patients pt ON a.patient_id = pt.id` and now returns
+  `patientName` directly (null for a guest booking, which has no
+  `patientId`); `PrescriptionDispenseView` gained the matching getter.
+  `pharmacist/Dashboard.jsx` dropped `usePatients()`/the `patientNames`
+  `Map` entirely - `patientName(row)` is now just `row.patientName ||
+  row.contactName || <guest text>`. Same reasoning `contactName` was
+  already embedded directly in this same query rather than requiring a
+  second lookup - a pharmacist gets exactly the one field this queue
+  needs, not read access to the tenant's whole patient-search endpoint
+  (`PatientController.patients` is PHI-audited and lets a caller browse/
+  search every patient, a broader grant than this worklist needs).
+- **A naively "simpler" fix was checked against real data and rejected
+  before writing it**: just deleting `usePatients()` and falling back to
+  `contactName` alone would have compiled and looked like it worked, but
+  `contactName` is **only ever set for the `guest` channel** - a
+  `patient_portal`/`front_desk` booking's `contactName` is always `null`
+  (confirmed by reading `AppointmentController.createAppointment`, which
+  passes `null, null` for it on that path). A direct Postgres query run
+  against this session's own seed data confirmed two of the three pending
+  prescriptions belong to a real `Patient` row named "Walk In" with no
+  `contactName` on file - the naive fix would have silently mislabeled
+  both as "Guest" in the UI, a data-correctness regression traded for
+  fixing the crash. The join-based fix avoids this entirely: verified live
+  post-fix that both "Walk In" rows render the real patient name, not
+  "Guest".
+- **Live-verified against the real running stack** - `mvn -q compile`
+  clean, `docker compose up -d --build --force-recreate spring-boot-api
+  node-bff` + `docker compose restart nginx` (the phase-Q stale-upstream-IP
+  gotcha), then a fresh `demo-pharmacist` browser login: `GET
+  /api/patients` no longer called at all (confirmed via the network
+  panel - only `/api/pharmacy/queue` and `/api/clinic/branding` fire), no
+  error banner on load or after an 8-second wait (long enough for the old
+  bug's retry-then-fail cycle to have surfaced), and expanding a row still
+  opens a working dispense form. The `Medications` page (catalog CRUD +
+  nested stock-batch receive/write-off panel) was also exercised live this
+  session and confirmed fully working, unrelated to the bug above.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -2815,6 +3017,116 @@ exact shape since phase 16 itself.
   intact) while the record-payment form, refund link, and generate
   -invoice button are all correctly absent.
 
+**Frontend phase Q: modern UI redesign - sidebar nav + hamburger +
+searchable/sortable tables** (built 2026-09-27) - a full visual/navigation
+pass across every role, requested directly by the user ("modern...appealing
+look, multi searching and sorting features, side menu instead of scrolling
+long down, hamburger"). Confirmed via direct questions before building:
+sidebar for every role (not just desktop), search+sort on every list page
+(not just the busiest ones), and real sortable tables (not cards with a
+toolbar bolted on). Zero backend/`node-bff` changes - every list-fetching
+hook in `api/queries.js` already returns its full tenant/owner-scoped list
+with no server-side sort/pagination to begin with, and every list in this
+app is small (seed data ships single digits of most resources), so
+search/sort run entirely client-side, same "no premature abstraction, no
+backend change without a real need" convention this project already keeps.
+
+- **`layout/Sidebar.jsx`+`layout/Topbar.jsx`** (new) replace `AppShell.jsx`'s
+  old brand+icons+user+two-row-nav header (frontend phase A) - a
+  collapsible desktop column (icon-only when collapsed, persisted to
+  `localStorage` same pattern as `ThemeProvider`) and an off-canvas
+  drawer+backdrop on `<lg` screens via a new hamburger button. Nav content
+  itself is a straight re-shelving of `AppShell.jsx`'s old `hasRole()`
+  branches and `nav.*` i18n keys - no new nav items, just a new container.
+  `components/UserMenu.jsx` (new, `IconMenu`-based) replaces the old
+  always-visible name+email+Logout block. `layout/PublicShell.jsx` stays a
+  top-bar-only shell (3 public links + login never justified a sidebar)
+  but restyled to the same sticky/slim header language.
+  - **A real pre-existing gap fixed along the way**: `components/
+    TimezoneToggle.jsx` (frontend phase N) had been orphaned since the
+    header menus were last split back into separate Language/Theme icons
+    (`a917e75`) - nothing rendered it anymore, confirmed by grep before
+    touching anything. `Topbar.jsx`/`PublicShell.jsx` both gained a third
+    `ClockIcon` `IconMenu` wired to it, restoring the browser/clinic's
+    /manual timezone-display picker.
+- **`components/DataTable.jsx`+`lib/tableUtils.js`** (new) - the one
+  generic searchable/sortable table every converted list page adopts:
+  column-header click-to-sort (asc/desc, an indicator icon), a search box
+  over caller-supplied `(row) => string` accessors, and an optional
+  `renderExpanded(row)` - re-hosting this app's existing "toggle a row open
+  into an inline edit form" pages (Referrals' expand-to-update,
+  Providers' nested hours/login/signature panels) under one shared chevron
+  mechanism instead of each page's own bespoke toggle state. Reuses
+  `Skeleton`/`ErrorBanner`/`EmptyState` unchanged. `overflow-x-auto`, no
+  separate mobile card variant - an ordinary admin-dashboard pattern given
+  this app's current column counts.
+  - Converted: `front-desk/Appointments.jsx`, `clinic-admin/Providers.jsx`
+    (`renderExpanded` hosts the pre-existing hours/login/signature panels
+    verbatim), `Rooms.jsx`/`AppointmentTypes.jsx`/`LabRates.jsx`
+    (inline-edit-in-place, unchanged logic), `FeePolicies.jsx` (keeps its
+    existing clinic-wide-then-per-provider grouping; each group's own tier
+    list is now one small `DataTable`), `lab-orders/LabOrders.jsx` (its
+    existing status `<select>` filter narrows `rows` before `DataTable`'s
+    own search/sort run), `referrals/Referrals.jsx` (`renderExpanded` hosts
+    the existing inline update form verbatim - the page's own documented
+    "expand-to-update, not a detail route" decision, frontend phase L, is
+    unchanged, just re-hosted), `platform-admin/Clinics.jsx`,
+    `patient/MyLabOrders.jsx`, root `MyAppointments.jsx`, and
+    `front-desk/PatientSearch.jsx` (kept its real server-side `?query=`
+    search as the source of truth - `DataTable`'s own client search box is
+    omitted there on purpose, not duplicated over the same field).
+  - **Deliberately not converted**: `components/PatientChart.jsx`'s nested
+    allergy/consent sub-lists - a few rows at most, embedded inside an
+    already-collapsible chart panel, not an independent list page.
+- **`components/PageContainer.jsx`/`PageHeader.jsx`/`Button.jsx`/`Card.jsx`**
+  (new) - replace the ad hoc `mx-auto max-w-*` wrapper div and repeated
+  button/card classNames every page had independently declared since phase
+  A. Every page under `src/pages/` not converted to `DataTable` above
+  still got this lighter-touch wrapper swap (detail pages, the booking
+  flow, `TrackAppointment`/`TrackLabOrder`, etc.) - no structural/logic
+  changes there, purely the container primitive. Dashboards (one per role)
+  were left un-wrapped on purpose - all five are already full-bleed
+  grids/chart layouts with no existing width cap, so `PageContainer`
+  would've been a no-op; `StatCard` gained a subtle brand-colored top
+  accent border and a slightly larger number instead, a shared visual bump
+  every dashboard picks up for free.
+- **New icons added to `components/icons.jsx`** (hand-authored stroke SVGs,
+  same convention as the existing two - still no icon library dependency):
+  hamburger/close, chevrons, search, sort indicators, a clock (timezone),
+  and one per new sidebar nav concept (dashboard/calendar/users/flask
+  /clipboard/building/settings/user-circle/logout).
+- **i18n**: new `sidebar.*`/`userMenu.*` keys plus `common.search`/
+  `common.noResults`/`common.noResultsHint`, added to both `locales/
+  en.json` and `am.json` together - confirmed key-parity by script
+  afterward (638 keys each side, the one pre-existing intentional
+  English-only key - `myLabOrders.testCount_one` - unchanged). Every new
+  table column header reuses an existing translated label from that
+  page's own i18n namespace rather than inventing a parallel one (e.g.
+  `providersPage.fullName`, `referralsPage.status`).
+- **An operational gotcha found rebuilding `node-bff` for this phase, not
+  previously documented**: after `docker compose up -d --build
+  --force-recreate node-bff`, nginx kept 502ing every request even though
+  `node-bff` itself answered `200` directly on `:3000` - nginx resolves
+  its upstream's container IP once and doesn't retry DNS on a plain
+  container recreate, so a stale IP lingers. Fixed with `docker compose
+  restart nginx` immediately after recreating `node-bff` - added as a
+  second bullet alongside the existing "rebuild node-bff after editing
+  PUBLIC_ROUTES" lesson in "Known gaps" below, since both are the same
+  underlying "the browser-facing route is nginx, verify through it" trap.
+- **Not done this session**: the Chrome browser extension stayed
+  disconnected for the whole session (confirmed after several reconnect
+  attempts, consistent with this repo's own prior "not verified in a real
+  browser this session" precedent) - this phase is confirmed via a clean
+  `npm run build` after every stage, a clean rebuilt-container `curl`
+  through nginx, and direct source review of every converted page (patterns
+  matched against each page's pre-existing hooks/mutations/role gates
+  verbatim), but **not** a real click-through. Sidebar collapse/hamburger
+  -drawer behavior, live search/sort narrowing real rows, and both theme/
+  language axes on the new table pages are all unverified in an actual
+  browser - flagged here rather than claimed. A follow-up session with the
+  extension connected should do this walkthrough before treating this
+  phase as fully done.
+
 ## Post-phase-7 backend additions
 
 Two of the "Known gaps" items closed in one session (built 2026-09-19),
@@ -3142,6 +3454,19 @@ one - now the documented exception, not the rule.
   throwing. `NotificationWorkerTest` (existing) needed no changes - it
   only ever mocks `NotificationSender` generically, unaffected by which
   concrete implementation is wired. 10/10 passing locally.
+- `DispenseServiceTest` (phase 20, pure Mockito, genuinely run locally -
+  6/6 passing) - successful dispense decrements the batch and saves a
+  record, exact-zero depletion flips the batch to `depleted`, insufficient
+  stock rejected before anything is saved, exceeding a prescription's own
+  prescribed total rejected, a stock batch belonging to a different
+  medication rejected, an unknown prescription 404s.
+  `MedicationControllerIntegrationTest`/`DispenseControllerIntegrationTest`
+  (CRUD, invalid form/status 400, role gate, cross-tenant 404, the queue
+  correctly excluding an already-fully-dispensed prescription,
+  insufficient-stock 409) plus one new `TenantIsolationIntegrationTest`
+  case. Same Testcontainers wall as every other integration test on this
+  machine - confirmed via a clean `mvn clean test-compile` and by checking
+  every other, unrelated test class failed identically in the same run.
 
 ## Verified-session logs
 
@@ -3244,6 +3569,14 @@ append new ones there too, not here.
   serving its old code. Verify anonymous/public endpoints through node-bff's
   own port, never only via a direct curl to spring-boot-api - that will pass
   even when the BFF's public-route bypass is broken or stale.
+- **A second, related lesson (frontend phase Q)**: after `--force-recreate
+  node-bff`, nginx can keep 502ing every request even once the new
+  container is healthy and answers `200` directly on `:3000` - it resolved
+  `node-bff`'s container IP once and doesn't re-resolve on a plain
+  recreate. `docker compose restart nginx` right after fixes it. Verify
+  through `http://localhost:80` (nginx), not just `:3000` directly, after
+  any `node-bff` recreate - the same "verify through the real browser
+  -facing route" trap as the bullet above.
 - The Testcontainers-backed integration suite (`ClinicControllerIntegrationTest`
   and everything built on `AbstractIntegrationTest` in later phases) cannot
   run on this dev machine at all - a Windows Docker Desktop npipe

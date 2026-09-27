@@ -28,6 +28,9 @@
     },
     "platformAdmin": {
       "clinics": "Clinics"
+    },
+    "pharmacist": {
+      "medications": "Medications"
     }
   },
   "publicNav": {
@@ -37,6 +40,15 @@
     "logIn": "Log in"
   },
   "logOut": "Log out",
+  "sidebar": {
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar"
+  },
+  "userMenu": {
+    "account": "Account"
+  },
   "theme": {
     "label": "Theme",
     "light": "Light",
@@ -80,7 +92,10 @@
     "adding": "Adding…",
     "name": "Name",
     "errorSaveChanges": "Could not save changes.",
-    "delete": "Delete"
+    "delete": "Delete",
+    "search": "Search…",
+    "noResults": "No results",
+    "noResultsHint": "Try a different search or filter."
   },
   "appointmentDetail": {
     "title": "Appointment",
@@ -750,5 +765,59 @@
     "sentToLab": "Sent to lab",
     "resulted": "Resulted",
     "reviewed": "Reviewed"
+  },
+  "medicationForm": {
+    "tablet": "Tablet",
+    "capsule": "Capsule",
+    "syrup": "Syrup",
+    "injection": "Injection",
+    "other": "Other"
+  },
+  "pharmacistPage": {
+    "dashboardTitle": "Pharmacy",
+    "pendingDispenses": "Pending dispenses",
+    "medication": "Medication",
+    "dosage": "Dosage",
+    "progress": "Progress",
+    "progressValue": "{{dispensed}} of {{prescribed}} dispensed",
+    "noTotal": "{{dispensed}} dispensed (no total set)",
+    "emptyQueueTitle": "Nothing pending",
+    "emptyQueueDescription": "Active prescriptions awaiting dispense will show up here.",
+    "stockBatch": "Stock batch",
+    "quantity": "Quantity",
+    "notesOptional": "Notes (optional)",
+    "dispense": "Dispense",
+    "dispensing": "Dispensing…",
+    "errorFields": "A medication, a stock batch, and a positive quantity are required.",
+    "errorDispense": "Could not dispense this - check the batch still has enough on hand.",
+    "unlabeledBatch": "Unlabeled batch",
+    "onHand": "on hand",
+    "form": "Form",
+    "unitOfMeasureOptional": "Unit of measure (optional)",
+    "unitPriceOptional": "Unit price (optional)",
+    "reorderThresholdOptional": "Reorder threshold (optional)",
+    "reorderThreshold": "Reorder threshold",
+    "addMedication": "Add medication",
+    "errorNameRequired": "Name is required.",
+    "errorCreate": "Could not create this medication.",
+    "emptyMedicationsTitle": "No medications yet",
+    "emptyMedicationsDescription": "Add your first medication above.",
+    "stockBatches": "Stock batches",
+    "noBatches": "No stock received yet.",
+    "mark_expired": "Mark expired",
+    "mark_recalled": "Mark recalled",
+    "batchNumberOptional": "Batch # (optional)",
+    "quantityReceived": "Quantity received",
+    "expiryDateOptional": "Expiry date (optional)",
+    "receiveStock": "Receive stock",
+    "errorQuantityRequired": "A positive quantity received is required.",
+    "errorReceive": "Could not receive this stock.",
+    "writeOffReasonLabel": "Reason",
+    "errorReasonRequired": "A reason is required.",
+    "errorWriteOff": "Could not write off this batch.",
+    "onHandTotal": "{{count}} on hand",
+    "lowStock": "Low stock",
+    "expiringSoonCount": "{{count}} expired/expiring",
+    "dispenseConfirmed": "Dispensed {{quantity}} of {{medication}}."
   }
 }

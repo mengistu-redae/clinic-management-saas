@@ -28,6 +28,9 @@
     },
     "platformAdmin": {
       "clinics": "ክሊኒኮች"
+    },
+    "pharmacist": {
+      "medications": "መድሃኒቶች"
     }
   },
   "publicNav": {
@@ -37,6 +40,15 @@
     "logIn": "ይግቡ"
   },
   "logOut": "ውጣ",
+  "sidebar": {
+    "openMenu": "ማውጫ ክፈት",
+    "closeMenu": "ማውጫ ዝጋ",
+    "collapse": "የጎን ማውጫ አሳንስ",
+    "expand": "የጎን ማውጫ ዘርጋ"
+  },
+  "userMenu": {
+    "account": "መለያ"
+  },
   "theme": {
     "label": "ገጽታ",
     "light": "ብሩህ",
@@ -80,7 +92,10 @@
     "adding": "በመጨመር ላይ…",
     "name": "ስም",
     "errorSaveChanges": "ለውጦችን ማስቀመጥ አልተቻለም።",
-    "delete": "አጥፋ"
+    "delete": "አጥፋ",
+    "search": "ፈልግ…",
+    "noResults": "ምንም ውጤት የለም",
+    "noResultsHint": "የተለየ ፍለጋ ወይም ማጣሪያ ይሞክሩ።"
   },
   "appointmentDetail": {
     "title": "ቀጠሮ",
@@ -749,5 +764,59 @@
     "sentToLab": "ወደ ላብራቶሪ ተልኳል",
     "resulted": "ውጤት ተገኝቷል",
     "reviewed": "ተገምግሟል"
+  },
+  "medicationForm": {
+    "tablet": "ኪኒን",
+    "capsule": "ካፕሱል",
+    "syrup": "ሽሮፕ",
+    "injection": "መርፌ",
+    "other": "ሌላ"
+  },
+  "pharmacistPage": {
+    "dashboardTitle": "ፋርማሲ",
+    "pendingDispenses": "በመጠባበቅ ላይ ያሉ ስርጭቶች",
+    "medication": "መድሃኒት",
+    "dosage": "መጠን",
+    "progress": "እድገት",
+    "progressValue": "{{dispensed}} ከ{{prescribed}} ተሰጥቷል",
+    "noTotal": "{{dispensed}} ተሰጥቷል (ጠቅላላ አልተቀመጠም)",
+    "emptyQueueTitle": "ምንም በመጠባበቅ ላይ የለም",
+    "emptyQueueDescription": "ንቁ የመድሃኒት ማዘዣዎች እዚህ ይታያሉ።",
+    "stockBatch": "የክምችት ጎድጓዳ",
+    "quantity": "ብዛት",
+    "notesOptional": "ማስታወሻ (አማራጭ)",
+    "dispense": "አድርስ",
+    "dispensing": "በማድረስ ላይ…",
+    "errorFields": "መድሃኒት፣ የክምችት ጎድጓዳ እና አዎንታዊ ብዛት ያስፈልጋሉ።",
+    "errorDispense": "ይህን ማድረስ አልተቻለም - ጎድጓዳው በቂ ክምችት እንዳለው ያረጋግጡ።",
+    "unlabeledBatch": "ያልተሰየመ ጎድጓዳ",
+    "onHand": "በክምችት ውስጥ",
+    "form": "ቅርጽ",
+    "unitOfMeasureOptional": "የመለኪያ ክፍል (አማራጭ)",
+    "unitPriceOptional": "የአሃድ ዋጋ (አማራጭ)",
+    "reorderThresholdOptional": "የዳግም ትዕዛዝ ገደብ (አማራጭ)",
+    "reorderThreshold": "የዳግም ትዕዛዝ ገደብ",
+    "addMedication": "መድሃኒት ጨምር",
+    "errorNameRequired": "ስም ያስፈልጋል።",
+    "errorCreate": "ይህን መድሃኒት መፍጠር አልተቻለም።",
+    "emptyMedicationsTitle": "እስካሁን ምንም መድሃኒት የለም",
+    "emptyMedicationsDescription": "የመጀመሪያውን መድሃኒትዎን ከላይ ይጨምሩ።",
+    "stockBatches": "የክምችት ጎድጓዳዎች",
+    "noBatches": "እስካሁን ምንም ክምችት አልደረሰም።",
+    "mark_expired": "እንደ ጊዜው ያለፈበት ምልክት አድርግ",
+    "mark_recalled": "እንደ ተነሳ ምልክት አድርግ",
+    "batchNumberOptional": "የጎድጓዳ ቁጥር (አማራጭ)",
+    "quantityReceived": "የደረሰ ብዛት",
+    "expiryDateOptional": "የማብቂያ ቀን (አማራጭ)",
+    "receiveStock": "ክምችት ተቀበል",
+    "errorQuantityRequired": "አዎንታዊ የደረሰ ብዛት ያስፈልጋል።",
+    "errorReceive": "ይህን ክምችት መቀበል አልተቻለም።",
+    "writeOffReasonLabel": "ምክንያት",
+    "errorReasonRequired": "ምክንያት ያስፈልጋል።",
+    "errorWriteOff": "ይህን ጎድጓዳ መሰረዝ አልተቻለም።",
+    "onHandTotal": "{{count}} በክምችት ውስጥ",
+    "lowStock": "ዝቅተኛ ክምችት",
+    "expiringSoonCount": "{{count}} ጊዜው ያለፈ/እያለቀ",
+    "dispenseConfirmed": "{{quantity}} የ{{medication}} ተሰጥቷል።"
   }
 }

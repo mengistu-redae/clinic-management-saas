@@ -914,3 +914,74 @@ function useClinicStatusAction(path) {
 
 export const useDeactivateClinic = useClinicStatusAction('deactivate');
 export const useReactivateClinic = useClinicStatusAction('reactivate');
+
+// ---- pharmacy (phase 20 - see MedicationController/DispenseController) ----
+
+export function useMedications(enabled, status) {
+  return useQuery({
+    queryKey: ['medications', status ?? 'all'],
+    queryFn: () => apiGet(`/api/clinic/medications${status ? `?status=${status}` : ''}`),
+    enabled,
+  });
+}
+
+export function useCreateMedication() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/clinic/medications', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['medications'] }),
+  });
+}
+
+export function useUpdateMedication(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/clinic/medications/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['medications'] }),
+  });
+}
+
+export function useStockBatches(medicationId) {
+  return useQuery({
+    queryKey: ['stock-batches', medicationId],
+    queryFn: () => apiGet(`/api/clinic/medications/${medicationId}/stock-batches`),
+    enabled: Boolean(medicationId),
+  });
+}
+
+export function useReceiveStockBatch(medicationId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/clinic/medications/${medicationId}/stock-batches`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['stock-batches', medicationId] }),
+  });
+}
+
+export function useWriteOffStockBatch(medicationId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ batchId, ...body }) => apiPost(`/api/clinic/medications/${medicationId}/stock-batches/${batchId}/write-off`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['stock-batches', medicationId] }),
+  });
+}
+
+/** GET /api/pharmacy/queue - active prescriptions not yet fully dispensed. */
+export function usePharmacyQueue(enabled) {
+  return useQuery({
+    queryKey: ['pharmacy', 'queue'],
+    queryFn: () => apiGet('/api/pharmacy/queue'),
+    enabled,
+  });
+}
+
+export function useDispensePrescription(prescriptionId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/prescriptions/${prescriptionId}/dispense`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pharmacy', 'queue'] });
+      // Prefix match - invalidates every medication's own stock-batches query, not just one, since a dispense's quantityOnHand change is only known after the fact.
+      queryClient.invalidateQueries({ queryKey: ['stock-batches'] });
+    },
+  });
+}

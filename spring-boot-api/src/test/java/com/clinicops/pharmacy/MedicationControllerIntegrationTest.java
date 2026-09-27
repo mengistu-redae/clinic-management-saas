@@ -1,0 +1,113 @@
+package com.clinicops.pharmacy;
+
+import com.clinicops.clinic.Clinic;
+import com.clinicops.support.AbstractIntegrationTest;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+
+import java.math.BigDecimal;
+import java.util.UUID;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+class MedicationControllerIntegrationTest extends AbstractIntegrationTest {
+
+    @Test
+    void createListGetAndUpdateAMedicationThenDeactivateIt() throws Exception {
+        Clinic clinic = createClinic("med-crud-" + UUID.randomUUID(), "Medication CRUD Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+
+        String body = mockMvc.perform(post("/api/clinic/medications").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new CreateMedicationRequest("Amoxicillin 500mg", "capsule", "capsule", new BigDecimal("2.50"), 20))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("active"))
+                .andExpect(jsonPath("$.form").value("capsule"))
+                .andReturn().getResponse().getContentAsString();
+        UUID id = UUID.fromString(objectMapper.readTree(body).get("id").asText());
+
+        mockMvc.perform(get("/api/clinic/medications").with(asClinicAdmin("admin", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+
+        mockMvc.perform(post("/api/clinic/medications/" + id + "/update").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateMedicationRequest(null, null, null, null, null, "inactive"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("inactive"));
+
+        mockMvc.perform(get("/api/clinic/medications").with(asClinicAdmin("admin", orgAlias)).param("status", "active"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void anInvalidFormOrStatusIsRejected() throws Exception {
+        Clinic clinic = createClinic("med-badform-" + UUID.randomUUID(), "Bad Form Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+
+        mockMvc.perform(post("/api/clinic/medications").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new CreateMedicationRequest("Bad Drug", "liquid", null, null, null))))
+                .andExpect(status().isBadRequest());
+
+        Medication medication = createMedication(clinic.getId(), "Ibuprofen");
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/update").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateMedicationRequest(null, null, null, null, null, "deleted"))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void onlyPharmacistAndClinicAdminCanWrite() throws Exception {
+        Clinic clinic = createClinic("med-role-" + UUID.randomUUID(), "Role Gate Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+
+        mockMvc.perform(post("/api/clinic/medications").with(asFrontDesk("fd", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateMedicationRequest("Paracetamol", null, null, null, null))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/clinic/medications").with(asProvider("prov", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateMedicationRequest("Paracetamol", null, null, null, null))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void receivingStockThenWritingItOffZeroesQuantityOnHand() throws Exception {
+        Clinic clinic = createClinic("med-batch-" + UUID.randomUUID(), "Batch Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Medication medication = createMedication(clinic.getId(), "Metformin 500mg");
+
+        String body = mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/stock-batches").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateStockBatchRequest("BATCH-1", 50, null))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantityOnHand").value(50))
+                .andReturn().getResponse().getContentAsString();
+        UUID batchId = UUID.fromString(objectMapper.readTree(body).get("id").asText());
+
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/stock-batches/" + batchId + "/write-off")
+                        .with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new WriteOffStockBatchRequest("expired", "past expiry date"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("expired"))
+                .andExpect(jsonPath("$.quantityOnHand").value(0));
+    }
+
+    @Test
+    void crossTenantMedicationIsNotFound() throws Exception {
+        Clinic clinic = createClinic("med-tenant-a-" + UUID.randomUUID(), "Clinic A");
+        Clinic otherClinic = createClinic("med-tenant-b-" + UUID.randomUUID(), "Clinic B");
+        Medication medication = createMedication(clinic.getId(), "Isolated Drug");
+
+        mockMvc.perform(get("/api/clinic/medications/" + medication.getId()).with(asPharmacist("pharm", otherClinic.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+    }
+}

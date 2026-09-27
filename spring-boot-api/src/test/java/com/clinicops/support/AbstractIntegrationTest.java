@@ -19,8 +19,16 @@ import com.clinicops.labrate.LabTestRate;
 import com.clinicops.labrate.LabTestRateRepository;
 import com.clinicops.medicalhistory.MedicalHistory;
 import com.clinicops.medicalhistory.MedicalHistoryRepository;
+import com.clinicops.encounter.Prescription;
+import com.clinicops.encounter.PrescriptionRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
+import com.clinicops.pharmacy.DispenseRecord;
+import com.clinicops.pharmacy.DispenseRecordRepository;
+import com.clinicops.pharmacy.Medication;
+import com.clinicops.pharmacy.MedicationRepository;
+import com.clinicops.pharmacy.StockBatch;
+import com.clinicops.pharmacy.StockBatchRepository;
 import com.clinicops.provider.Provider;
 import com.clinicops.provider.ProviderRepository;
 import com.clinicops.provider.ProviderWorkingHours;
@@ -184,6 +192,18 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected ReferralRepository referralRepository;
 
+    @Autowired
+    protected PrescriptionRepository prescriptionRepository;
+
+    @Autowired
+    protected MedicationRepository medicationRepository;
+
+    @Autowired
+    protected StockBatchRepository stockBatchRepository;
+
+    @Autowired
+    protected DispenseRecordRepository dispenseRecordRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -276,6 +296,31 @@ public abstract class AbstractIntegrationTest {
         encounter.setAppointmentId(appointmentId);
         encounter.setProviderId(providerId);
         return encounterRepository.save(encounter);
+    }
+
+    protected Prescription createPrescription(UUID tenantId, UUID encounterId, String medicationName, Integer quantityPrescribed) {
+        Prescription prescription = new Prescription();
+        prescription.setTenantId(tenantId);
+        prescription.setEncounterId(encounterId);
+        prescription.setMedicationName(medicationName);
+        prescription.setQuantityDispensed(quantityPrescribed);
+        return prescriptionRepository.save(prescription);
+    }
+
+    protected Medication createMedication(UUID tenantId, String name) {
+        Medication medication = new Medication();
+        medication.setTenantId(tenantId);
+        medication.setName(name);
+        return medicationRepository.save(medication);
+    }
+
+    protected StockBatch createStockBatch(UUID tenantId, UUID medicationId, int quantity) {
+        StockBatch batch = new StockBatch();
+        batch.setTenantId(tenantId);
+        batch.setMedicationId(medicationId);
+        batch.setQuantityReceived(quantity);
+        batch.setQuantityOnHand(quantity);
+        return stockBatchRepository.save(batch);
     }
 
     protected Allergy createAllergy(UUID tenantId, UUID patientId, String allergen) {
@@ -384,6 +429,16 @@ public abstract class AbstractIntegrationTest {
 
     protected RequestPostProcessor asPlatformAdmin(String subject) {
         return jwtRequest(subject, "platform_admin", null);
+    }
+
+    /** Pharmacy module (phase 20) - new realm role, same staff-JWT shape as front_desk/provider. */
+    protected RequestPostProcessor asPharmacist(String subject, String orgAlias) {
+        return jwtRequest(subject, "pharmacist", orgAlias);
+    }
+
+    /** Accounting/finance modules (phase 20, later sessions) - new realm role, same staff-JWT shape. */
+    protected RequestPostProcessor asAccountant(String subject, String orgAlias) {
+        return jwtRequest(subject, "accountant", orgAlias);
     }
 
     private RequestPostProcessor jwtRequest(String subject, String realmRole, String orgAlias) {
