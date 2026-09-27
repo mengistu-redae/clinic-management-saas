@@ -3633,10 +3633,20 @@ append new ones there too, not here.
     completes either way. The two GitHub settings changes above (default
     branch, deleting `master`) were done manually via the web UI instead
     of `gh`/the API.
-  - **CI still hasn't been confirmed to actually run green** - the push
-    to `main` should have triggered `ci.yml` for the first time ever on
-    this repo, but confirming that requires either `gh run list`/`gh run
-    view` (blocked on the auth gap above) or checking the Actions tab on
-    github.com directly - not yet done. "Should run clean in CI" claims
-    elsewhere in this file remain unconfirmed by an actual observed run;
-    don't treat this as settled until someone actually looks.
+  - **CI ran for the first time ever on this repo (2026-09-27) - mixed
+    result, real failure not yet diagnosed.** Confirmed via GitHub's
+    unauthenticated public REST API (`/actions/runs`), not `gh` (still
+    blocked). `node-bff (npm test)` and `frontend (vite build)` both
+    passed; **`spring-boot-api (mvn verify)` failed** - the first real
+    signal on whether this suite (`AbstractIntegrationTest`'s
+    Testcontainers Postgres+Redis) actually passes anywhere, since it's
+    been Windows-npipe-blocked on every dev machine this whole project.
+    The actual CI failure reason is **still unknown** - downloading the
+    job logs/the `surefire-reports` artifact both 401/403 without `gh`
+    auth or a token, which remains unavailable. A same-session attempt to
+    reproduce locally hit the pre-existing Windows Testcontainers issue
+    instead (`Could not find a valid Docker environment` - a Windows
+    npipe detection quirk, not evidence about what broke on `ubuntu-latest`,
+    which has no such issue) - so the CI failure's real cause is still
+    open. Do not assume it's the same class of problem; get the actual
+    ubuntu-latest log before diagnosing further.
