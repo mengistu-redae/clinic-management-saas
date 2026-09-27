@@ -4,9 +4,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { requireSession, refreshIfExpired, shouldForwardBody, isMultipartRequest } = require('../src/routes/api');
 
-function mockReqRes(session) {
+let mockSessionIdCounter = 0;
+
+// sessionID defaults to a fresh value per call (real Express assigns one per
+// session, not per request) so unrelated tests never collide on
+// refreshIfExpired's own sessionID-keyed in-flight map; pass one explicitly
+// to simulate two concurrent requests sharing the same session.
+function mockReqRes(session, sessionID = `mock-session-${++mockSessionIdCounter}`) {
   session.destroy = session.destroy || ((cb) => cb());
-  const req = { session };
+  const req = { session, sessionID };
   const res = {
     statusCode: null,
     body: null,
@@ -149,6 +155,44 @@ test('refreshIfExpired', async (t) => {
     });
 
     assert.equal(nextErr, refreshError);
+  });
+
+  // Regression test for the exact bug found evaluating demo-front-desk's
+  // AppointmentDetail page live: it fires six parallel queries on mount, so
+  // six requests can hit this middleware at once right as the access token
+  // expires. Each used to call getClient().refresh() independently with the
+  // same refresh_token - if Keycloak rotates refresh tokens on use, every
+  // call after the first gets invalid_grant for a token a sibling request
+  // just successfully refreshed, destroying a perfectly good session.
+  await t.test('coalesces concurrent refreshes for the same session into a single Keycloak call', async () => {
+    const sessionId = 'shared-session';
+    const expiredTokenSet = {
+      access_token: 'old',
+      refresh_token: 'refresh-abc',
+      expires_at: Math.floor(Date.now() / 1000) - 10,
+    };
+    // Two concurrent requests for the same session each load their own
+    // plain-object copy of the tokenSet from Redis, same as in production.
+    const { req: req1, res: res1 } = mockReqRes({ tokenSet: { ...expiredTokenSet } }, sessionId);
+    const { req: req2, res: res2 } = mockReqRes({ tokenSet: { ...expiredTokenSet } }, sessionId);
+    const refreshedTokenSet = { access_token: 'new', refresh_token: 'refresh-abc', expires_at: Math.floor(Date.now() / 1000) + 3600 };
+    let refreshCallCount = 0;
+    const getClient = () => ({
+      refresh: async () => {
+        refreshCallCount += 1;
+        return refreshedTokenSet;
+      },
+    });
+    const middleware = refreshIfExpired(getClient);
+
+    await Promise.all([
+      middleware(req1, res1, () => {}),
+      middleware(req2, res2, () => {}),
+    ]);
+
+    assert.equal(refreshCallCount, 1);
+    assert.equal(req1.session.tokenSet, refreshedTokenSet);
+    assert.equal(req2.session.tokenSet, refreshedTokenSet);
   });
 
   // Regression test for the exact failure mode this branch exists for: a

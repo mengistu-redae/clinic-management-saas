@@ -53,10 +53,27 @@ function requireSession(req, res, next) {
   next();
 }
 
+// sessionID -> in-flight refresh Promise, so concurrent requests sharing a
+// session coalesce onto one Keycloak refresh call instead of racing it -
+// see refreshIfExpired's own comment for why that race matters.
+const refreshInFlight = new Map();
+
 /**
  * Refreshes the access token before forwarding if it's expired, so the
  * browser never has to know or care about token lifetimes - that's the
  * point of holding tokens server-side instead of in the browser.
+ *
+ * Single-flight per session: a page that fires several queries on mount
+ * (e.g. front-desk/AppointmentDetail.jsx's six parallel hooks) can land
+ * that many concurrent requests here right as the access token expires.
+ * Each used to call getClient().refresh() independently with the same
+ * refresh_token - fine if Keycloak allows reusing it, but if refresh
+ * -token rotation is on, only the first call succeeds and every other
+ * concurrent one gets back `invalid_grant` for a token that was, in fact,
+ * just successfully refreshed a moment earlier by a sibling request -
+ * destroying a perfectly good session and forcing a surprise re-login.
+ * Coalescing concurrent refreshes for the same session into one shared
+ * Promise (keyed by sessionID) removes the race instead of just narrowing it.
  */
 function refreshIfExpired(getClient) {
   return async (req, res, next) => {
@@ -68,7 +85,20 @@ function refreshIfExpired(getClient) {
       // TokenSet's methods. Rewrap it before calling .expired().
       let tokenSet = new TokenSet(req.session.tokenSet);
       if (tokenSet.expired() && tokenSet.refresh_token) {
-        tokenSet = await getClient().refresh(tokenSet.refresh_token);
+        const sessionId = req.sessionID;
+        let refreshPromise = refreshInFlight.get(sessionId);
+        if (!refreshPromise) {
+          refreshPromise = getClient().refresh(tokenSet.refresh_token);
+          // Always resolves (never rejects) so this cleanup hook itself can
+          // never become an unhandled rejection - the actual error, if any,
+          // still propagates to every `await refreshPromise` below.
+          refreshPromise.then(
+            () => refreshInFlight.delete(sessionId),
+            () => refreshInFlight.delete(sessionId)
+          );
+          refreshInFlight.set(sessionId, refreshPromise);
+        }
+        tokenSet = await refreshPromise;
         req.session.tokenSet = tokenSet;
       }
       next();

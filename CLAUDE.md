@@ -647,6 +647,34 @@ running stack.
   the access token) destroys the session and returns the same `401` shape as
   "no session", so the frontend's central 401 handling redirects cleanly to
   login.
+- **A real concurrent-refresh race found and fixed 2026-09-27**, evaluating
+  `demo-front-desk`'s own `AppointmentDetail.jsx` live - that page fires six
+  (now more, with the phase-8/9/10 `PatientChart` panel: a dozen) parallel
+  queries on mount, so that many requests could hit `refreshIfExpired` at
+  once right as the access token expired. Each used to call `getClient()
+  .refresh()` independently with the same `refresh_token` - if Keycloak
+  rotates refresh tokens on use, only the first of those concurrent calls
+  succeeds and every other one gets `invalid_grant` for a token a sibling
+  request had just successfully refreshed a moment earlier, destroying a
+  perfectly good session and forcing a surprise re-login. Live-observed
+  exactly this: navigating to an appointment detail page 401'd 5 of 7
+  concurrent requests, silently destroyed the session, and Keycloak's own
+  browser SSO cookie silently completed a fresh login - landing the user
+  back on the dashboard instead of the page they were on, and on
+  `localhost:3000` directly rather than through nginx (an artifact of
+  `BFF_BASE_URL` pointing at the BFF's own dev-only host-mapped port,
+  itself a pre-existing local-dev-only quirk, not touched here). Fixed by
+  making the refresh single-flight per session -
+  `node-bff/src/routes/api.js`'s `refreshIfExpired` now keys an in-flight
+  refresh `Promise` by `req.sessionID` so concurrent requests sharing a
+  session coalesce onto one Keycloak call instead of racing it, the same
+  "share the one in-flight thing" idea `SlotLockService`'s Redis lock
+  already applies to a different resource. `test/api.test.js` gained a
+  dedicated regression case (two concurrent requests sharing a session ->
+  exactly one `refresh()` call, both end up with the refreshed token) -
+  `npm test` 25/25. Live re-verified post-fix: a fresh (non-expired) token
+  now lets all dozen of that same page's parallel requests through cleanly
+  on the first try.
 - `express.json()` sets `req.body` to `{}` for a request with no body and no
   `Content-Type` - `shouldForwardBody` checks both `!== undefined` and
   `Object.keys(body).length > 0` before forwarding one downstream.
