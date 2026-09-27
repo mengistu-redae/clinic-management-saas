@@ -1,5 +1,6 @@
 package com.clinicops.appointment;
 
+import com.clinicops.accounting.JournalService;
 import com.clinicops.clinicsettings.ClinicSettingsService;
 import com.clinicops.clinicsettings.EffectiveClinicSettings;
 import com.clinicops.notification.AppointmentRescheduledPayload;
@@ -50,6 +51,7 @@ public class RescheduleService {
     private final ClinicSettingsService clinicSettingsService;
     private final PaymentRepository paymentRepository;
     private final ObjectMapper objectMapper;
+    private final JournalService journalService;
 
     public RescheduleService(
             AppointmentRepository appointmentRepository,
@@ -60,7 +62,8 @@ public class RescheduleService {
             NotificationRepository notificationRepository,
             ClinicSettingsService clinicSettingsService,
             PaymentRepository paymentRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            JournalService journalService) {
         this.appointmentRepository = appointmentRepository;
         this.slotRepository = slotRepository;
         this.slotLockService = slotLockService;
@@ -70,6 +73,7 @@ public class RescheduleService {
         this.clinicSettingsService = clinicSettingsService;
         this.paymentRepository = paymentRepository;
         this.objectMapper = objectMapper;
+        this.journalService = journalService;
     }
 
     @Transactional
@@ -161,7 +165,8 @@ public class RescheduleService {
                 payment.setAmount(fee);
                 payment.setMethod(Payment.FEE_AUTO_CHARGE_METHOD);
                 payment.setRecordedBy(payerUserId);
-                paymentRepository.save(payment);
+                payment = paymentRepository.save(payment);
+                journalService.postForPayment(payment);
             }
 
             String recipientEmail = appointment.getPatientId() != null

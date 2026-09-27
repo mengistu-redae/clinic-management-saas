@@ -570,11 +570,12 @@ next (Finance reads its ledger, so it has to come after), Finance last.
     (`Medication`/`StockBatch`/`DispenseRecord`) dispenses against the
     existing `Prescription` (phase 4/11) without touching billing at all.
     See "Phase 20: pharmacy" below.
-21. **Accounting** (not yet built) - chart of accounts + a real
-    double-entry journal, a new `accountant` realm role (shared with
-    Finance below), auto-posts a journal entry when an existing
-    `Payment`/`Refund` happens (the ledger picks up real cash events, it
-    doesn't create new ones).
+21. **Accounting** (built 2026-09-27) - chart of accounts + a real
+    double-entry journal, the `accountant` realm role (already added to
+    Keycloak in phase 20, shared with Finance below), auto-posts a journal
+    entry when an existing `Payment`/`Refund` happens (the ledger picks up
+    real cash events, it doesn't create new ones). See "Phase 21:
+    accounting" below.
 22. **Finance** (not yet built) - budgets, minimal payroll (salary + a
     monthly pay-run action), and P&L/budget-vs-actual reporting, built on
     top of phase 21's ledger.
@@ -1599,6 +1600,127 @@ lost when the table blanked underneath it).
   opens a working dispense form. The `Medications` page (catalog CRUD +
   nested stock-batch receive/write-off panel) was also exercised live this
   session and confirmed fully working, unrelated to the bug above.
+
+## Phase 21: accounting
+
+Second phase of the pharmacy/accounting/finance module set (built
+2026-09-27, same session as the demo-pharmacist bug fix above). Three
+scoping questions were put to the user before writing any code - chart-of
+-accounts model, journal-entry mutability, and whether phase 21 includes
+any reporting - all three answered with the recommended option, matching
+this project's own "ask before building" convention for every new module.
+No new migration needed for the `accountant` realm role - it (and its
+demo user) already exist from phase 20. New migration `V18__accounting.sql`.
+
+- **Chart of accounts: pre-seeded starter set, editable** - `com.clinicops
+  .accounting.Account` (code/name/type/status, `UNIQUE(tenant_id, code)`).
+  `AccountSeedingService.ensureSeeded(tenantId)` lazily seeds exactly three
+  accounts the first time a tenant's accounting endpoints are touched -
+  `1000 Cash` (asset), `4000 Service Revenue` (revenue), `4900 Refunds &
+  Allowances` (revenue) - same "generate on first access, not at creation
+  time" reasoning as `SlotGenerationService`, chosen because clinics
+  already existed before this phase shipped. Deliberately seeds *only*
+  what `JournalService`'s own auto-posting logic actually targets, not a
+  generic full chart of accounts - no seeded-but-unused row; an accountant
+  adds anything more specific (Accounts Receivable, Tax Payable, etc.)
+  through `AccountController`'s own CRUD. `code` is fixed at creation, not
+  editable via update - `JournalService` resolves the starter accounts by
+  code, same "read-only after creation" precedent as LabRate's `testCode`.
+- **Journal entries: genuinely immutable, corrected via reversing entries**
+  - `JournalEntry` (header: description/sourceType/sourceId/postedBy) +
+  `JournalLine` (own table, no JPA relation, same "plain UUID FK +
+  explicit repository queries" convention as `LabOrderTest` - and, like
+  that entity, carries its own `tenant_id` rather than relying only on a
+  join, matching this codebase's "every entity extends BaseTenantEntity,
+  even a line item" convention). No update/delete endpoint anywhere - same
+  audit-only-table precedent as `ConsentRecord`/`PhiAccessLog`/
+  `DispenseRecord`. A mistake is fixed with a new offsetting entry, not an
+  edit - the phase's own pinned decision, not assumed.
+- **`JournalService` auto-posts a balanced two-line entry for every
+  Payment/Refund, called explicitly from all five existing call sites** -
+  `PaymentService.recordPayment` and `RefundService.refund` (the two
+  gateway-routed paths) plus the three `fee_auto_charged` shortcuts
+  (`CancellationService`, `RescheduleService`, `LabOrderCancellationService`)
+  that bypass `PaymentService` entirely. Same "explicit call sites, not
+  AOP/an annotation" convention `PhiAccessAuditService` already
+  established - chosen deliberately even though every one of the five
+  sites wants the identical "post whenever a Payment/Refund is saved"
+  effect, since an event-listener version would do exactly the same thing
+  with less visibility at each call site. `postForPayment` debits Cash /
+  credits Service Revenue for the full payment amount (every channel and
+  method alike, `fee_auto_charged` included - a real cash event whether or
+  not it ever went through the mock gateway, same "whatever's in here got
+  collected" reading phase 19's own analytics already established for
+  `Payment`); `postForRefund` debits Refunds & Allowances / credits Cash.
+  Deliberately does **not** split tax out of an invoice-linked payment in
+  v1 - the full amount posts straight to Service Revenue, matching this
+  app's own "keep minimal in v1" convention (ICD-10 free text,
+  Prescription's route allow-list) rather than building a tax-aware
+  sub-ledger speculatively.
+- **`AccountController`** (`/api/clinic/accounts`) - same phase-5/20 CRUD
+  shape as `RoomController`/`MedicationController` (controller calls the
+  repository directly, no dedicated service bean for plain single-row
+  CRUD); `accountant`+`clinic_admin` only, matching `MedicationController`'s
+  own "no other role has any access" gate - the ledger is as role-siloed
+  as the pharmacy catalog. `type` allow-listed to asset/liability/equity/
+  revenue/expense; a duplicate `code` 409s.
+- **`JournalController`** (`/api/clinic/journal-entries`,
+  `/api/clinic/trial-balance`) - read-only, same role gate. The trial
+  balance is the one reporting view phase 21 was scoped to include
+  (P&L/budget-vs-actual stays reserved for phase 22, per the roadmap):
+  `JournalLineRepository.trialBalance` (a native query, same
+  `@Query(nativeQuery = true)` + interface-projection shape as
+  `PrescriptionRepository.findPendingDispense`) returns each account's raw
+  debit/credit totals; the controller computes the signed balance from the
+  account's own type (debit-normal for asset/expense, credit-normal for
+  liability/equity/revenue) - same "compute the derived value in Java, not
+  SQL" preference as `Vitals.getBmi()`.
+- **Tests**: `JournalServiceTest` (new, pure Mockito, genuinely runs
+  locally - 4 cases: a payment posts a balanced debit-Cash/credit-Revenue
+  entry with the right source type/posted-by; a lab-order payment uses the
+  `lab_order_payment` source type; a refund posts debit-Refunds/credit
+  -Cash; a missing seeded account throws rather than posting an unbalanced
+  entry) - `Failures: 0`, confirmed passing in the same run as the
+  existing `PaymentServiceTest`/`RefundServiceTest` (both updated for
+  `JournalService`'s new constructor param, still green) and
+  `DispenseServiceTest` (unaffected). `AccountControllerIntegrationTest`
+  (6 cases: starter-account seeding, full CRUD round-trip, invalid
+  type/status 400, duplicate-code 409, role gate, cross-tenant 404) +
+  `JournalControllerIntegrationTest` (3 cases, including a genuine
+  end-to-end case that records a real payment through
+  `AppointmentPaymentController` and asserts the resulting journal entry
+  and trial-balance numbers) + one new `TenantIsolationIntegrationTest`
+  case. Confirmed via a clean `mvn test-compile` and a full `mvn test` run
+  showing `Tests run: 289` (up from 275 before this phase - exactly the 14
+  new test methods) with every failure being the identical pre-existing
+  `Could not find a valid Docker environment` wall every other
+  `AbstractIntegrationTest` subclass hits on this machine - not a
+  regression, and not a new failure mode introduced by this phase.
+- **Live-verified against the real running stack** - `docker compose up -d
+  --build --force-recreate spring-boot-api node-bff` + `docker compose
+  restart nginx`, `V18` confirmed applied via `flyway_schema_history`
+  (`success = t`). A real end-to-end chain through the actual browser: as
+  `demo-front-desk`, recorded a genuine $75.00 card payment against a real
+  appointment via `POST /api/appointments/{id}/payments`; as
+  `demo-accountant` (a real login, not simulated), confirmed via the
+  browser console that `GET /api/clinic/accounts` had lazily seeded the
+  three starter accounts, `GET /api/clinic/journal-entries` showed exactly
+  one entry with two balanced $75.00 lines (`sourceType:
+  "appointment_payment"`), and `GET /api/clinic/trial-balance` showed Cash
+  and Service Revenue both at a $75.00 balance, Refunds & Allowances still
+  at zero. The refund path (`postForRefund`) was **not** exercised live
+  this session - it's covered by `JournalServiceTest`'s own passing unit
+  case, but a real `POST /api/payments/{id}/refund` -> trial-balance
+  round trip is still owed, flagged here rather than claimed.
+- **No frontend yet** - backend only, same "no dedicated UI this phase"
+  scope boundary every EHR-leaning phase before it used. The ledger is
+  reachable via `fetch(..., {credentials:'include'})` from the browser
+  console today (exactly how it was live-verified above); a real
+  chart-of-accounts/journal/trial-balance UI for the `accountant` role is
+  a natural next frontend phase, not scoped here. `demo-accountant`'s own
+  dashboard currently renders completely blank (no sidebar nav, empty
+  main area) - expected, not a bug, since no route/nav case exists for
+  this role yet on the frontend.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3480,6 +3602,24 @@ one - now the documented exception, not the rule.
   case. Same Testcontainers wall as every other integration test on this
   machine - confirmed via a clean `mvn clean test-compile` and by checking
   every other, unrelated test class failed identically in the same run.
+- `JournalServiceTest` (phase 21, pure Mockito, genuinely run locally -
+  4/4 passing) - a payment posts a balanced debit-Cash/credit-Revenue
+  entry with the correct source type/posted-by; a lab-order payment uses
+  the `lab_order_payment` source type; a refund posts debit-Refunds
+  -and-Allowances/credit-Cash; a missing seeded account throws rather than
+  posting an unbalanced entry. `PaymentServiceTest`/`RefundServiceTest`
+  both updated for `JournalService`'s new constructor param, confirmed
+  still green in the same run. `AccountControllerIntegrationTest` (starter
+  -account seeding, full CRUD round-trip, invalid type/status 400,
+  duplicate-code 409, role gate, cross-tenant 404) +
+  `JournalControllerIntegrationTest` (role gate, per-tenant scoping, and a
+  genuine end-to-end case recording a real payment through
+  `AppointmentPaymentController` and asserting the resulting journal
+  entry/trial-balance) plus one new `TenantIsolationIntegrationTest` case.
+  Same Testcontainers wall as every other integration test on this
+  machine - a full `mvn test` run showed `Tests run: 289` (up from 275),
+  every failure identical (`Could not find a valid Docker environment`),
+  not a regression from this phase's own code.
 
 ## Verified-session logs
 

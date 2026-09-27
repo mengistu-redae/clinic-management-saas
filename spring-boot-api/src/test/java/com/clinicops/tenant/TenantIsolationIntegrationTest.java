@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -337,6 +338,27 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.WriteOffStockBatchRequest("expired", "cross-tenant probe"))))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void accountsAreNotReadableOrWritableFromAnotherTenantAndJournalEntriesAreScopedPerTenant() throws Exception {
+        Clinic a = clinicA("account");
+        com.clinicops.accounting.Account account = createAccount(a.getId(), "1500", "Isolated Account", "asset");
+
+        Clinic b = clinicB("account");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/clinic/accounts/" + account.getId()).with(asAccountant("acct", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/clinic/accounts/" + account.getId() + "/update").with(asAccountant("acct", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.accounting.UpdateAccountRequest(null, "inactive"))))
+                .andExpect(status().isNotFound());
+
+        // Clinic B's own trial balance/journal never surfaces clinic A's postings.
+        mockMvc.perform(get("/api/clinic/journal-entries").with(asAccountant("acct", bAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
     }
 
     /**

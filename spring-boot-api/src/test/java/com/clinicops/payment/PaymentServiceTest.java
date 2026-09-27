@@ -1,5 +1,6 @@
 package com.clinicops.payment;
 
+import com.clinicops.accounting.JournalService;
 import com.clinicops.paymentgateway.ChargeResult;
 import com.clinicops.paymentgateway.PaymentGatewayClient;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,8 @@ class PaymentServiceTest {
 
     private final PaymentGatewayClient gatewayClient = mock(PaymentGatewayClient.class);
     private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
-    private final PaymentService service = new PaymentService(gatewayClient, paymentRepository);
+    private final JournalService journalService = mock(JournalService.class);
+    private final PaymentService service = new PaymentService(gatewayClient, paymentRepository, journalService);
 
     @Test
     void chargesThroughTheGatewayBeforeSavingAndCopiesTheResultOntoThePayment() {

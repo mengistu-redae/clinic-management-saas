@@ -1,5 +1,6 @@
 package com.clinicops.payment;
 
+import com.clinicops.accounting.JournalService;
 import com.clinicops.paymentgateway.ChargeResult;
 import com.clinicops.paymentgateway.PaymentGatewayClient;
 import org.springframework.stereotype.Service;
@@ -15,17 +16,21 @@ import java.util.UUID;
  * InvoiceService already established. The fee_auto_charge shortcut in
  * Cancellation/Reschedule/LabOrderCancellationService deliberately bypasses
  * this entirely (it saves a Payment directly) - that row was never a
- * genuine gateway charge, and this phase doesn't change that.
+ * genuine gateway charge, and this phase doesn't change that (those three
+ * services call JournalService directly themselves instead, for the same
+ * auto-posting effect).
  */
 @Service
 public class PaymentService {
 
     private final PaymentGatewayClient gatewayClient;
     private final PaymentRepository paymentRepository;
+    private final JournalService journalService;
 
-    public PaymentService(PaymentGatewayClient gatewayClient, PaymentRepository paymentRepository) {
+    public PaymentService(PaymentGatewayClient gatewayClient, PaymentRepository paymentRepository, JournalService journalService) {
         this.gatewayClient = gatewayClient;
         this.paymentRepository = paymentRepository;
+        this.journalService = journalService;
     }
 
     /**
@@ -50,6 +55,8 @@ public class PaymentService {
         payment.setGatewayTransactionId(result.transactionId());
         payment.setGatewayStatus(result.status());
 
-        return paymentRepository.save(payment);
+        Payment saved = paymentRepository.save(payment);
+        journalService.postForPayment(saved);
+        return saved;
     }
 }

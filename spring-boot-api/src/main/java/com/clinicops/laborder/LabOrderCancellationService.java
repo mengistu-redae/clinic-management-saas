@@ -1,5 +1,6 @@
 package com.clinicops.laborder;
 
+import com.clinicops.accounting.JournalService;
 import com.clinicops.feepolicy.FeeCalculator;
 import com.clinicops.payment.Payment;
 import com.clinicops.payment.PaymentRepository;
@@ -28,18 +29,21 @@ public class LabOrderCancellationService {
     private final FeeCalculator feeCalculator;
     private final LabOrderCancellationRepository labOrderCancellationRepository;
     private final PaymentRepository paymentRepository;
+    private final JournalService journalService;
 
     public LabOrderCancellationService(
             LabOrderRepository labOrderRepository,
             LabOrderTestRepository labOrderTestRepository,
             FeeCalculator feeCalculator,
             LabOrderCancellationRepository labOrderCancellationRepository,
-            PaymentRepository paymentRepository) {
+            PaymentRepository paymentRepository,
+            JournalService journalService) {
         this.labOrderRepository = labOrderRepository;
         this.labOrderTestRepository = labOrderTestRepository;
         this.feeCalculator = feeCalculator;
         this.labOrderCancellationRepository = labOrderCancellationRepository;
         this.paymentRepository = paymentRepository;
+        this.journalService = journalService;
     }
 
     @Transactional
@@ -78,7 +82,8 @@ public class LabOrderCancellationService {
             payment.setAmount(feeAmount);
             payment.setMethod(Payment.FEE_AUTO_CHARGE_METHOD);
             payment.setRecordedBy(cancelledByUserId);
-            paymentRepository.save(payment);
+            payment = paymentRepository.save(payment);
+            journalService.postForPayment(payment);
         }
 
         List<LabOrderTest> tests = labOrderTestRepository.findAllByLabOrderId(order.getId());

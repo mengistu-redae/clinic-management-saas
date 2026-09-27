@@ -1,5 +1,11 @@
 package com.clinicops.support;
 
+import com.clinicops.accounting.Account;
+import com.clinicops.accounting.AccountRepository;
+import com.clinicops.accounting.JournalEntry;
+import com.clinicops.accounting.JournalEntryRepository;
+import com.clinicops.accounting.JournalLine;
+import com.clinicops.accounting.JournalLineRepository;
 import com.clinicops.allergy.Allergy;
 import com.clinicops.allergy.AllergyRepository;
 import com.clinicops.appointment.Appointment;
@@ -202,6 +208,15 @@ public abstract class AbstractIntegrationTest {
     protected StockBatchRepository stockBatchRepository;
 
     @Autowired
+    protected AccountRepository accountRepository;
+
+    @Autowired
+    protected JournalEntryRepository journalEntryRepository;
+
+    @Autowired
+    protected JournalLineRepository journalLineRepository;
+
+    @Autowired
     protected DispenseRecordRepository dispenseRecordRepository;
 
     // ---- fixture builders: seed just enough of the tenant-scoped schema
@@ -312,6 +327,34 @@ public abstract class AbstractIntegrationTest {
         medication.setTenantId(tenantId);
         medication.setName(name);
         return medicationRepository.save(medication);
+    }
+
+    protected Account createAccount(UUID tenantId, String code, String name, String type) {
+        Account account = new Account();
+        account.setTenantId(tenantId);
+        account.setCode(code);
+        account.setName(name);
+        account.setType(type);
+        return accountRepository.save(account);
+    }
+
+    protected JournalEntry createJournalEntry(UUID tenantId, String description, String sourceType, UUID sourceId) {
+        JournalEntry entry = new JournalEntry();
+        entry.setTenantId(tenantId);
+        entry.setDescription(description);
+        entry.setSourceType(sourceType);
+        entry.setSourceId(sourceId);
+        return journalEntryRepository.save(entry);
+    }
+
+    protected JournalLine createJournalLine(UUID tenantId, UUID journalEntryId, UUID accountId, String entryType, java.math.BigDecimal amount) {
+        JournalLine line = new JournalLine();
+        line.setTenantId(tenantId);
+        line.setJournalEntryId(journalEntryId);
+        line.setAccountId(accountId);
+        line.setEntryType(entryType);
+        line.setAmount(amount);
+        return journalLineRepository.save(line);
     }
 
     protected StockBatch createStockBatch(UUID tenantId, UUID medicationId, int quantity) {

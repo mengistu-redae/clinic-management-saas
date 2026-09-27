@@ -1,5 +1,6 @@
 package com.clinicops.payment;
 
+import com.clinicops.accounting.JournalService;
 import com.clinicops.paymentgateway.PaymentGatewayClient;
 import com.clinicops.paymentgateway.RefundResult;
 import org.springframework.stereotype.Service;
@@ -24,11 +25,15 @@ public class RefundService {
     private final PaymentRepository paymentRepository;
     private final RefundRepository refundRepository;
     private final PaymentGatewayClient gatewayClient;
+    private final JournalService journalService;
 
-    public RefundService(PaymentRepository paymentRepository, RefundRepository refundRepository, PaymentGatewayClient gatewayClient) {
+    public RefundService(
+            PaymentRepository paymentRepository, RefundRepository refundRepository,
+            PaymentGatewayClient gatewayClient, JournalService journalService) {
         this.paymentRepository = paymentRepository;
         this.refundRepository = refundRepository;
         this.gatewayClient = gatewayClient;
+        this.journalService = journalService;
     }
 
     @Transactional
@@ -60,6 +65,7 @@ public class RefundService {
         refund.setGatewayRefundTransactionId(gatewayRefundTransactionId);
         refund.setRefundedBy(refundedBy);
         refundRepository.save(refund);
+        journalService.postForRefund(refund);
 
         payment.setGatewayStatus(newTotal.compareTo(payment.getAmount()) == 0 ? "refunded" : "partially_refunded");
         paymentRepository.save(payment);

@@ -1,5 +1,6 @@
 package com.clinicops.payment;
 
+import com.clinicops.accounting.JournalService;
 import com.clinicops.paymentgateway.PaymentGatewayClient;
 import com.clinicops.paymentgateway.RefundResult;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,8 @@ class RefundServiceTest {
     private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
     private final RefundRepository refundRepository = mock(RefundRepository.class);
     private final PaymentGatewayClient gatewayClient = mock(PaymentGatewayClient.class);
-    private final RefundService service = new RefundService(paymentRepository, refundRepository, gatewayClient);
+    private final JournalService journalService = mock(JournalService.class);
+    private final RefundService service = new RefundService(paymentRepository, refundRepository, gatewayClient, journalService);
 
     private Payment gatewayChargedPayment(UUID tenantId, UUID paymentId, BigDecimal amount) {
         Payment payment = new Payment();

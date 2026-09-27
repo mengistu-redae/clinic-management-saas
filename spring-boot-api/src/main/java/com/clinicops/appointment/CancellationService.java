@@ -1,5 +1,6 @@
 package com.clinicops.appointment;
 
+import com.clinicops.accounting.JournalService;
 import com.clinicops.appointmenttype.AppointmentType;
 import com.clinicops.appointmenttype.AppointmentTypeRepository;
 import com.clinicops.feepolicy.FeeCalculator;
@@ -44,6 +45,7 @@ public class CancellationService {
     private final NotificationRepository notificationRepository;
     private final PaymentRepository paymentRepository;
     private final ObjectMapper objectMapper;
+    private final JournalService journalService;
 
     public CancellationService(
             AppointmentRepository appointmentRepository,
@@ -54,7 +56,8 @@ public class CancellationService {
             AppointmentCancellationRepository appointmentCancellationRepository,
             NotificationRepository notificationRepository,
             PaymentRepository paymentRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            JournalService journalService) {
         this.appointmentRepository = appointmentRepository;
         this.slotRepository = slotRepository;
         this.appointmentTypeRepository = appointmentTypeRepository;
@@ -64,6 +67,7 @@ public class CancellationService {
         this.notificationRepository = notificationRepository;
         this.paymentRepository = paymentRepository;
         this.objectMapper = objectMapper;
+        this.journalService = journalService;
     }
 
     @Transactional
@@ -127,7 +131,8 @@ public class CancellationService {
             payment.setAmount(feeAmount);
             payment.setMethod(Payment.FEE_AUTO_CHARGE_METHOD);
             payment.setRecordedBy(payerUserId);
-            paymentRepository.save(payment);
+            payment = paymentRepository.save(payment);
+            journalService.postForPayment(payment);
         }
 
         // Outbox write - skipped when there's no recipient on file (a
