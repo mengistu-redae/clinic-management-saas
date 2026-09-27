@@ -3615,9 +3615,28 @@ append new ones there too, not here.
   process on `:8080` can also turn up from a `start-native.ps1` run left
   running in a previous session - stop it directly (`Stop-Process`), same
   as any other stray dev process.
-- No git remote is configured for this repo yet, and `gh` is not
-  authenticated in this environment - device-code `gh auth login` cannot
-  complete when relayed through the tool execution context (it times out
-  waiting on the browser-approval step). CI has therefore never run on this
-  repo - "should run clean in CI" claims above remain unconfirmed by an
-  actual CI run.
+- ~~No git remote is configured for this repo yet~~ **closed 2026-09-27** -
+  `origin` now points at `git@github.com:mengistu-redae/clinic-management-saas.git`.
+  A fresh SSH key was generated on this dev machine (none existed before)
+  and registered on the GitHub account; all local history was pushed. The
+  branch was renamed `master` -> `main` (to match `ci.yml`'s own
+  `on: push/pull_request: branches: [main]` trigger) and set as the
+  repo's default branch on GitHub, with the redundant `master` ref
+  deleted afterward - confirmed via `git ls-remote --symref origin HEAD`
+  resolving to `refs/heads/main` and `git ls-remote --heads origin`
+  showing `main` as the only branch.
+  - **`gh` is still not authenticated in this environment** - `gh auth
+    login`'s device-code flow failed twice with `context deadline
+    exceeded`, once relayed through the tool execution context and once
+    run directly in the user's own terminal (via the `!` prefix) - the
+    device code appears to expire before the browser-approval step
+    completes either way. The two GitHub settings changes above (default
+    branch, deleting `master`) were done manually via the web UI instead
+    of `gh`/the API.
+  - **CI still hasn't been confirmed to actually run green** - the push
+    to `main` should have triggered `ci.yml` for the first time ever on
+    this repo, but confirming that requires either `gh run list`/`gh run
+    view` (blocked on the auth gap above) or checking the Actions tab on
+    github.com directly - not yet done. "Should run clean in CI" claims
+    elsewhere in this file remain unconfirmed by an actual observed run;
+    don't treat this as settled until someone actually looks.
