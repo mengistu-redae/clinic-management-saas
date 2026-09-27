@@ -5,6 +5,7 @@ import { ApiError } from '../api/client.js';
 import StatusPill from '../components/StatusPill.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import { formatDateTime } from '../lib/format.js';
+import PageContainer from '../components/PageContainer.jsx';
 
 const inputClass =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -32,7 +33,7 @@ export default function TrackAppointment() {
   const notFound = trackQuery.isError && trackQuery.error instanceof ApiError && trackQuery.error.status === 404;
 
   return (
-    <div className="mx-auto max-w-md">
+    <PageContainer width="sm">
       <h1 className="mb-1 text-2xl font-bold text-ink">{t('publicNav.trackAppointment')}</h1>
       <p className="mb-6 text-sm text-ink-muted">{t('trackAppointment.subtitle')}</p>
 
@@ -92,6 +93,6 @@ export default function TrackAppointment() {
           </dl>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

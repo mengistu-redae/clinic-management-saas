@@ -1,53 +1,56 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMyAppointments } from '../api/queries.js';
 import StatusPill from '../components/StatusPill.jsx';
-import EmptyState from '../components/EmptyState.jsx';
-import ErrorBanner from '../components/ErrorBanner.jsx';
-import Skeleton from '../components/Skeleton.jsx';
+import DataTable from '../components/DataTable.jsx';
+import PageContainer from '../components/PageContainer.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import Button from '../components/Button.jsx';
 import { formatDateTime } from '../lib/format.js';
 
 /** The patient dashboard shows a top-5 preview; this is the full list. */
 export default function MyAppointments() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch } = useMyAppointments(true);
 
-  return (
-    <div className="mx-auto max-w-2xl">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink">{t('myAppointments.title')}</h1>
-        <Link to="/book" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
-          {t('myAppointments.bookNew')}
-        </Link>
-      </div>
+  const columns = [
+    { key: 'ref', header: t('appointmentDetail.reference'), accessor: (a) => a.appointmentRef, sortable: true, className: 'font-mono text-xs' },
+    { key: 'startTime', header: t('appointmentDetail.when'), accessor: (a) => a.startTime, sortAccessor: (a) => new Date(a.startTime), sortable: true, render: (a) => formatDateTime(a.startTime) },
+    {
+      key: 'status',
+      header: t('referralsPage.status'),
+      accessor: (a) => a.status,
+      sortable: true,
+      render: (a) => <StatusPill status={a.status} />,
+    },
+  ];
 
-      {isLoading && (
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-        </div>
-      )}
-      {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
-      {data && data.length === 0 && (
-        <EmptyState title={t('myAppointments.emptyTitle')} description={t('myAppointments.emptyDescription')} />
-      )}
-      {data && data.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {data.map((a) => (
-            <Link
-              key={a.id}
-              to={`/appointments/${a.id}`}
-              className="flex items-center justify-between rounded-xl border border-slate-200 bg-surface p-4 shadow-sm transition-shadow hover:shadow-md"
-            >
-              <div>
-                <p className="font-mono text-xs text-ink-muted">{a.appointmentRef}</p>
-                <p className="text-sm text-ink">{formatDateTime(a.startTime)}</p>
-              </div>
-              <StatusPill status={a.status} />
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+  return (
+    <PageContainer width="lg">
+      <PageHeader
+        title={t('myAppointments.title')}
+        actions={
+          <Button as={Link} to="/book">
+            {t('myAppointments.bookNew')}
+          </Button>
+        }
+      />
+
+      <DataTable
+        columns={columns}
+        rows={data || []}
+        rowKey="id"
+        searchAccessors={[(a) => a.appointmentRef]}
+        onRowClick={(a) => navigate(`/appointments/${a.id}`)}
+        defaultSortKey="startTime"
+        defaultSortDir="desc"
+        isLoading={isLoading}
+        error={isError ? error : null}
+        onRetry={refetch}
+        emptyTitle={t('myAppointments.emptyTitle')}
+        emptyDescription={t('myAppointments.emptyDescription')}
+      />
+    </PageContainer>
   );
 }

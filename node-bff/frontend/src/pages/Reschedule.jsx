@@ -7,6 +7,7 @@ import SlotPicker from '../components/booking/SlotPicker.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
 import { useActiveClinicZone } from '../theme/TimezoneProvider.jsx';
+import PageContainer from '../components/PageContainer.jsx';
 
 const selectClass =
   'w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -57,7 +58,7 @@ export default function Reschedule() {
   }
 
   return (
-    <div className="mx-auto max-w-xl">
+    <PageContainer width="xl">
       <h1 className="mb-1 text-2xl font-bold text-ink">{t('reschedule.title')}</h1>
       <p className="mb-6 text-sm text-ink-muted">
         {t('reschedule.refLabel')} <span className="font-mono">{appointment.appointmentRef}</span> - {t('reschedule.pickNewTime')}
@@ -110,6 +111,6 @@ export default function Reschedule() {
           <ErrorBanner message={rescheduleError} />
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

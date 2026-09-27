@@ -14,9 +14,12 @@ import {
   useRemoveProviderSignature,
 } from '../../api/queries.js';
 import StatusPill from '../../components/StatusPill.jsx';
+import ErrorBanner from '../../components/ErrorBanner.jsx';
+import DataTable from '../../components/DataTable.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import Button from '../../components/Button.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
-import ErrorBanner from '../../components/ErrorBanner.jsx';
 
 const inputClass =
   'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -33,7 +36,10 @@ const EMPLOYMENT_STATUSES = ['full_time', 'part_time', 'locum'];
  * rather than separate routes: working hours (ProviderWorkingHoursController)
  * and login linking (link-login/unlink-login). All providers shown
  * regardless of status (unlike the booking flow's active-only lists) - an
- * admin needs to see and reactivate deactivated ones too.
+ * admin needs to see and reactivate deactivated ones too. Rendered as a
+ * searchable/sortable DataTable (modern-UI redesign) - clicking a row
+ * expands the same edit form + hours/login/signature panels this page
+ * always had, just re-hosted under DataTable's shared expand mechanism.
  */
 export default function ClinicAdminProviders() {
   const { t } = useTranslation();
@@ -68,8 +74,28 @@ export default function ClinicAdminProviders() {
     }
   }
 
+  const columns = [
+    { key: 'fullName', header: t('providersPage.fullName'), accessor: (p) => p.fullName, sortable: true, className: 'font-semibold' },
+    { key: 'specialty', header: t('providersPage.specialty'), accessor: (p) => p.specialty || t('providersPage.noSpecialty'), sortable: true },
+    { key: 'room', header: t('providersPage.room'), accessor: (p) => (p.roomId ? roomById[p.roomId]?.name : null), sortable: true, render: (p) => (p.roomId && roomById[p.roomId]?.name) || '—' },
+    {
+      key: 'employment',
+      header: t('providersPage.employment'),
+      accessor: (p) => (p.employmentStatus ? t(`employmentStatus.${p.employmentStatus}`) : null),
+      sortable: true,
+      render: (p) => (p.employmentStatus ? t(`employmentStatus.${p.employmentStatus}`) : '—'),
+    },
+    {
+      key: 'status',
+      header: t('referralsPage.status'),
+      accessor: (p) => p.status,
+      sortable: true,
+      render: (p) => <StatusPill status={p.status} />,
+    },
+  ];
+
   return (
-    <div>
+    <PageContainer width="lg">
       <h1 className="mb-6 text-2xl font-bold text-ink">{t('nav.clinicAdmin.providers')}</h1>
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
@@ -99,9 +125,9 @@ export default function ClinicAdminProviders() {
             {EMPLOYMENT_STATUSES.map((s) => <option key={s} value={s}>{t(`employmentStatus.${s}`)}</option>)}
           </select>
         </Field>
-        <button type="submit" disabled={createProvider.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
+        <Button type="submit" variant="accent" disabled={createProvider.isPending}>
           {createProvider.isPending ? t('common.adding') : t('providersPage.addProvider')}
-        </button>
+        </Button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
 
@@ -110,19 +136,21 @@ export default function ClinicAdminProviders() {
       {!isLoading && !isError && providers?.length === 0 && (
         <EmptyState title={t('providersPage.emptyTitle')} description={t('providersPage.emptyDescription')} />
       )}
-
       {!isLoading && !isError && providers?.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {providers.map((provider) => (
-            <ProviderRow key={provider.id} provider={provider} roomById={roomById} rooms={rooms || []} />
-          ))}
-        </div>
+        <DataTable
+          columns={columns}
+          rows={providers}
+          rowKey="id"
+          searchAccessors={[(p) => p.fullName, (p) => p.specialty]}
+          defaultSortKey="fullName"
+          renderExpanded={(provider) => <ProviderPanel provider={provider} roomById={roomById} rooms={rooms || []} />}
+        />
       )}
-    </div>
+    </PageContainer>
   );
 }
 
-function ProviderRow({ provider, roomById, rooms }) {
+function ProviderPanel({ provider, roomById, rooms }) {
   const { t } = useTranslation();
   const updateProvider = useUpdateProvider(provider.id);
   const linkLogin = useLinkProviderLogin(provider.id);
@@ -200,7 +228,7 @@ function ProviderRow({ provider, roomById, rooms }) {
   const room = provider.roomId ? roomById[provider.roomId] : null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-surface p-4">
+    <div>
       {editing ? (
         <div className="flex flex-wrap items-end gap-3">
           <Field label={t('providersPage.fullName')}>
@@ -229,28 +257,20 @@ function ProviderRow({ provider, roomById, rooms }) {
               {EMPLOYMENT_STATUSES.map((s) => <option key={s} value={s}>{t(`employmentStatus.${s}`)}</option>)}
             </select>
           </Field>
-          <button type="button" onClick={saveEdit} disabled={updateProvider.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
+          <Button type="button" variant="accent" onClick={saveEdit} disabled={updateProvider.isPending}>
             {t('common.save')}
-          </button>
+          </Button>
           <button type="button" onClick={() => setEditing(false)} className="text-sm text-ink-muted hover:underline">
             {t('common.cancel')}
           </button>
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <StatusPill status={provider.status} />
-            <div>
-              <p className="text-sm font-semibold text-ink">{provider.fullName}</p>
-              <p className="text-xs text-ink-muted">
-                {provider.specialty || t('providersPage.noSpecialty')}
-                {room && ` · ${room.name}`}
-                {provider.appUserId && ` · ${t('providersPage.hasLogin')}`}
-                {provider.employmentStatus && ` · ${t(`employmentStatus.${provider.employmentStatus}`)}`}
-                {provider.licenseNumber && ` · ${t('providersPage.licensePrefix', { number: provider.licenseNumber })}`}
-              </p>
-            </div>
-          </div>
+          <p className="text-xs text-ink-muted">
+            {provider.appUserId && `${t('providersPage.hasLogin')} · `}
+            {provider.licenseNumber && `${t('providersPage.licensePrefix', { number: provider.licenseNumber })} · `}
+            {room ? room.name : t('providersPage.none')}
+          </p>
           <div className="flex items-center gap-3 text-sm">
             <button type="button" onClick={startEdit} className="text-brand-text hover:underline">{t('common.edit')}</button>
             <button type="button" onClick={toggleActive} className="text-ink-muted hover:underline">
@@ -284,9 +304,9 @@ function ProviderRow({ provider, roomById, rooms }) {
               <Field label={t('providersPage.accountEmail')} hint={t('providersPage.accountEmailHint')}>
                 <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className={`${inputClass} w-64`} />
               </Field>
-              <button type="submit" disabled={linkLogin.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
+              <Button type="submit" variant="accent" disabled={linkLogin.isPending}>
                 {t('providersPage.linkLogin')}
-              </button>
+              </Button>
             </form>
           )}
           {loginError && <div className="mt-3"><ErrorBanner message={loginError} /></div>}
@@ -438,9 +458,9 @@ function WorkingHoursPanel({ providerId }) {
         <Field label={t('providersPage.end')}>
           <input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} className={`${inputClass} w-28`} />
         </Field>
-        <button type="submit" disabled={createHours.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
+        <Button type="submit" variant="accent" disabled={createHours.isPending}>
           {t('providersPage.addWindow')}
-        </button>
+        </Button>
       </form>
       {formError && <div className="mt-3"><ErrorBanner message={formError} /></div>}
     </div>

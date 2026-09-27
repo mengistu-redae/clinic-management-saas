@@ -37,6 +37,8 @@ import MyLabOrders from './pages/patient/MyLabOrders.jsx';
 import MyLabOrderDetail from './pages/patient/MyLabOrderDetail.jsx';
 import TrackLabOrder from './pages/TrackLabOrder.jsx';
 import PlatformAdminClinics from './pages/platform-admin/Clinics.jsx';
+import PharmacistDashboard from './pages/pharmacist/Dashboard.jsx';
+import PharmacistMedications from './pages/pharmacist/Medications.jsx';
 
 /**
  * Logged-out landing at "/" - previously title+subtitle only, with every
@@ -108,6 +110,7 @@ function RoleHome() {
   if (hasRole('provider')) return <ProviderDashboard />;
   if (hasRole('clinic_admin')) return <ClinicAdminDashboard />;
   if (hasRole('platform_admin')) return <PlatformAdminDashboard />;
+  if (hasRole('pharmacist')) return <PharmacistDashboard />;
   return null;
 }
 
@@ -360,6 +363,25 @@ export default function App() {
           element={
             <RequireRole roles={['provider', 'clinic_admin']}>
               <Referrals />
+            </RequireRole>
+          }
+        />
+        {/* Pharmacy (phase 20) - pharmacist's own worklist/catalog, shared
+            with clinic_admin (its own PreAuthorize override, same reasoning
+            as every other module here). */}
+        <Route
+          path="/pharmacist"
+          element={
+            <RequireRole roles={['pharmacist', 'clinic_admin']}>
+              <PharmacistDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/pharmacist/medications"
+          element={
+            <RequireRole roles={['pharmacist', 'clinic_admin']}>
+              <PharmacistMedications />
             </RequireRole>
           }
         />

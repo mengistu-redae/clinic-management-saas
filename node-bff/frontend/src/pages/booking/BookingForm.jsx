@@ -15,6 +15,7 @@ import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import { formatCurrency } from '../../lib/format.js';
 import { useActiveClinicZone } from '../../theme/TimezoneProvider.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
 
 const selectClass =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -117,7 +118,7 @@ export default function BookingForm() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <PageContainer>
       <h1 className="mb-1 text-2xl font-bold text-ink">{clinicName || t('publicNav.bookAppointment')}</h1>
       <p className="mb-6 text-sm text-ink-muted">{t('booking.pickTypeAndProvider')}</p>
 
@@ -229,6 +230,6 @@ export default function BookingForm() {
           <ErrorBanner message={bookingError} />
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

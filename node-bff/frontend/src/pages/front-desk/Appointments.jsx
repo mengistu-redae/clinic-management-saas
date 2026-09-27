@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAppointments, usePatients } from '../../api/queries.js';
 import StatusPill from '../../components/StatusPill.jsx';
-import EmptyState from '../../components/EmptyState.jsx';
-import ErrorBanner from '../../components/ErrorBanner.jsx';
-import Skeleton from '../../components/Skeleton.jsx';
+import DataTable from '../../components/DataTable.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
 import { formatDateTime } from '../../lib/format.js';
 
 /**
@@ -13,10 +14,12 @@ import { formatDateTime } from '../../lib/format.js';
  * GET /api/appointments. Appointment carries only a patientId (or, for a
  * guest booking, a contactName) - patient names are resolved via one
  * GET /api/patients call and an id->name map, rather than an N+1 lookup
- * per row.
+ * per row. Rendered as a searchable/sortable DataTable (modern-UI
+ * redesign) - the row-click-to-navigate behavior is unchanged.
  */
 export default function Appointments() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const appointments = useAppointments(true);
   const patients = usePatients();
 
@@ -26,63 +29,56 @@ export default function Appointments() {
     return map;
   }, [patients.data]);
 
+  function nameFor(a) {
+    return (a.patientId && patientNames.get(a.patientId)) || a.contactName || t('frontDeskAppointments.guest');
+  }
+
   const isLoading = appointments.isLoading || patients.isLoading;
   const isError = appointments.isError || patients.isError;
 
-  if (isError) {
-    return (
-      <ErrorBanner
-        message={appointments.error?.message || patients.error?.message}
+  const columns = [
+    { key: 'name', header: t('common.name'), accessor: nameFor, sortable: true },
+    { key: 'ref', header: t('appointmentDetail.reference'), accessor: (a) => a.appointmentRef, sortable: true, className: 'font-mono text-xs' },
+    { key: 'channel', header: t('fdAppointmentDetail.channel'), accessor: (a) => t(`channel.${a.channel}`, { defaultValue: a.channel }), sortable: true },
+    {
+      key: 'status',
+      header: t('referralsPage.status'),
+      accessor: (a) => a.status,
+      sortable: true,
+      render: (a) => <StatusPill status={a.status} />,
+    },
+    { key: 'bookedAt', header: t('common.bookedAt'), accessor: (a) => a.bookedAt, sortAccessor: (a) => new Date(a.bookedAt), sortable: true, render: (a) => formatDateTime(a.bookedAt) },
+  ];
+
+  return (
+    <PageContainer width="lg">
+      <PageHeader
+        title={t('nav.frontDesk.appointments')}
+        actions={
+          <Button as={Link} to="/front-desk/patients">
+            {t('nav.frontDesk.bookWalkIn')}
+          </Button>
+        }
+      />
+
+      <DataTable
+        columns={columns}
+        rows={appointments.data || []}
+        rowKey="id"
+        searchAccessors={[nameFor, (a) => a.appointmentRef]}
+        searchPlaceholder={t('common.search')}
+        onRowClick={(a) => navigate(`/front-desk/appointments/${a.id}`)}
+        defaultSortKey="bookedAt"
+        defaultSortDir="desc"
+        isLoading={isLoading}
+        error={isError ? appointments.error || patients.error : null}
         onRetry={() => {
           appointments.refetch();
           patients.refetch();
         }}
+        emptyTitle={t('frontDeskAppointments.emptyTitle')}
+        emptyDescription={t('frontDeskAppointments.emptyDescription')}
       />
-    );
-  }
-  if (isLoading) {
-    return (
-      <div className="flex flex-col gap-2">
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-      </div>
-    );
-  }
-
-  const rows = [...appointments.data].sort((a, b) => new Date(b.bookedAt) - new Date(a.bookedAt));
-
-  return (
-    <div className="mx-auto max-w-2xl">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink">{t('nav.frontDesk.appointments')}</h1>
-        <Link to="/front-desk/patients" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
-          {t('nav.frontDesk.bookWalkIn')}
-        </Link>
-      </div>
-
-      {rows.length === 0 ? (
-        <EmptyState title={t('frontDeskAppointments.emptyTitle')} description={t('frontDeskAppointments.emptyDescription')} />
-      ) : (
-        <div className="flex flex-col gap-2">
-          {rows.map((a) => (
-            <Link
-              key={a.id}
-              to={`/front-desk/appointments/${a.id}`}
-              className="flex items-center justify-between rounded-xl border border-slate-200 bg-surface p-4 shadow-sm transition-shadow hover:shadow-md"
-            >
-              <div>
-                <p className="text-sm font-medium text-ink">
-                  {(a.patientId && patientNames.get(a.patientId)) || a.contactName || t('frontDeskAppointments.guest')}
-                </p>
-                <p className="font-mono text-xs text-ink-muted">
-                  {a.appointmentRef} · {formatDateTime(a.bookedAt)}
-                </p>
-              </div>
-              <StatusPill status={a.status} />
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+    </PageContainer>
   );
 }

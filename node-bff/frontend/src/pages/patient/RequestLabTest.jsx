@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useClinicsDirectory, useCreateLabRequest } from '../../api/queries.js';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
 
 const inputClass =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -53,7 +54,7 @@ export default function RequestLabTest() {
   }
 
   return (
-    <div className="mx-auto max-w-xl">
+    <PageContainer width="xl">
       <h1 className="mb-2 text-2xl font-bold text-ink">{t('requestLabTest.title')}</h1>
       <p className="mb-6 text-sm text-ink-muted">{t('requestLabTest.subtitle')}</p>
 
@@ -97,6 +98,6 @@ export default function RequestLabTest() {
         </button>
       </form>
       {formError && <div className="mt-4"><ErrorBanner message={formError} /></div>}
-    </div>
+    </PageContainer>
   );
 }

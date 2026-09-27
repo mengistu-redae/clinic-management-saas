@@ -5,6 +5,7 @@ import StatusPill from '../../components/StatusPill.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
+import PageContainer from '../../components/PageContainer.jsx';
 
 /**
  * Read-only patient view of one lab order - there's no dedicated
@@ -37,7 +38,7 @@ export default function MyLabOrderDetail() {
   const showResults = order.status === 'resulted' || order.status === 'reviewed';
 
   return (
-    <div className="mx-auto max-w-xl">
+    <PageContainer width="xl">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-ink">{t('myLabOrderDetail.title')}</h1>
@@ -93,6 +94,6 @@ export default function MyLabOrderDetail() {
           </table>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }

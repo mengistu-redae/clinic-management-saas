@@ -25,6 +25,7 @@ import ErrorBanner from '../../components/ErrorBanner.jsx';
 import LabOrderTestsEditor from '../../components/labOrder/LabOrderTestsEditor.jsx';
 import InvoicePanel from '../../components/InvoicePanel.jsx';
 import PaymentsPanel from '../../components/PaymentsPanel.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
 
 const inputClass =
@@ -229,7 +230,7 @@ export default function LabOrderDetail() {
   const isTerminal = status === 'cancelled' || status === 'reviewed';
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <PageContainer>
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-ink">{t('myLabOrderDetail.title')}</h1>
@@ -437,7 +438,7 @@ export default function LabOrderDetail() {
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

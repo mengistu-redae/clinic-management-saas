@@ -4,6 +4,8 @@ import { useFeePolicies, useCreateFeePolicy, useUpdateFeePolicy, useDeleteFeePol
 import Skeleton from '../../components/Skeleton.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import DataTable from '../../components/DataTable.jsx';
+import Button from '../../components/Button.jsx';
 
 const inputClass =
   'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -13,7 +15,8 @@ const inputClass =
  * .../update/POST .../delete FeePolicyController. A specific provider's
  * tiers *replace* the clinic-wide default entirely (never merged, see
  * FeeCalculator) - grouped here by provider for the same reason the
- * reference project's RefundPolicies.jsx groups by route.
+ * reference project's RefundPolicies.jsx groups by route; each group's own
+ * tiers now render as one small sortable DataTable.
  */
 export default function ClinicAdminFeePolicies() {
   const { t } = useTranslation();
@@ -57,6 +60,11 @@ export default function ClinicAdminFeePolicies() {
     return (providerById[a]?.fullName || '').localeCompare(providerById[b]?.fullName || '');
   });
 
+  const columns = [
+    { key: 'cutoffHours', header: t('feePoliciesPage.cutoffHours'), accessor: (t2) => t2.cutoffHours, sortable: true },
+    { key: 'feePercent', header: t('feePoliciesPage.feePercent'), accessor: (t2) => t2.feePercent, sortable: true, render: (t2) => `${t2.feePercent}%` },
+  ];
+
   return (
     <div>
       <p className="mb-6 text-sm text-ink-muted">{t('feePoliciesPage.intro')}</p>
@@ -76,9 +84,9 @@ export default function ClinicAdminFeePolicies() {
         <Field label={t('feePoliciesPage.feePercent')}>
           <input type="number" min="0" max="100" value={feePercent} onChange={(e) => setFeePercent(e.target.value)} className={`${inputClass} w-24`} />
         </Field>
-        <button type="submit" disabled={createPolicy.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
+        <Button type="submit" variant="accent" disabled={createPolicy.isPending}>
           {createPolicy.isPending ? t('common.adding') : t('feePoliciesPage.addTier')}
-        </button>
+        </Button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
 
@@ -95,13 +103,14 @@ export default function ClinicAdminFeePolicies() {
               <p className="mb-3 text-sm font-semibold text-ink">
                 {key === 'default' ? t('feePoliciesPage.clinicWideDefault') : providerById[key]?.fullName || t('feePoliciesPage.unknownProvider')}
               </p>
-              <div className="flex flex-col gap-2">
-                {groups.get(key)
-                  .sort((a, b) => b.cutoffHours - a.cutoffHours)
-                  .map((tier) => (
-                    <TierRow key={tier.id} tier={tier} />
-                  ))}
-              </div>
+              <DataTable
+                columns={columns}
+                rows={groups.get(key)}
+                rowKey="id"
+                defaultSortKey="cutoffHours"
+                defaultSortDir="desc"
+                renderExpanded={(tier) => <TierEditPanel tier={tier} />}
+              />
             </div>
           ))}
         </div>
@@ -110,12 +119,11 @@ export default function ClinicAdminFeePolicies() {
   );
 }
 
-function TierRow({ tier }) {
+function TierEditPanel({ tier }) {
   const { t } = useTranslation();
   const updatePolicy = useUpdateFeePolicy(tier.id);
   const deletePolicy = useDeleteFeePolicy(tier.id);
 
-  const [editing, setEditing] = useState(false);
   const [cutoffHours, setCutoffHours] = useState(String(tier.cutoffHours));
   const [feePercent, setFeePercent] = useState(String(tier.feePercent));
   const [rowError, setRowError] = useState(null);
@@ -124,7 +132,6 @@ function TierRow({ tier }) {
     setRowError(null);
     try {
       await updatePolicy.mutateAsync({ cutoffHours: Number(cutoffHours), feePercent: Number(feePercent) });
-      setEditing(false);
     } catch (err) {
       setRowError(err.message || t('common.errorSaveChanges'));
     }
@@ -139,8 +146,8 @@ function TierRow({ tier }) {
     }
   }
 
-  if (editing) {
-    return (
+  return (
+    <div>
       <div className="flex flex-wrap items-end gap-3">
         <Field label={t('feePoliciesPage.cutoffHours')}>
           <input type="number" min="0" value={cutoffHours} onChange={(e) => setCutoffHours(e.target.value)} className={`${inputClass} w-24`} />
@@ -148,27 +155,14 @@ function TierRow({ tier }) {
         <Field label={t('feePoliciesPage.feePercent')}>
           <input type="number" min="0" max="100" value={feePercent} onChange={(e) => setFeePercent(e.target.value)} className={`${inputClass} w-24`} />
         </Field>
-        <button type="button" onClick={saveEdit} disabled={updatePolicy.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
+        <Button type="button" variant="accent" onClick={saveEdit} disabled={updatePolicy.isPending}>
           {t('common.save')}
+        </Button>
+        <button type="button" onClick={handleDelete} className="text-sm text-danger hover:underline">
+          {t('common.delete')}
         </button>
-        <button type="button" onClick={() => setEditing(false)} className="text-sm text-ink-muted hover:underline">
-          {t('common.cancel')}
-        </button>
-        {rowError && <div className="w-full"><ErrorBanner message={rowError} /></div>}
       </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center justify-between">
-      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-ink">
-        {t('feePoliciesPage.tierLabel', { hours: tier.cutoffHours, percent: tier.feePercent })}
-      </span>
-      <div className="flex items-center gap-3 text-sm">
-        <button type="button" onClick={() => setEditing(true)} className="text-brand-text hover:underline">{t('common.edit')}</button>
-        <button type="button" onClick={handleDelete} className="text-danger hover:underline">{t('common.delete')}</button>
-      </div>
-      {rowError && <div className="mt-2"><ErrorBanner message={rowError} /></div>}
+      {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
     </div>
   );
 }

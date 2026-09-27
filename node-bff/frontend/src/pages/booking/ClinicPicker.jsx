@@ -4,6 +4,7 @@ import { useClinicsDirectory } from '../../api/queries.js';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
 
 /** Step 1 of the booking flow - public, reachable logged-out. See ClinicController.clinics. */
 export default function ClinicPicker() {
@@ -11,7 +12,7 @@ export default function ClinicPicker() {
   const { data, isLoading, isError, error, refetch } = useClinicsDirectory();
 
   return (
-    <div className="mx-auto max-w-xl">
+    <PageContainer width="xl">
       <h1 className="mb-1 text-2xl font-bold text-ink">{t('publicNav.bookAppointment')}</h1>
       <p className="mb-6 text-sm text-ink-muted">{t('clinicPicker.subtitle')}</p>
 
@@ -38,6 +39,6 @@ export default function ClinicPicker() {
           ))}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

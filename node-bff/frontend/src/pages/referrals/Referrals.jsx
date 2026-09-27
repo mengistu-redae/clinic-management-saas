@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useReferrals, useCreateReferral, useUpdateReferral, usePatients, useProviders } from '../../api/queries.js';
-import Skeleton from '../../components/Skeleton.jsx';
-import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import DataTable from '../../components/DataTable.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import Button from '../../components/Button.jsx';
 import { formatDateTime } from '../../lib/format.js';
 
 const inputClass =
@@ -38,7 +39,9 @@ function emptyForm() {
  * page with an inline expand-to-update row rather than a separate detail
  * route (frontend phase L) - referrals have no multi-step status machine
  * the way lab orders do, just a single partial-update endpoint, so a
- * second route would be pure ceremony.
+ * second route would be pure ceremony. Now rendered via DataTable
+ * (modern-UI redesign) - its own chevron toggle replaces this page's old
+ * bespoke expand button, same update form underneath.
  */
 export default function Referrals() {
   const { t } = useTranslation();
@@ -53,7 +56,15 @@ export default function Referrals() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [formError, setFormError] = useState(null);
-  const [expandedId, setExpandedId] = useState(null);
+
+  function patientName(r) {
+    const p = patientById[r.patientId];
+    return p ? `${p.firstName} ${p.lastName}` : '';
+  }
+  function destinationName(r) {
+    if (r.receivingProviderId) return providerById[r.receivingProviderId]?.fullName || '';
+    return [r.externalProviderName, r.externalClinicName].filter(Boolean).join(' · ');
+  }
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -89,10 +100,37 @@ export default function Referrals() {
     }
   }
 
-  const sorted = [...(referrals || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const columns = [
+    { key: 'patient', header: t('labOrdersPage.patient'), accessor: patientName, sortable: true },
+    {
+      key: 'destination',
+      header: t('referralsPage.receivingProvider'),
+      accessor: destinationName,
+      sortable: true,
+      render: (r) => (
+        <span>
+          {providerById[r.referringProviderId]?.fullName || '…'} &rarr; {destinationName(r) || t('referralsPage.externalLabel')}
+        </span>
+      ),
+    },
+    { key: 'specialty', header: t('referralsPage.specialtyOptional'), accessor: (r) => r.referredToSpecialty || '', sortable: true, render: (r) => r.referredToSpecialty || '—' },
+    {
+      key: 'status',
+      header: t('referralsPage.status'),
+      accessor: (r) => r.status,
+      sortable: true,
+      render: (r) => (
+        <div className="flex items-center gap-2">
+          <Badge style={STATUS_STYLE[r.status] || STATUS_STYLE.pending}>{t(`referralStatus.${r.status}`, { defaultValue: r.status })}</Badge>
+          {r.priority === 'urgent' && <Badge style="bg-danger-light text-danger">{t('labOrdersPage.urgent')}</Badge>}
+        </div>
+      ),
+    },
+    { key: 'createdAt', header: t('common.bookedAt'), accessor: (r) => r.createdAt, sortAccessor: (r) => new Date(r.createdAt), sortable: true, render: (r) => formatDateTime(r.createdAt) },
+  ];
 
   return (
-    <div>
+    <PageContainer width="lg">
       <h1 className="mb-6 text-2xl font-bold text-ink">{t('nav.provider.referrals')}</h1>
 
       <div className="mb-6">
@@ -175,49 +213,38 @@ export default function Referrals() {
               </Field>
             </div>
 
-            <button type="submit" disabled={createReferral.isPending} className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
+            <Button type="submit" variant="accent" className="mt-4" disabled={createReferral.isPending}>
               {createReferral.isPending ? t('labOrdersPage.creating') : t('referralsPage.createReferral')}
-            </button>
+            </Button>
           </form>
           {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
         </>
       )}
 
-      {isLoading && <Skeleton className="h-32 w-full" />}
-      {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
-      {!isLoading && !isError && sorted.length === 0 && (
-        <EmptyState title={t('referralsPage.emptyTitle')} description={t('referralsPage.emptyDescription')} />
-      )}
-
-      {!isLoading && !isError && sorted.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {sorted.map((r) => (
-            <ReferralRow
-              key={r.id}
-              referral={r}
-              patient={patientById[r.patientId]}
-              referringProvider={providerById[r.referringProviderId]}
-              receivingProvider={r.receivingProviderId ? providerById[r.receivingProviderId] : null}
-              expanded={expandedId === r.id}
-              onToggle={() => setExpandedId((id) => (id === r.id ? null : r.id))}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+      <DataTable
+        columns={columns}
+        rows={referrals || []}
+        rowKey="id"
+        searchAccessors={[patientName, destinationName, (r) => r.referredToSpecialty]}
+        renderExpanded={(r) => <ReferralEditPanel referral={r} />}
+        defaultSortKey="createdAt"
+        defaultSortDir="desc"
+        isLoading={isLoading}
+        error={isError ? error : null}
+        onRetry={refetch}
+        emptyTitle={t('referralsPage.emptyTitle')}
+        emptyDescription={t('referralsPage.emptyDescription')}
+      />
+    </PageContainer>
   );
 }
 
-function ReferralRow({ referral, patient, referringProvider, receivingProvider, expanded, onToggle }) {
+function ReferralEditPanel({ referral }) {
   const { t } = useTranslation();
   const updateReferral = useUpdateReferral(referral.id);
   const [form, setForm] = useState({ status: referral.status, priority: referral.priority, notes: referral.notes || '', clinicalSummary: referral.clinicalSummary || '' });
   const [saveError, setSaveError] = useState(null);
   const [saved, setSaved] = useState(false);
-
-  const destination = referral.receivingProviderId
-    ? (receivingProvider ? receivingProvider.fullName : '…')
-    : [referral.externalProviderName, referral.externalClinicName].filter(Boolean).join(' · ') || t('referralsPage.externalLabel');
 
   async function handleSave(event) {
     event.preventDefault();
@@ -237,55 +264,35 @@ function ReferralRow({ referral, patient, referringProvider, receivingProvider, 
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-surface p-4">
-      <button type="button" onClick={onToggle} className="flex w-full flex-wrap items-center justify-between gap-3 text-left">
-        <div>
-          <div className="mb-1 flex items-center gap-2">
-            <Badge style={STATUS_STYLE[referral.status] || STATUS_STYLE.pending}>{t(`referralStatus.${referral.status}`, { defaultValue: referral.status })}</Badge>
-            {referral.priority === 'urgent' && <Badge style="bg-danger-light text-danger">{t('labOrdersPage.urgent')}</Badge>}
-            {referral.receivingProviderId ? null : <span className="text-xs text-ink-muted">{t('referralsPage.externalLabel')}</span>}
-          </div>
-          <p className="text-sm font-semibold text-ink">{patient ? `${patient.firstName} ${patient.lastName}` : '…'}</p>
-          <p className="text-xs text-ink-muted">
-            {referringProvider ? referringProvider.fullName : '…'} &rarr; {destination}
-            {referral.referredToSpecialty && ` · ${referral.referredToSpecialty}`}
-          </p>
-        </div>
-        <span className="text-xs text-ink-muted">{formatDateTime(referral.createdAt)}</span>
-      </button>
-
-      {expanded && (
-        <form onSubmit={handleSave} className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4">
-          <p className="text-sm text-ink"><span className="font-semibold">{t('referralsPage.reasonLabel')}</span> {referral.reason}</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <Field label={t('referralsPage.status')}>
-              <select value={form.status} onChange={(e) => { setForm({ ...form, status: e.target.value }); setSaved(false); }} className={inputClass}>
-                {STATUSES.map((s) => <option key={s} value={s}>{t(`referralStatus.${s}`)}</option>)}
-              </select>
-            </Field>
-            <Field label={t('labOrdersPage.priority')}>
-              <select value={form.priority} onChange={(e) => { setForm({ ...form, priority: e.target.value }); setSaved(false); }} className={inputClass}>
-                {PRIORITIES.map((p) => <option key={p} value={p}>{t(`labOrdersPage.${p}`)}</option>)}
-              </select>
-            </Field>
-          </div>
-          <Field label={t('referralsPage.clinicalSummary')}>
-            <textarea rows={2} value={form.clinicalSummary} onChange={(e) => { setForm({ ...form, clinicalSummary: e.target.value }); setSaved(false); }} className={`${inputClass} w-full`} />
-          </Field>
-          <Field label={t('referralsPage.notes')}>
-            <textarea rows={2} value={form.notes} onChange={(e) => { setForm({ ...form, notes: e.target.value }); setSaved(false); }} className={`${inputClass} w-full`} />
-          </Field>
-          {referral.completedAt && <p className="text-xs text-ink-muted">{t('referralsPage.completedOn', { date: formatDateTime(referral.completedAt) })}</p>}
-          {saveError && <ErrorBanner message={saveError} />}
-          <div className="flex items-center gap-3">
-            <button type="submit" disabled={updateReferral.isPending} className="self-start rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
-              {updateReferral.isPending ? t('settingsPage.saving') : t('common.save')}
-            </button>
-            {saved && <span className="text-sm text-success">{t('settingsPage.saved')}</span>}
-          </div>
-        </form>
-      )}
-    </div>
+    <form onSubmit={handleSave} className="flex flex-col gap-3">
+      <p className="text-sm text-ink"><span className="font-semibold">{t('referralsPage.reasonLabel')}</span> {referral.reason}</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label={t('referralsPage.status')}>
+          <select value={form.status} onChange={(e) => { setForm({ ...form, status: e.target.value }); setSaved(false); }} className={inputClass}>
+            {STATUSES.map((s) => <option key={s} value={s}>{t(`referralStatus.${s}`)}</option>)}
+          </select>
+        </Field>
+        <Field label={t('labOrdersPage.priority')}>
+          <select value={form.priority} onChange={(e) => { setForm({ ...form, priority: e.target.value }); setSaved(false); }} className={inputClass}>
+            {PRIORITIES.map((p) => <option key={p} value={p}>{t(`labOrdersPage.${p}`)}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label={t('referralsPage.clinicalSummary')}>
+        <textarea rows={2} value={form.clinicalSummary} onChange={(e) => { setForm({ ...form, clinicalSummary: e.target.value }); setSaved(false); }} className={`${inputClass} w-full`} />
+      </Field>
+      <Field label={t('referralsPage.notes')}>
+        <textarea rows={2} value={form.notes} onChange={(e) => { setForm({ ...form, notes: e.target.value }); setSaved(false); }} className={`${inputClass} w-full`} />
+      </Field>
+      {referral.completedAt && <p className="text-xs text-ink-muted">{t('referralsPage.completedOn', { date: formatDateTime(referral.completedAt) })}</p>}
+      {saveError && <ErrorBanner message={saveError} />}
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant="accent" className="self-start" disabled={updateReferral.isPending}>
+          {updateReferral.isPending ? t('settingsPage.saving') : t('common.save')}
+        </Button>
+        {saved && <span className="text-sm text-success">{t('settingsPage.saved')}</span>}
+      </div>
+    </form>
   );
 }
 

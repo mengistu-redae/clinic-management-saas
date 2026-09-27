@@ -25,6 +25,7 @@ import ErrorBanner from '../../components/ErrorBanner.jsx';
 import PatientChart from '../../components/PatientChart.jsx';
 import InvoicePanel from '../../components/InvoicePanel.jsx';
 import PaymentsPanel from '../../components/PaymentsPanel.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
 import { formatDateTime } from '../../lib/format.js';
 
 const TERMINAL_STATUSES = new Set(['cancelled', 'checked_out', 'no_show']);
@@ -118,7 +119,7 @@ export default function AppointmentDetail() {
   const isTerminal = TERMINAL_STATUSES.has(status);
 
   return (
-    <div className="mx-auto max-w-xl">
+    <PageContainer width="xl">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">{t('appointmentDetail.title')}</h1>
         <StatusPill status={status} />
@@ -282,6 +283,6 @@ export default function AppointmentDetail() {
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

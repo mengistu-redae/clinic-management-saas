@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   useLabOrders,
@@ -10,9 +10,10 @@ import {
   useLabRates,
 } from '../../api/queries.js';
 import StatusPill from '../../components/StatusPill.jsx';
-import Skeleton from '../../components/Skeleton.jsx';
-import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import DataTable from '../../components/DataTable.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import Button from '../../components/Button.jsx';
 import LabOrderTestsEditor, { emptyTestLine } from '../../components/labOrder/LabOrderTestsEditor.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
 
@@ -26,10 +27,13 @@ const emptyForm = { patientId: '', orderingProviderId: '', priority: 'routine', 
  * (LabOrderController), plus a review-queue banner for patient-initiated
  * requests (GET /api/lab-orders/requests) linking into LabOrderDetail's
  * own confirm-and-order form. Same list+create+pending-queue shape as the
- * reference project's cargo/Waybills.jsx, this app's own fields.
+ * reference project's cargo/Waybills.jsx, this app's own fields. The
+ * status filter narrows `rows` before they reach DataTable, alongside its
+ * own new search box and sortable columns (modern-UI redesign).
  */
 export default function LabOrders() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState('');
   const { data: orders, isLoading, isError, error, refetch } = useLabOrders(true);
   const { data: requests } = useLabOrderRequests(true);
@@ -40,6 +44,14 @@ export default function LabOrders() {
 
   const patientById = useMemo(() => Object.fromEntries((patients || []).map((p) => [p.id, p])), [patients]);
   const providerById = useMemo(() => Object.fromEntries((providers || []).map((p) => [p.id, p])), [providers]);
+
+  function patientName(order) {
+    const p = patientById[order.patientId];
+    return p ? `${p.firstName} ${p.lastName}` : '';
+  }
+  function providerName(order) {
+    return providerById[order.orderingProviderId]?.fullName || '';
+  }
 
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -77,10 +89,24 @@ export default function LabOrders() {
   }
 
   const visibleOrders = (orders || []).filter((o) => !statusFilter || o.status === statusFilter);
-  const sortedOrders = [...visibleOrders].sort((a, b) => new Date(b.orderedAt) - new Date(a.orderedAt));
+
+  const columns = [
+    { key: 'orderRef', header: t('appointmentDetail.reference'), accessor: (o) => o.orderRef, sortable: true, className: 'font-mono text-xs' },
+    { key: 'patient', header: t('labOrdersPage.patient'), accessor: patientName, sortable: true },
+    { key: 'provider', header: t('labOrdersPage.orderingProvider'), accessor: providerName, sortable: true },
+    {
+      key: 'status',
+      header: t('referralsPage.status'),
+      accessor: (o) => o.status,
+      sortable: true,
+      render: (o) => <StatusPill status={o.status} />,
+    },
+    { key: 'orderedAt', header: t('common.bookedAt'), accessor: (o) => o.orderedAt, sortAccessor: (o) => new Date(o.orderedAt), sortable: true, render: (o) => formatDateTime(o.orderedAt) },
+    { key: 'totalCost', header: t('appointmentTypesPage.price'), accessor: (o) => o.totalCost, sortable: true, className: 'font-mono font-semibold', render: (o) => formatCurrency(o.totalCost) },
+  ];
 
   return (
-    <div>
+    <PageContainer width="lg">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-ink">{t('nav.provider.labOrders')}</h1>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={t('labOrdersPage.filterByStatus')} className={`${inputClass} w-44`}>
@@ -172,48 +198,29 @@ export default function LabOrders() {
               <span>{t('labOrdersPage.consentLabel')}</span>
             </label>
 
-            <button type="submit" disabled={createOrder.isPending} className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
+            <Button type="submit" variant="accent" className="mt-4" disabled={createOrder.isPending}>
               {createOrder.isPending ? t('labOrdersPage.creating') : t('labOrdersPage.createLabOrder')}
-            </button>
+            </Button>
           </form>
           {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
         </>
       )}
 
-      {isLoading && <Skeleton className="h-32 w-full" />}
-      {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
-      {!isLoading && !isError && sortedOrders.length === 0 && (
-        <EmptyState title={t('myLabOrders.emptyTitle')} description={t('labOrdersPage.emptyDescription')} />
-      )}
-
-      {!isLoading && !isError && sortedOrders.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {sortedOrders.map((order) => {
-            const patient = patientById[order.patientId];
-            const provider = providerById[order.orderingProviderId];
-            return (
-              <Link
-                key={order.id}
-                to={`/lab-orders/${order.id}`}
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-surface p-4 shadow-sm transition-shadow hover:shadow-md"
-              >
-                <div>
-                  <div className="mb-1 flex items-center gap-2">
-                    <StatusPill status={order.status} />
-                    <span className="font-mono text-xs text-ink-muted">{order.orderRef}</span>
-                  </div>
-                  <p className="text-sm font-semibold text-ink">{patient ? `${patient.firstName} ${patient.lastName}` : '…'}</p>
-                  <p className="text-xs text-ink-muted">
-                    {provider ? provider.fullName : '—'} · {formatDateTime(order.orderedAt)}
-                  </p>
-                </div>
-                <span className="font-mono text-sm font-semibold text-ink">{formatCurrency(order.totalCost)}</span>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
+      <DataTable
+        columns={columns}
+        rows={visibleOrders}
+        rowKey="id"
+        searchAccessors={[(o) => o.orderRef, patientName, providerName]}
+        onRowClick={(o) => navigate(`/lab-orders/${o.id}`)}
+        defaultSortKey="orderedAt"
+        defaultSortDir="desc"
+        isLoading={isLoading}
+        error={isError ? error : null}
+        onRetry={refetch}
+        emptyTitle={t('myLabOrders.emptyTitle')}
+        emptyDescription={t('labOrdersPage.emptyDescription')}
+      />
+    </PageContainer>
   );
 }
 

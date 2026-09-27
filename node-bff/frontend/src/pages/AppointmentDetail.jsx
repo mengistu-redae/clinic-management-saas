@@ -7,6 +7,7 @@ import { ApiError } from '../api/client.js';
 import StatusPill from '../components/StatusPill.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
+import PageContainer from '../components/PageContainer.jsx';
 import { formatDateTime } from '../lib/format.js';
 import { useActiveClinicZone } from '../theme/TimezoneProvider.jsx';
 
@@ -68,13 +69,13 @@ export default function AppointmentDetail() {
   }
   if (!appointment) {
     return !authenticated ? (
-      <div className="mx-auto max-w-xl rounded-xl border border-slate-200 bg-surface p-5 text-sm text-ink-muted">
+      <PageContainer width="xl" className="rounded-xl border border-slate-200 bg-surface p-5 text-sm text-ink-muted">
         {t('appointmentDetail.notAvailableGuest')}{' '}
         <Link to="/track-appointment" className="text-brand-text hover:underline">
           {t('publicNav.trackAppointment')}
         </Link>
         .
-      </div>
+      </PageContainer>
     ) : (
       <ErrorBanner message={t('appointmentDetail.notFound')} />
     );
@@ -83,7 +84,7 @@ export default function AppointmentDetail() {
   const status = cancelAppointment.data?.status || appointment.status;
 
   return (
-    <div className="mx-auto max-w-xl">
+    <PageContainer width="xl">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">{t('appointmentDetail.title')}</h1>
         <StatusPill status={status} />
@@ -163,6 +164,6 @@ export default function AppointmentDetail() {
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

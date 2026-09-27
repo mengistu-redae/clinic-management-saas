@@ -16,6 +16,7 @@ import Skeleton from '../../components/Skeleton.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import PatientChart from '../../components/PatientChart.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
 
 const inputClass =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -184,7 +185,7 @@ export default function Encounter() {
   const addenda = encounterQuery.data?.addenda || [];
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <PageContainer>
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">{t('encounterPage.title')}</h1>
         <StatusPill status={appointment.status} />
@@ -369,7 +370,7 @@ export default function Encounter() {
           </div>
         </>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

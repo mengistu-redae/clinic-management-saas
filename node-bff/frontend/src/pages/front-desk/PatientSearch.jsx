@@ -2,14 +2,25 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { usePatients, useCreatePatient } from '../../api/queries.js';
-import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
+import DataTable from '../../components/DataTable.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import Button from '../../components/Button.jsx';
+import { SearchIcon } from '../../components/icons.jsx';
 
 const inputClass =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
-/** Front-desk's entry point before booking a walk-in - search an existing patient, or register a new one. */
+/**
+ * Front-desk's entry point before booking a walk-in - search an existing
+ * patient, or register a new one. Its own free-text box is real
+ * server-side search (GET /api/patients?query=, the one list-fetching
+ * hook in this app with a real search param) - kept as the single source
+ * of truth rather than duplicated as a second client-side search box the
+ * way DataTable would otherwise add; results still render through
+ * DataTable for sortable columns + the row-click-to-book behavior.
+ */
 export default function PatientSearch() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -43,66 +54,57 @@ export default function PatientSearch() {
     }
   }
 
+  const columns = [
+    { key: 'name', header: t('common.name'), accessor: (p) => `${p.firstName} ${p.lastName}`, sortable: true },
+    { key: 'phone', header: t('patientSearch.phone'), accessor: (p) => p.phone || '', sortable: true, render: (p) => p.phone || '—' },
+    { key: 'dateOfBirth', header: t('patientSearch.dateOfBirth'), accessor: (p) => p.dateOfBirth || '', sortable: true, render: (p) => p.dateOfBirth || '—' },
+  ];
+
   return (
-    <div className="mx-auto max-w-xl">
+    <PageContainer width="lg">
       <h1 className="mb-1 text-2xl font-bold text-ink">{t('nav.frontDesk.bookWalkIn')}</h1>
       <p className="mb-6 text-sm text-ink-muted">{t('patientSearch.subtitle')}</p>
 
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={t('patientSearch.searchPlaceholder')}
-        className={`${inputClass} mb-4`}
-      />
+      <div className="relative mb-4 max-w-sm">
+        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('patientSearch.searchPlaceholder')}
+          className={`${inputClass} pl-9`}
+        />
+      </div>
 
-      {isLoading && (
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-14 w-full" />
-          <Skeleton className="h-14 w-full" />
-        </div>
-      )}
-      {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
       {data && data.length === 0 && !showRegister && (
         <EmptyState
           title={t('patientSearch.noMatchTitle')}
           description={t('patientSearch.noMatchDescription')}
           action={
-            <button
-              type="button"
-              onClick={() => setShowRegister(true)}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
-            >
+            <Button type="button" onClick={() => setShowRegister(true)}>
               {t('patientSearch.registerNew')}
-            </button>
+            </Button>
           }
         />
       )}
-      {data && data.length > 0 && (
-        <div className="mb-4 flex flex-col gap-2">
-          {data.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => navigate(`/front-desk/book/${p.id}`)}
-              className="flex items-center justify-between rounded-xl border border-slate-200 bg-surface p-4 text-left shadow-sm transition-shadow hover:shadow-md"
-            >
-              <div>
-                <p className="font-medium text-ink">
-                  {p.firstName} {p.lastName}
-                </p>
-                {p.phone && <p className="text-xs text-ink-muted">{p.phone}</p>}
-              </div>
-              <span className="text-ink-muted">&rsaquo;</span>
-            </button>
-          ))}
-        </div>
+
+      {(isLoading || isError || (data && data.length > 0)) && (
+        <DataTable
+          columns={columns}
+          rows={data || []}
+          rowKey="id"
+          onRowClick={(p) => navigate(`/front-desk/book/${p.id}`)}
+          defaultSortKey="name"
+          isLoading={isLoading}
+          error={isError ? error : null}
+          onRetry={refetch}
+        />
       )}
 
       {data && data.length > 0 && !showRegister && (
         <button
           type="button"
           onClick={() => setShowRegister(true)}
-          className="text-sm font-medium text-brand-text hover:underline"
+          className="mt-4 text-sm font-medium text-brand-text hover:underline"
         >
           {t('patientSearch.notListed')}
         </button>
@@ -147,16 +149,12 @@ export default function PatientSearch() {
               />
             </label>
           </div>
-          <button
-            type="submit"
-            disabled={createPatient.isPending}
-            className="self-start rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button type="submit" variant="accent" className="self-start" disabled={createPatient.isPending}>
             {createPatient.isPending ? t('patientSearch.registering') : t('patientSearch.registerAndContinue')}
-          </button>
+          </Button>
           {registerError && <ErrorBanner message={registerError} />}
         </form>
       )}
-    </div>
+    </PageContainer>
   );
 }

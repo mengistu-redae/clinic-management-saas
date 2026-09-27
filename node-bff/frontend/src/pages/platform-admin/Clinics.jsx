@@ -8,9 +8,10 @@ import {
   useReactivateClinic,
 } from '../../api/queries.js';
 import StatusPill from '../../components/StatusPill.jsx';
-import Skeleton from '../../components/Skeleton.jsx';
-import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import DataTable from '../../components/DataTable.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import Button from '../../components/Button.jsx';
 import { formatDateTime } from '../../lib/format.js';
 
 const inputClass =
@@ -73,8 +74,28 @@ export default function PlatformAdminClinics() {
     }
   }
 
+  const columns = [
+    { key: 'name', header: t('common.name'), accessor: (c) => c.name, sortable: true, className: 'font-semibold' },
+    { key: 'orgAlias', header: t('clinicsPage.orgAlias'), accessor: (c) => c.keycloakOrgId, sortable: true, className: 'font-mono text-xs' },
+    {
+      key: 'status',
+      header: t('referralsPage.status'),
+      accessor: (c) => c.status,
+      sortable: true,
+      render: (c) => <StatusPill status={c.status} />,
+    },
+    {
+      key: 'createdAt',
+      header: t('clinicsPage.onboardedPrefix'),
+      accessor: (c) => c.createdAt,
+      sortAccessor: (c) => new Date(c.createdAt),
+      sortable: true,
+      render: (c) => formatDateTime(c.createdAt),
+    },
+  ];
+
   return (
-    <div>
+    <PageContainer width="lg">
       <h1 className="mb-1 text-2xl font-bold text-ink">{t('nav.platformAdmin.clinics')}</h1>
       <p className="mb-6 text-sm text-ink-muted">{t('clinicsPage.intro')}</p>
 
@@ -94,9 +115,9 @@ export default function PlatformAdminClinics() {
         <Field label={t('clinicsPage.initialAdminName')}>
           <input value={form.adminFullName} onChange={(e) => setForm({ ...form, adminFullName: e.target.value })} placeholder="Jane Doe" className={`${inputClass} w-44`} />
         </Field>
-        <button type="submit" disabled={createClinic.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
+        <Button type="submit" variant="accent" disabled={createClinic.isPending}>
           {createClinic.isPending ? t('clinicsPage.provisioning') : t('clinicsPage.onboardClinic')}
-        </button>
+        </Button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
       {provisionedAdmin && (
@@ -112,30 +133,30 @@ export default function PlatformAdminClinics() {
         </div>
       )}
 
-      {isLoading && <Skeleton className="h-32 w-full" />}
-      {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
-      {!isLoading && !isError && clinics?.length === 0 && (
-        <EmptyState title={t('clinicsPage.emptyTitle')} description={t('clinicsPage.emptyDescription')} />
-      )}
-
-      {!isLoading && !isError && clinics?.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {[...clinics].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((clinic) => (
-            <ClinicRow key={clinic.id} clinic={clinic} />
-          ))}
-        </div>
-      )}
-    </div>
+      <DataTable
+        columns={columns}
+        rows={clinics || []}
+        rowKey="id"
+        searchAccessors={[(c) => c.name, (c) => c.keycloakOrgId]}
+        defaultSortKey="createdAt"
+        defaultSortDir="desc"
+        renderExpanded={(clinic) => <ClinicEditPanel clinic={clinic} />}
+        isLoading={isLoading}
+        error={isError ? error : null}
+        onRetry={refetch}
+        emptyTitle={t('clinicsPage.emptyTitle')}
+        emptyDescription={t('clinicsPage.emptyDescription')}
+      />
+    </PageContainer>
   );
 }
 
-function ClinicRow({ clinic }) {
+function ClinicEditPanel({ clinic }) {
   const { t } = useTranslation();
   const updateClinic = useUpdateClinic(clinic.id);
   const deactivateClinic = useDeactivateClinic(clinic.id);
   const reactivateClinic = useReactivateClinic(clinic.id);
 
-  const [editing, setEditing] = useState(false);
   const [name, setName] = useState(clinic.name);
   const [rowError, setRowError] = useState(null);
 
@@ -143,7 +164,6 @@ function ClinicRow({ clinic }) {
     setRowError(null);
     try {
       await updateClinic.mutateAsync({ name: name.trim() });
-      setEditing(false);
     } catch (err) {
       setRowError(err.message || t('common.errorSaveChanges'));
     }
@@ -165,39 +185,18 @@ function ClinicRow({ clinic }) {
   const pending = updateClinic.isPending || deactivateClinic.isPending || reactivateClinic.isPending;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-surface p-4">
-      {editing ? (
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label={t('common.name')}>
-            <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputClass} w-56`} />
-          </Field>
-          <button type="button" onClick={saveEdit} disabled={updateClinic.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
-            {updateClinic.isPending ? t('settingsPage.saving') : t('common.save')}
-          </button>
-          <button type="button" onClick={() => setEditing(false)} className="text-sm text-ink-muted hover:underline">
-            {t('common.cancel')}
-          </button>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="mb-1 flex items-center gap-2">
-              <StatusPill status={clinic.status} />
-              <span className="text-sm font-semibold text-ink">{clinic.name}</span>
-              <span className="font-mono text-xs text-ink-muted">{clinic.keycloakOrgId}</span>
-            </div>
-            <p className="text-xs text-ink-muted">{t('clinicsPage.onboardedPrefix')} {formatDateTime(clinic.createdAt)}</p>
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            <button type="button" onClick={() => { setRowError(null); setName(clinic.name); setEditing(true); }} className="text-brand-text hover:underline">
-              {t('common.edit')}
-            </button>
-            <button type="button" onClick={toggleActive} disabled={pending} className="text-ink-muted hover:underline disabled:opacity-50">
-              {clinic.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
-            </button>
-          </div>
-        </div>
-      )}
+    <div>
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label={t('common.name')}>
+          <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputClass} w-56`} />
+        </Field>
+        <Button type="button" variant="accent" onClick={saveEdit} disabled={updateClinic.isPending}>
+          {updateClinic.isPending ? t('settingsPage.saving') : t('common.save')}
+        </Button>
+        <button type="button" onClick={toggleActive} disabled={pending} className="text-sm text-ink-muted hover:underline disabled:opacity-50">
+          {clinic.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
+        </button>
+      </div>
       {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
     </div>
   );
