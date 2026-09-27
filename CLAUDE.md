@@ -3113,19 +3113,32 @@ backend change without a real need" convention this project already keeps.
   second bullet alongside the existing "rebuild node-bff after editing
   PUBLIC_ROUTES" lesson in "Known gaps" below, since both are the same
   underlying "the browser-facing route is nginx, verify through it" trap.
-- **Not done this session**: the Chrome browser extension stayed
-  disconnected for the whole session (confirmed after several reconnect
-  attempts, consistent with this repo's own prior "not verified in a real
-  browser this session" precedent) - this phase is confirmed via a clean
-  `npm run build` after every stage, a clean rebuilt-container `curl`
-  through nginx, and direct source review of every converted page (patterns
-  matched against each page's pre-existing hooks/mutations/role gates
-  verbatim), but **not** a real click-through. Sidebar collapse/hamburger
-  -drawer behavior, live search/sort narrowing real rows, and both theme/
-  language axes on the new table pages are all unverified in an actual
-  browser - flagged here rather than claimed. A follow-up session with the
-  extension connected should do this walkthrough before treating this
-  phase as fully done.
+- **The owed click-through happened 2026-09-27 (later session, extension
+  connected)** - real `demo-front-desk` login against
+  `front-desk/Appointments.jsx`: the search box live-filtered rows
+  client-side (`"Walk In"` narrowed 8+ rows to exactly the matching ones),
+  clicking the `Status` column header sorted rows ascending with a visible
+  indicator, the desktop sidebar's collapse toggle worked (icon-only rail,
+  active item still highlighted, chevron flips), and - once the browser
+  window was actually narrowed below the `lg` breakpoint (confirmed via
+  `window.innerWidth`, not just requested) - the hamburger button opened a
+  real off-canvas drawer with a backdrop, full clinic name (untruncated,
+  unlike the collapsed desktop rail), and the same nav/active-item
+  treatment. Dark theme and Amharic were both exercised together on this
+  same page (table, search box, status pills, sidebar/drawer nav, and the
+  language/theme toggles themselves all rendered correctly translated and
+  themed) - screenshotted, not just read from source.
+  - **One real tool limitation hit, not a product bug**: the automation's
+    `resize_window` call didn't take effect immediately (`window.innerWidth`
+    stayed at the pre-resize value for several tool calls after requesting
+    390x844) and never reached true phone width in this session - it
+    settled at 896px after a delay, which was still enough to cross the
+    `lg` breakpoint and trigger the hamburger drawer, but a genuinely
+    narrow (~390px) phone-width check is still outstanding.
+  - `demo-accountant`/`DemoPass123!` was also confirmed via a real browser
+    login this session (correct `accountant` role + `demo-clinic` org
+    membership via `GET /auth/me`) - its dashboard renders blank, expected
+    since Phase 21 (Accounting) has no route/nav for this role yet.
 
 ## Post-phase-7 backend additions
 
