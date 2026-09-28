@@ -591,12 +591,14 @@ confirmed they do, and chose sequential phases over one combined build:
 24. **Immunizations** (built 2026-09-28) - a simple per-patient vaccine
     administration log, no due-date/schedule tracking. See "Phase 24:
     immunizations" below.
+25. **Physical-exam findings** (built 2026-09-28) - a fixed 9-system
+    review-of-systems checklist added directly to `Encounter`, locking
+    with the rest of the encounter when signed. See "Phase 25:
+    physical-exam findings" below.
 
-Still queued, not yet built: structured physical-exam findings (a
-review-of-systems checklist), and a visit/encounter summary document
-(the outpatient equivalent of a discharge summary, generated at
-checkout) - both were scoped alongside immunizations but are separate
-phases.
+Still queued, not yet built: a visit/encounter summary document (the
+outpatient equivalent of a discharge summary, generated at checkout) -
+the last of the three phases scoped alongside immunizations.
 
 Each phase gets its own `TenantIsolationIntegrationTest` coverage extension
 and a `CLAUDE.md` update recording what was verified live against the
@@ -1499,6 +1501,92 @@ Physical-exam findings (structured review-of-systems checklist) and the
 visit/discharge summary document are the next two phases in this backlog,
 not touched here.
 
+## Phase 25: physical-exam findings
+
+Second of the three sequential full-EHR-breadth phases. Three scoping
+questions were put to the user before writing any code - access gate,
+storage shape, and sign-and-lock interaction - all three answered with
+the recommended option. Body-system list taken from the user's own
+`my-notes/clinical-forms-templates.md` ("Physical Examination Form"
+section), restructured to the user's own "normal/abnormal flag + a
+free-text note" shape rather than that template's plain free-text-per
+-system fields. New migration `V21__physical_exam_findings.sql`.
+
+- **18 new nullable columns directly on `Encounter`** - a fixed 9-system
+  checklist (general appearance, HEENT, cardiovascular, respiratory,
+  abdominal, musculoskeletal, neurological, skin, psychiatric), each a
+  `Boolean` normal/abnormal flag (null = not examined this visit) plus a
+  free-text note. Matches how `icd10Codes` (phase 10/`V10`) was added as
+  a plain field rather than a new entity - the access gate and 1:1
+  -per-encounter cardinality here are identical to `Encounter`'s own, so
+  a separate table (the `Vitals`-style alternative) wasn't justified.
+- **`UpsertEncounterRequest` grows to a 22-field flat positional record**
+  - stays flat even at this width, matching `UpsertVitalsRequest`'s own
+  "many nullable scalar fields in one record" precedent (9 fields there)
+  rather than introducing a nested request shape with no precedent in
+  this codebase.
+- **`EncounterService.upsert` now takes the whole `UpsertEncounterRequest`
+  record instead of four scalar parameters** - a deliberate, flagged
+  deviation from its own prior shape: extending the existing "explode
+  into scalars" pattern to 22 fields would have meant a 25-parameter
+  method signature (with `appointmentId`/`tenantId`/`actingProviderId`),
+  a real readability/error-proneness threshold. Pure parameter-passing
+  change, zero behavior change - the same `requireUnlocked(encounter)`
+  check still runs before any field is applied.
+- **Exam findings lock with the rest of the encounter for free, by
+  construction** - since the 18 new setter calls sit in the same `upsert`
+  block, after the same lock check every other field already goes
+  through, no new locking code was needed to satisfy the "locks with the
+  encounter" decision. Confirmed live, not just by reading the code (see
+  below).
+- **No new endpoints** - exam findings ride on the existing
+  `POST`/`GET /api/appointments/{id}/encounter`. No PHI-audit change
+  needed (the existing `"encounter"` resource-type calls already cover
+  this data, since it's part of the same entity now).
+- **`EncounterIntegrationTest` extended in place** (matches phase 11's
+  own precedent - a field addition to an existing resource, not a new
+  test class): every existing `new UpsertEncounterRequest(...)` call site
+  (17 of them) mechanically grew to the 22-arg form via a small Python
+  script (not hand-edited one by one, to guarantee the appended `null`s
+  landed in exactly the right position with no transcription risk); a new
+  `examFindingsRoundTripThroughUpsertAndGet` case; and
+  `signingLocksTheEncounterAndItsPrescriptions` gained an extra
+  assertion - an exam-finding-only edit attempt is rejected post-sign
+  too, and the field stays `null` afterward, not just chief
+  -complaint/assessment/plan. No new `TenantIsolationIntegrationTest`
+  case, same reasoning phase 11 already used. `mvn test` showed
+  `Tests run: 322, Errors: 253` (up from 321/252 - exactly the one new
+  test method, same pre-existing Testcontainers wall, 69 pure-unit tests
+  still passing unaffected).
+- **Live-verified against the real running stack** - `docker compose up
+  -d --build --force-recreate spring-boot-api`, `V21` confirmed applied
+  via `flyway_schema_history` (`success = t`) and the container reporting
+  healthy (Hibernate `ddl-auto: validate` accepted the 18 new entity
+  fields against the new columns with no startup failure). As
+  `demo-provider` (a real browser login through the actual nginx/
+  node-bff/Keycloak chain - the app's own `POST /auth/logout` form
+  submitted via JS, not a bare `fetch` with `redirect: 'manual'`, which
+  turned out to leave the Keycloak SSO cookie untouched and silently
+  re-authenticated the previous user on the next login attempt; a real
+  fresh username/password form on the second attempt confirmed the SSO
+  session had actually ended): attempted an exam-finding edit against a
+  **real already-signed** encounter (`signedAt` genuinely set from an
+  earlier session) and got a real `409` - "This encounter was signed
+  on... and is locked"; then, against a different, unsigned, documentable
+  appointment (flipped from `no_show` to `with_provider` directly in
+  Postgres for a clean test fixture, matching `EncounterIntegrationTest`'s
+  own fixture-setup convention), posted a full 9-system exam - a genuine
+  new abnormal finding (`cardiovascularNormal: false`, a systolic murmur
+  note) alongside normal findings on the other 8 systems - confirmed
+  correct in the `POST` response, the subsequent `GET`, and a direct
+  Postgres query of the row.
+- **No frontend yet** - backend only, same scope boundary as every
+  EHR-leaning phase before it; `provider/Encounter.jsx` (frontend phase
+  J) is the natural next place for this UI, not built here.
+
+Discharge/visit summary is the last remaining phase in this backlog, not
+touched here.
+
 ## Phase 19: clinic-admin analytics dashboard
 
 Built 2026-09-24 at the user's direct request ("modify the dashboard
@@ -2166,6 +2254,19 @@ attributed to the patient's own account for a self-service cancel).
   pure-unit tests passing, unaffected), confirmed correct instead via a
   real end-to-end browser session (create/list/update all confirmed in
   Postgres and the PHI access log).
+- `EncounterIntegrationTest` extended again (phase 25) - the 18 new exam
+  -finding fields round-trip through the existing upsert/GET endpoints
+  (`examFindingsRoundTripThroughUpsertAndGet`, new), and
+  `signingLocksTheEncounterAndItsPrescriptions` gained an assertion that
+  an exam-finding-only edit is rejected post-sign too. No new test class
+  - a field addition to an existing resource, same precedent phase 11's
+  `icd10Codes` addition already set. `mvn test` showed `Tests run: 322,
+  Errors: 253` (up from 321/252 - exactly the one new test method), same
+  Testcontainers wall, 69 pure-unit tests unaffected. The Testcontainers
+  -only assertions themselves are confirmed correct by the live browser
+  verification in "Phase 25" above (a real signed encounter genuinely
+  409ing, a real unsigned one genuinely accepting and persisting all 9
+  systems), not by a local test run.
 
 ## Verified-session logs
 

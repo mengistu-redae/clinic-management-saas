@@ -56,11 +56,17 @@ public class EncounterService {
      * per appointment either way. {@code actingProviderId} null means the
      * caller is clinic_admin (no ownership check); otherwise it must match
      * the appointment's own provider.
+     *
+     * Takes the whole {@link UpsertEncounterRequest} rather than exploding
+     * into scalar parameters (this method's own prior shape, still used
+     * for the four original fields until phase 25) - once the 9-system
+     * exam-findings checklist pushed the field count to 22, a 25-parameter
+     * signature (with appointmentId/tenantId/actingProviderId) crossed a
+     * real readability threshold. Pure parameter-passing change, same
+     * behavior: the lock check still runs before any field is applied.
      */
     @Transactional
-    public Encounter upsert(
-            UUID appointmentId, UUID tenantId, UUID actingProviderId,
-            String chiefComplaint, String assessment, String plan, String icd10Codes) {
+    public Encounter upsert(UUID appointmentId, UUID tenantId, UUID actingProviderId, UpsertEncounterRequest request) {
         Appointment appointment = appointmentRepository.findByIdAndTenantId(appointmentId, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + appointmentId));
         requireDocumentableStatus(appointment);
@@ -75,10 +81,28 @@ public class EncounterService {
                     return fresh;
                 });
         requireUnlocked(encounter);
-        encounter.setChiefComplaint(chiefComplaint);
-        encounter.setAssessment(assessment);
-        encounter.setPlan(plan);
-        encounter.setIcd10Codes(icd10Codes);
+        encounter.setChiefComplaint(request.chiefComplaint());
+        encounter.setAssessment(request.assessment());
+        encounter.setPlan(request.plan());
+        encounter.setIcd10Codes(request.icd10Codes());
+        encounter.setGeneralAppearanceNormal(request.generalAppearanceNormal());
+        encounter.setGeneralAppearanceNote(request.generalAppearanceNote());
+        encounter.setHeentNormal(request.heentNormal());
+        encounter.setHeentNote(request.heentNote());
+        encounter.setCardiovascularNormal(request.cardiovascularNormal());
+        encounter.setCardiovascularNote(request.cardiovascularNote());
+        encounter.setRespiratoryNormal(request.respiratoryNormal());
+        encounter.setRespiratoryNote(request.respiratoryNote());
+        encounter.setAbdominalNormal(request.abdominalNormal());
+        encounter.setAbdominalNote(request.abdominalNote());
+        encounter.setMusculoskeletalNormal(request.musculoskeletalNormal());
+        encounter.setMusculoskeletalNote(request.musculoskeletalNote());
+        encounter.setNeurologicalNormal(request.neurologicalNormal());
+        encounter.setNeurologicalNote(request.neurologicalNote());
+        encounter.setSkinNormal(request.skinNormal());
+        encounter.setSkinNote(request.skinNote());
+        encounter.setPsychiatricNormal(request.psychiatricNormal());
+        encounter.setPsychiatricNote(request.psychiatricNote());
         encounter.setUpdatedAt(Instant.now());
         return encounterRepository.save(encounter);
     }

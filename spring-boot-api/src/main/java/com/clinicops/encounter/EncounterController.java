@@ -60,8 +60,7 @@ public class EncounterController {
             @PathVariable UUID id, @RequestBody UpsertEncounterRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
         UUID actingProviderId = actingProviderIdOrNull(jwt, tenantId);
-        Encounter encounter = encounterService.upsert(id, tenantId, actingProviderId,
-                request.chiefComplaint(), request.assessment(), request.plan(), request.icd10Codes());
+        Encounter encounter = encounterService.upsert(id, tenantId, actingProviderId, request);
         phiAccessAuditService.logWrite(tenantId, jwt, "encounter", encounter.getId(), patientIdForAppointment(id, tenantId), "/api/appointments/{id}/encounter");
         return encounter;
     }

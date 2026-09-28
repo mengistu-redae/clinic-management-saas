@@ -59,6 +59,71 @@ public class Encounter extends BaseTenantEntity {
     @Column(name = "icd10_codes", columnDefinition = "TEXT")
     private String icd10Codes;
 
+    /**
+     * Phase 25 - a fixed 9-system review-of-systems checklist, plain
+     * columns on Encounter (same "field addition, not a new entity" shape
+     * icd10Codes already used) since the access gate and 1:1 cardinality
+     * are identical to Encounter's own. Each system: a nullable Boolean
+     * normal/abnormal flag (null = not examined this visit) plus a
+     * free-text note. Locks along with the rest of the encounter once
+     * signed - EncounterService.upsert applies these after the same
+     * requireUnlocked(...) check every other field already goes through,
+     * no separate locking logic needed.
+     */
+    @Column(name = "general_appearance_normal")
+    private Boolean generalAppearanceNormal;
+
+    @Column(name = "general_appearance_note", columnDefinition = "TEXT")
+    private String generalAppearanceNote;
+
+    @Column(name = "heent_normal")
+    private Boolean heentNormal;
+
+    @Column(name = "heent_note", columnDefinition = "TEXT")
+    private String heentNote;
+
+    @Column(name = "cardiovascular_normal")
+    private Boolean cardiovascularNormal;
+
+    @Column(name = "cardiovascular_note", columnDefinition = "TEXT")
+    private String cardiovascularNote;
+
+    @Column(name = "respiratory_normal")
+    private Boolean respiratoryNormal;
+
+    @Column(name = "respiratory_note", columnDefinition = "TEXT")
+    private String respiratoryNote;
+
+    @Column(name = "abdominal_normal")
+    private Boolean abdominalNormal;
+
+    @Column(name = "abdominal_note", columnDefinition = "TEXT")
+    private String abdominalNote;
+
+    @Column(name = "musculoskeletal_normal")
+    private Boolean musculoskeletalNormal;
+
+    @Column(name = "musculoskeletal_note", columnDefinition = "TEXT")
+    private String musculoskeletalNote;
+
+    @Column(name = "neurological_normal")
+    private Boolean neurologicalNormal;
+
+    @Column(name = "neurological_note", columnDefinition = "TEXT")
+    private String neurologicalNote;
+
+    @Column(name = "skin_normal")
+    private Boolean skinNormal;
+
+    @Column(name = "skin_note", columnDefinition = "TEXT")
+    private String skinNote;
+
+    @Column(name = "psychiatric_normal")
+    private Boolean psychiatricNormal;
+
+    @Column(name = "psychiatric_note", columnDefinition = "TEXT")
+    private String psychiatricNote;
+
     /** Null until signed. Once set, the encounter (and its prescription list) is locked - see this class's own javadoc. */
     @Column(name = "signed_at")
     private Instant signedAt;
