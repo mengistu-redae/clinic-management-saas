@@ -7,14 +7,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /** Read-only - the journal itself is only ever written by {@link JournalService}'s own auto-posting, never through a request body here. */
 @RestController
 public class JournalController {
-
-    private static final Set<String> DEBIT_NORMAL_TYPES = Set.of("asset", "expense");
 
     private final JournalEntryRepository journalEntryRepository;
     private final JournalLineRepository journalLineRepository;
@@ -43,9 +40,7 @@ public class JournalController {
     }
 
     private TrialBalanceRow toRow(AccountBalanceView view) {
-        BigDecimal debit = view.getDebitTotal();
-        BigDecimal credit = view.getCreditTotal();
-        BigDecimal balance = DEBIT_NORMAL_TYPES.contains(view.getType()) ? debit.subtract(credit) : credit.subtract(debit);
-        return new TrialBalanceRow(view.getAccountId(), view.getCode(), view.getName(), view.getType(), debit, credit, balance);
+        BigDecimal balance = BalanceMath.signedBalance(view.getType(), view.getDebitTotal(), view.getCreditTotal());
+        return new TrialBalanceRow(view.getAccountId(), view.getCode(), view.getName(), view.getType(), view.getDebitTotal(), view.getCreditTotal(), balance);
     }
 }

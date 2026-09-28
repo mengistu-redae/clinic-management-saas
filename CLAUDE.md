@@ -576,9 +576,9 @@ next (Finance reads its ledger, so it has to come after), Finance last.
     entry when an existing `Payment`/`Refund` happens (the ledger picks up
     real cash events, it doesn't create new ones). See "Phase 21:
     accounting" below.
-22. **Finance** (not yet built) - budgets, minimal payroll (salary + a
+22. **Finance** (built 2026-09-28) - budgets, minimal payroll (salary + a
     monthly pay-run action), and P&L/budget-vs-actual reporting, built on
-    top of phase 21's ledger.
+    top of phase 21's ledger. See "Phase 22: finance" below.
 
 Lower priority / only if the product genuinely wants full-EHR breadth:
 immunizations, structured physical-exam findings, discharge summaries -
@@ -1749,6 +1749,146 @@ demo user) already exist from phase 20. New migration `V18__accounting.sql`.
   dashboard currently renders completely blank (no sidebar nav, empty
   main area) - expected, not a bug, since no route/nav case exists for
   this role yet on the frontend.
+
+## Phase 22: finance
+
+Third and last phase of the pharmacy/accounting/finance module set (built
+2026-09-28) - budgets, minimal payroll, and P&L/budget-vs-actual
+reporting, built on top of phase 21's ledger. Three scoping questions were
+put to the user before writing any code - payroll's employee model, what
+the monthly pay-run action actually does, and budget granularity - all
+three answered with the recommended option, same "ask before building"
+convention every new module in this set has followed. No new realm role -
+`accountant` (added phase 20) covers finance too, exactly as phase 21's
+own write-up already anticipated. New migration `V19__finance.sql`.
+
+- **A real bug found and fixed while seeding Salary Expense** -
+  `AccountSeedingService.ensureSeeded` used to short-circuit on "this
+  tenant has ≥1 account at all," which meant a tenant that already had its
+  original three accounts seeded (any clinic touched during phase 21's own
+  live verification) would **never** pick up a starter account added by a
+  later phase - confirmed live before writing the fix: the demo clinic's
+  `accounts` table still showed only Cash/Service Revenue/Refunds &
+  Allowances, no Salary Expense, right up until this phase's fix landed.
+  Fixed by checking each starter account individually (the loop already
+  did this correctly; only the wasteful-looking outer fast-path was wrong)
+  - confirmed live post-fix that a single `GET /api/clinic/accounts` call
+  against the already-seeded demo clinic silently backfilled Salary
+  Expense with no migration or manual intervention needed. `AccountRepository
+  .existsByTenantId` (now unused) was removed along with it.
+- **Payroll: a new `Employee` entity, one per staff `AppUser` opted into
+  payroll** - this app had no "Employee" concept before this phase (staff
+  are just `AppUser` rows with roles; only `Provider` has its own domain
+  entity). `com.clinicops.finance.Employee` (`appUserId`/`salaryAmount`/
+  `status`, `UNIQUE(tenant_id, app_user_id)`) is resolved **by email at
+  creation**, the exact same `ProviderController.linkLogin` precedent
+  ("no account has ever logged in with that email" 404 if unresolvable) -
+  there's no general staff-directory endpoint in this app to search by,
+  and `fullName`/`email` are snapshotted at creation for display since
+  there's nothing to re-resolve them from later. `EmployeeController` -
+  same phase-5/20/21 CRUD shape, `accountant`+`clinic_admin` only.
+- **The monthly pay-run action: a `PayrollRun` header + one `JournalService
+  .postForPayroll` call per active employee, each its own balanced entry**
+  - not one entry for the whole run, so a single employee's pay can be
+  traced (or reversed) on its own, same reasoning `JournalService` already
+  posts one entry per Payment/Refund rather than batching. `PayrollRun`
+  (`UNIQUE(tenant_id, year, month)`) makes a re-run of an already-paid
+  month a real 409, not a silent no-op - matches Invoice's own "immutable
+  once issued" convention, not Encounter's upsert-in-place, since
+  re-running payroll for a paid month is a genuine error. `PayrollPayment`
+  (one row per employee per run, own table, same "plain UUID FK, carries
+  its own tenant_id" convention as `JournalLine`/`LabOrderTest`) links
+  back to the specific journal entry it caused. `postForPayroll` debits
+  the new `5000 Salary Expense` account / credits Cash - `PayrollService`
+  rejects a run with zero active employees (400) rather than creating a
+  pointless empty run.
+- **Budgets: per-account, per-month** - `com.clinicops.finance.Budget`
+  (`accountId`/`year`/`month`/`amount`, `UNIQUE(tenant_id, account_id,
+  year, month)`) references `com.clinicops.accounting.Account` directly -
+  finance is explicitly built on phase 21's ledger, not a parallel account
+  concept of its own. `BudgetController` - same CRUD shape, plus a real
+  hard `/delete` (a missing budget row just means "no target set," the
+  same well-defined-fallback reasoning FeePolicy/LabRate already use for
+  their own hard deletes).
+- **P&L and budget-vs-actual share one new period-bounded query** -
+  `JournalLineRepository.periodBalance(tenantId, start, end)` is the exact
+  same shape as phase 21's own all-time `trialBalance`, just with the
+  period filter living in the `journal_lines` join's own `ON` clause
+  (`jl.created_at >= :start AND jl.created_at < :end`) rather than a
+  second join to `journal_entries` - an account with zero activity in the
+  window still gets a row via the outer `LEFT JOIN`, aggregating correctly
+  to zero instead of disappearing. Month boundaries resolve through
+  `ClinicSettingsService.resolveTimezone(tenantId)` - the same shared
+  phase-18 seam every other day/month-boundary call site in this app
+  already goes through, deliberately not left on a hardcoded UTC reading
+  the way it would have been if built before phase 18 existed.
+  - **The signed-balance math (debit-normal vs. credit-normal) was
+    factored out of `JournalController` into a new `BalanceMath` static
+    helper** rather than duplicated a second time for these two new
+    reports - the first genuinely cross-cutting piece of phase 21/22's own
+    logic, unlike the plain CRUD controllers which still call repositories
+    directly with no shared service bean.
+  - **`GET /api/clinic/profit-and-loss?year=&month=`** - revenue lines
+    (credit-normal) and expense lines (debit-normal) for that month only,
+    `netIncome = totalRevenue - totalExpense`.
+  - **`GET /api/clinic/budget-vs-actual?year=&month=`** - one row per
+    account that has *either* a budget set for that period *or* real
+    activity that period (a LEFT JOIN-shaped union in Java, not SQL) - an
+    unbudgeted account with real spending is never silently hidden.
+    `budgetAmount`/`variance` are `null` (not zero) when no budget was set
+    for that account/period - a deliberately different signal than "this
+    account is exactly on budget."
+- **Tests**: `PayrollServiceTest` (new, pure Mockito, genuinely runs
+  locally - 3 cases: running payroll posts one journal entry per active
+  employee with the right amount/description/source; re-running an
+  already-run month is rejected before touching employees or the ledger
+  at all; zero active employees is rejected before creating a run).
+  `EmployeeControllerIntegrationTest` (6 cases: create-by-email
+  snapshotting the real AppUser's name/email, unknown-email 404,
+  duplicate-appUser 409, update salary/status + invalid-status 400, role
+  gate, cross-tenant 404), `PayrollControllerIntegrationTest` (5 cases,
+  including a genuine end-to-end case that runs payroll through the real
+  controller and asserts the resulting trial-balance numbers),
+  `BudgetControllerIntegrationTest` (5 cases: full CRUD + hard delete,
+  duplicate-period 409, unknown-account 404, role gate, cross-tenant 404),
+  `FinanceReportControllerIntegrationTest` (3 cases: P&L only includes the
+  queried month's activity - verified against both the real current month
+  and a different month, not just one hardcoded date; budget-vs-actual
+  computes variance and omits an unbudgeted/untouched account; role gate)
+  + one new `TenantIsolationIntegrationTest` case. Confirmed via a clean
+  `mvn test-compile` and a full `mvn test` run showing `Tests run: 312`
+  (up from 289 - exactly the 23 new test methods), every failure the
+  identical pre-existing `Could not find a valid Docker environment` wall
+  - not a regression, not a new failure mode.
+- **Live-verified against the real running stack** - `docker compose up -d
+  --build --force-recreate spring-boot-api`, `V19` confirmed applied via
+  `flyway_schema_history` (`success = t`) and the real container logs
+  (`Migrating schema "public" to version "19 - finance"` ->
+  `Successfully applied 1 migration`). As `demo-accountant` (a real
+  login): confirmed the Salary Expense backfill bug fix live (documented
+  above) before touching payroll at all; created a real `Employee` for
+  `demo-front-desk`'s own already-provisioned `AppUser` row (email
+  resolution confirmed working against a genuine account, not a test
+  fixture); ran a real payroll for the current month
+  (`POST /api/clinic/payroll-runs`), confirming a real journal entry
+  posted and `totalAmount` matched the employee's salary exactly;
+  confirmed re-running the same month 409'd; confirmed
+  `GET /api/clinic/trial-balance` and `GET /api/clinic/profit-and-loss`
+  both reflected the new payroll entry with internally consistent numbers
+  (Cash's balance dropped by exactly the payroll amount, `netIncome` =
+  revenue-so-far minus the new expense); created a real `Budget` for the
+  Salary Expense account and confirmed `GET /api/clinic/budget-vs-actual`
+  computed the correct variance (actual $1200 vs. budgeted $1000 = $200
+  over) while every unbudgeted-but-active account showed `null`, not a
+  misleading zero, and the untouched, unbudgeted Refunds & Allowances
+  account didn't appear in the response at all.
+- **No frontend yet** - backend only, same "no dedicated UI this phase"
+  scope boundary every module in this set has used; `demo-accountant`'s
+  own dashboard still renders blank, unchanged from phase 21 (no
+  route/nav case for this role exists on the frontend yet). This closes
+  out the pharmacy/accounting/finance module set the user originally
+  scoped across phases 20-22 - a real accountant/finance-role frontend is
+  the natural next step if this set gets picked up again, not scoped here.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3648,6 +3788,29 @@ one - now the documented exception, not the rule.
   machine - a full `mvn test` run showed `Tests run: 289` (up from 275),
   every failure identical (`Could not find a valid Docker environment`),
   not a regression from this phase's own code.
+- `PayrollServiceTest` (phase 22, pure Mockito, genuinely run locally -
+  3/3 passing) - running payroll posts one journal entry per active
+  employee with the right amount/description/source and saves a payslip
+  for each; re-running an already-run month is rejected before touching
+  employees or the ledger at all (`verify(..., never())`); zero active
+  employees is rejected before creating a run.
+  `EmployeeControllerIntegrationTest` (create-by-email snapshotting the
+  real AppUser's name/email, unknown-email 404, duplicate-appUser 409,
+  update salary/status + invalid-status 400, role gate, cross-tenant 404)
+  + `PayrollControllerIntegrationTest` (a genuine end-to-end case running
+  payroll through the real controller and asserting the resulting
+  trial-balance numbers, duplicate-month 409, zero-employees 400, role
+  gate, cross-tenant 404) + `BudgetControllerIntegrationTest` (full CRUD +
+  hard delete, duplicate-period 409, unknown-account 404, role gate,
+  cross-tenant 404) + `FinanceReportControllerIntegrationTest` (P&L scoped
+  to the queried month only - checked against both the real current month
+  and a different month; budget-vs-actual variance computed correctly
+  while omitting an unbudgeted/untouched account; role gate) plus one new
+  `TenantIsolationIntegrationTest` case. Same Testcontainers wall as every
+  other integration test on this machine - a full `mvn test` run showed
+  `Tests run: 312` (up from 289), every failure identical (`Could not
+  find a valid Docker environment`), not a regression from this phase's
+  own code.
 
 ## Verified-session logs
 

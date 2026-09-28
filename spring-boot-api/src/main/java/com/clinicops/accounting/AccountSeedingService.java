@@ -25,7 +25,8 @@ public class AccountSeedingService {
     private static final List<StarterAccount> STARTER_ACCOUNTS = List.of(
             new StarterAccount("1000", "Cash", "asset"),
             new StarterAccount("4000", "Service Revenue", "revenue"),
-            new StarterAccount("4900", "Refunds & Allowances", "revenue"));
+            new StarterAccount("4900", "Refunds & Allowances", "revenue"),
+            new StarterAccount("5000", "Salary Expense", "expense"));
 
     private final AccountRepository accountRepository;
 
@@ -33,10 +34,18 @@ public class AccountSeedingService {
         this.accountRepository = accountRepository;
     }
 
+    /**
+     * Checks each starter account individually rather than short-circuiting
+     * on "this tenant has any account at all" - a real bug fixed while
+     * adding Salary Expense in phase 22: a tenant that already had its
+     * original three accounts seeded (phase 21) would otherwise never pick
+     * up a starter account added by a later phase, since the old
+     * fast-path treated "has ≥1 account" as "fully seeded." The per
+     * -account check below is what actually makes this idempotent AND
+     * extensible - a few extra existence checks per call is a fine trade
+     * for that.
+     */
     public void ensureSeeded(UUID tenantId) {
-        if (accountRepository.existsByTenantId(tenantId)) {
-            return;
-        }
         for (StarterAccount starter : STARTER_ACCOUNTS) {
             if (accountRepository.findByTenantIdAndCode(tenantId, starter.code()).isPresent()) {
                 continue;

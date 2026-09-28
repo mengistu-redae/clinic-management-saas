@@ -35,6 +35,7 @@ public class JournalService {
     private static final String CASH_CODE = "1000";
     private static final String REVENUE_CODE = "4000";
     private static final String REFUNDS_CODE = "4900";
+    private static final String SALARY_EXPENSE_CODE = "5000";
 
     private final AccountRepository accountRepository;
     private final AccountSeedingService accountSeedingService;
@@ -75,6 +76,22 @@ public class JournalService {
                 refund.getRefundedBy(), refunds, cash, refund.getAmount());
     }
 
+    /**
+     * Debit Salary Expense / Credit Cash for one employee's pay for one
+     * payroll run - called once per employee by
+     * {@code com.clinicops.finance.PayrollService}, not once for the whole
+     * run, so a single employee's pay can be traced (or reversed) on its
+     * own. Returns the posted entry so the caller can link its own
+     * {@code payroll_payments.journal_entry_id} back to it.
+     */
+    @Transactional
+    public JournalEntry postForPayroll(UUID tenantId, UUID employeeId, BigDecimal amount, String description, UUID postedBy) {
+        accountSeedingService.ensureSeeded(tenantId);
+        Account salaryExpense = requireAccount(tenantId, SALARY_EXPENSE_CODE);
+        Account cash = requireAccount(tenantId, CASH_CODE);
+        return post(tenantId, description, "payroll", employeeId, postedBy, salaryExpense, cash, amount);
+    }
+
     private Account requireAccount(UUID tenantId, String code) {
         return accountRepository.findByTenantIdAndCode(tenantId, code)
                 .orElseThrow(() -> new IllegalStateException(
@@ -82,7 +99,7 @@ public class JournalService {
                                 + " - it was either never seeded or was renamed/removed after seeding"));
     }
 
-    private void post(UUID tenantId, String description, String sourceType, UUID sourceId, UUID postedBy,
+    private JournalEntry post(UUID tenantId, String description, String sourceType, UUID sourceId, UUID postedBy,
                        Account debitAccount, Account creditAccount, BigDecimal amount) {
         JournalEntry entry = new JournalEntry();
         entry.setTenantId(tenantId);
@@ -107,5 +124,7 @@ public class JournalService {
         credit.setAmount(amount);
         credit.setEntryType("credit");
         journalLineRepository.save(credit);
+
+        return entry;
     }
 }

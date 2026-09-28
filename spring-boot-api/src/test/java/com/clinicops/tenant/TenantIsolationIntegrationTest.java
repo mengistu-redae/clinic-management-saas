@@ -361,6 +361,27 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
+    @Test
+    void employeesAndBudgetsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("finance");
+        com.clinicops.user.AppUser staff = createAppUser("finance-iso-staff");
+        com.clinicops.finance.Employee employee = createEmployee(a.getId(), staff.getId(), staff.getEmail(), new java.math.BigDecimal("1000.00"));
+        com.clinicops.accounting.Account expense = createAccount(a.getId(), "5000", "Salary Expense", "expense");
+        com.clinicops.finance.Budget budget = createBudget(a.getId(), expense.getId(), 2026, 9, new java.math.BigDecimal("500.00"));
+
+        Clinic b = clinicB("finance");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/clinic/employees/" + employee.getId()).with(asAccountant("acct", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/clinic/employees/" + employee.getId() + "/update").with(asAccountant("acct", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.finance.UpdateEmployeeRequest(null, "inactive"))))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/clinic/budgets/" + budget.getId()).with(asAccountant("acct", bAlias)))
+                .andExpect(status().isNotFound());
+    }
+
     /**
      * The other half of the tenancy invariant: not just "clinic B can't see
      * clinic A's rows" but "a deactivated clinic's own staff are locked out

@@ -6,6 +6,14 @@ import com.clinicops.accounting.JournalEntry;
 import com.clinicops.accounting.JournalEntryRepository;
 import com.clinicops.accounting.JournalLine;
 import com.clinicops.accounting.JournalLineRepository;
+import com.clinicops.finance.Budget;
+import com.clinicops.finance.BudgetRepository;
+import com.clinicops.finance.Employee;
+import com.clinicops.finance.EmployeeRepository;
+import com.clinicops.finance.PayrollPayment;
+import com.clinicops.finance.PayrollPaymentRepository;
+import com.clinicops.finance.PayrollRun;
+import com.clinicops.finance.PayrollRunRepository;
 import com.clinicops.allergy.Allergy;
 import com.clinicops.allergy.AllergyRepository;
 import com.clinicops.appointment.Appointment;
@@ -217,6 +225,18 @@ public abstract class AbstractIntegrationTest {
     protected JournalLineRepository journalLineRepository;
 
     @Autowired
+    protected EmployeeRepository employeeRepository;
+
+    @Autowired
+    protected PayrollRunRepository payrollRunRepository;
+
+    @Autowired
+    protected PayrollPaymentRepository payrollPaymentRepository;
+
+    @Autowired
+    protected BudgetRepository budgetRepository;
+
+    @Autowired
     protected DispenseRecordRepository dispenseRecordRepository;
 
     // ---- fixture builders: seed just enough of the tenant-scoped schema
@@ -345,6 +365,55 @@ public abstract class AbstractIntegrationTest {
         entry.setSourceType(sourceType);
         entry.setSourceId(sourceId);
         return journalEntryRepository.save(entry);
+    }
+
+    /** Same find-or-create-by-keycloak-subject idiom as createProviderLinkedToAppUser - email always "<subject>@example.test", matching jwtRequest's own claim so a test can create an Employee by that same email. */
+    protected AppUser createAppUser(String keycloakSubject) {
+        return appUserRepository.findByKeycloakUserId(keycloakSubject).orElseGet(() -> {
+            AppUser fresh = new AppUser();
+            fresh.setKeycloakUserId(keycloakSubject);
+            fresh.setEmail(keycloakSubject + "@example.test");
+            fresh.setDisplayName(keycloakSubject);
+            return appUserRepository.save(fresh);
+        });
+    }
+
+    protected Employee createEmployee(UUID tenantId, UUID appUserId, String email, java.math.BigDecimal salaryAmount) {
+        Employee employee = new Employee();
+        employee.setTenantId(tenantId);
+        employee.setAppUserId(appUserId);
+        employee.setEmail(email);
+        employee.setSalaryAmount(salaryAmount);
+        return employeeRepository.save(employee);
+    }
+
+    protected PayrollRun createPayrollRun(UUID tenantId, int year, int month, java.math.BigDecimal totalAmount) {
+        PayrollRun run = new PayrollRun();
+        run.setTenantId(tenantId);
+        run.setYear(year);
+        run.setMonth(month);
+        run.setTotalAmount(totalAmount);
+        return payrollRunRepository.save(run);
+    }
+
+    protected PayrollPayment createPayrollPayment(UUID tenantId, UUID payrollRunId, UUID employeeId, java.math.BigDecimal amount, UUID journalEntryId) {
+        PayrollPayment payment = new PayrollPayment();
+        payment.setTenantId(tenantId);
+        payment.setPayrollRunId(payrollRunId);
+        payment.setEmployeeId(employeeId);
+        payment.setAmount(amount);
+        payment.setJournalEntryId(journalEntryId);
+        return payrollPaymentRepository.save(payment);
+    }
+
+    protected Budget createBudget(UUID tenantId, UUID accountId, int year, int month, java.math.BigDecimal amount) {
+        Budget budget = new Budget();
+        budget.setTenantId(tenantId);
+        budget.setAccountId(accountId);
+        budget.setYear(year);
+        budget.setMonth(month);
+        budget.setAmount(amount);
+        return budgetRepository.save(budget);
     }
 
     protected JournalLine createJournalLine(UUID tenantId, UUID journalEntryId, UUID accountId, String entryType, java.math.BigDecimal amount) {
