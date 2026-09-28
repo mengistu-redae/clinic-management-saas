@@ -14,6 +14,8 @@ import com.clinicops.finance.PayrollPayment;
 import com.clinicops.finance.PayrollPaymentRepository;
 import com.clinicops.finance.PayrollRun;
 import com.clinicops.finance.PayrollRunRepository;
+import com.clinicops.immunization.Immunization;
+import com.clinicops.immunization.ImmunizationRepository;
 import com.clinicops.allergy.Allergy;
 import com.clinicops.allergy.AllergyRepository;
 import com.clinicops.appointment.Appointment;
@@ -196,6 +198,9 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected VitalsRepository vitalsRepository;
+
+    @Autowired
+    protected ImmunizationRepository immunizationRepository;
 
     @Autowired
     protected MedicalHistoryRepository medicalHistoryRepository;
@@ -441,6 +446,15 @@ public abstract class AbstractIntegrationTest {
         allergy.setPatientId(patientId);
         allergy.setAllergen(allergen);
         return allergyRepository.save(allergy);
+    }
+
+    protected Immunization createImmunization(UUID tenantId, UUID patientId, String vaccineName) {
+        Immunization immunization = new Immunization();
+        immunization.setTenantId(tenantId);
+        immunization.setPatientId(patientId);
+        immunization.setVaccineName(vaccineName);
+        immunization.setAdministeredAt(java.time.LocalDate.now());
+        return immunizationRepository.save(immunization);
     }
 
     protected Vitals createVitals(UUID tenantId, UUID appointmentId) {

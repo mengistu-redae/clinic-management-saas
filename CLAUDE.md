@@ -584,10 +584,19 @@ next (Finance reads its ledger, so it has to come after), Finance last.
     open since the original phase-2 series expansion. See "Phase 23:
     recurring-series cancellation" below.
 
-Lower priority / only if the product genuinely wants full-EHR breadth:
-immunizations, structured physical-exam findings, discharge summaries -
-these fit an inpatient/full-EHR shape more than this app's outpatient-
-scheduling core, not pulled forward by default.
+**Full-EHR-breadth backlog, pulled forward 2026-09-28** - previously
+"lower priority, only if the product genuinely wants it"; the user
+confirmed they do, and chose sequential phases over one combined build:
+
+24. **Immunizations** (built 2026-09-28) - a simple per-patient vaccine
+    administration log, no due-date/schedule tracking. See "Phase 24:
+    immunizations" below.
+
+Still queued, not yet built: structured physical-exam findings (a
+review-of-systems checklist), and a visit/encounter summary document
+(the outpatient equivalent of a discharge summary, generated at
+checkout) - both were scoped alongside immunizations but are separate
+phases.
 
 Each phase gets its own `TenantIsolationIntegrationTest` coverage extension
 and a `CLAUDE.md` update recording what was verified live against the
@@ -1989,6 +1998,82 @@ of already-existing schema.
   live browser verification above (the exact same code path, actually
   executed against a real Postgres), not by a local test run - still
   Windows-npipe-blocked for this whole suite.
+
+## Phase 24: immunizations
+
+First of three sequential phases pulling the "lower priority, only if the
+product genuinely wants full-EHR breadth" backlog forward (immunizations,
+structured physical-exam findings, discharge/visit summary) - the user
+confirmed they want it, and chose sequential phases over one combined
+build, matching how every other module set in this project (pharmacy/
+accounting/finance, the original EHR-leaning phases 8-15) was built.
+Scoped with one direct question first: a simple per-patient administration
+log, no due-date/schedule tracking, no reference immunization-schedule
+data. New migration `V20__immunizations.sql`.
+
+- **`com.clinicops.immunization`** (new package), modeled directly on
+  `com.clinicops.allergy.Allergy` - patient-level, not encounter-level (a
+  vaccination isn't tied to one visit), a list that accumulates per patient
+  at `/api/patients/{patientId}/immunizations`, no delete endpoint. Unlike
+  Allergy, no `status` field - each row is a discrete historical fact (a
+  dose given on a date), not an evolving condition with something to
+  resolve/unconfirm. `vaccineName`/`administeredAt`/`patientId` are fixed
+  at creation; only `doseNumber`/`lotNumber`/`site` are correctable via
+  `POST .../{id}/update` (same "only the non-identity fields" partial
+  -update shape as `UpdateAllergyRequest`).
+- **One deliberate departure from Allergy's own access gate, made as a
+  judgment call, not re-asked** (same "flagged as revisitable" treatment
+  Allergy's own gate got in phase 8): Allergy's write gate is
+  `front_desk`+`clinic_admin` only (intake-recorded data). An immunization
+  is physically **administered** - the same real-world shape as Vitals,
+  which this project already extended to `provider`+`clinic_admin`+
+  `front_desk` specifically because there's no "nurse" role. Immunizations
+  get that identical 3-role gate on both `GET` and `POST`, not Allergy's
+  narrower 2-role one.
+- **`ImmunizationController`** - no dedicated service bean, controller
+  calls `ImmunizationRepository` directly, same as `AllergyController`.
+  Ownership-checked via `PatientRepository.findByIdAndTenantId` (404 if
+  the patient isn't this tenant's; a record whose `patientId` doesn't
+  match the URL's also 404s on update). PHI-audited exactly like Allergy -
+  `resourceType` `"immunization"`/`"immunization_list"`.
+- **`TenantIsolationIntegrationTest`** gained
+  `immunizationsAreNotReadableOrWritableFromAnotherTenant`.
+  `ImmunizationControllerIntegrationTest` (new) covers create+list+update,
+  missing-required-field (`vaccineName`/`administeredAt`) 400, all three
+  write-gated roles succeeding while a `patient` token gets 403, cross
+  -tenant 404, and update-for-the-wrong-`patientId` 404. Compiles clean;
+  `mvn test` showed `Tests run: 321, Errors: 252` - the identical count of
+  pre-existing Testcontainers/Windows-npipe failures as every other
+  `AbstractIntegrationTest` subclass (69 pure-unit tests still passing,
+  unchanged) - not a regression, and the new tests fail only via that same
+  wall, not a new failure mode.
+- **Live-verified against the real running stack** - `docker compose up -d
+  --build --force-recreate spring-boot-api`, `V20` confirmed applied via
+  `flyway_schema_history` (`success = t`) and the container reporting
+  healthy (Hibernate's `ddl-auto: validate` accepted the new entity against
+  the new table with no startup failure). As `demo-front-desk` (a real
+  browser login through the actual nginx/node-bff/Keycloak chain, not
+  simulated): created a real immunization, confirmed it in the list
+  (count 1), partially updated `doseNumber`/`lotNumber` while leaving
+  `site` untouched (`null` in the request correctly left the existing
+  value alone, not cleared it - `UpdateImmunizationRequest`'s partial
+  -update semantics holding for real), and confirmed `vaccineName`/
+  `administeredAt`/`patientId` stayed fixed throughout. Cross-checked
+  directly in Postgres - the row matches exactly what the API returned -
+  and confirmed the PHI audit log picked up all three calls (`write`/
+  `read`/`write`) correctly scoped to the real `patientId`. Cross-tenant
+  lockout and the full role matrix were not separately exercised live
+  (covered by the compiled, Windows-blocked integration suite instead) -
+  same bar most backend-only EHR phases before this one used.
+- **No frontend yet** - backend only, same scope boundary as phases 8-15;
+  a UI is a natural candidate for a later batched frontend sweep, not
+  built here. No `node-bff`/`PUBLIC_ROUTES` change (staff-authenticated
+  only) and no new Keycloak realm role (reuses `provider`/`front_desk`/
+  `clinic_admin`).
+
+Physical-exam findings (structured review-of-systems checklist) and the
+visit/discharge summary document are the next two phases in this backlog,
+not touched here.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -4089,6 +4174,16 @@ one - now the documented exception, not the rule.
   correct via a full live browser verification of the exact same code
   path against a real Postgres, not a local Testcontainers run (still
   Windows-npipe-blocked).
+- `ImmunizationControllerIntegrationTest` (phase 24, new) - create+list+
+  update round trip, missing-required-field 400, all three write-gated
+  roles (`provider`/`front_desk`/`clinic_admin`) succeeding while a
+  `patient` token gets 403, cross-tenant 404, update-for-the-wrong
+  -`patientId` 404. `TenantIsolationIntegrationTest` gained one more case.
+  Same Testcontainers wall as every other integration test on this
+  machine - `mvn test` showed `Tests run: 321, Errors: 252` (same 69
+  pure-unit tests passing, unaffected), confirmed correct instead via a
+  real end-to-end browser session (create/list/update all confirmed in
+  Postgres and the PHI access log).
 
 ## Verified-session logs
 

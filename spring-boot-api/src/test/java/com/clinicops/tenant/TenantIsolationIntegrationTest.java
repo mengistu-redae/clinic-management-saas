@@ -240,6 +240,24 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void immunizationsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("immunization");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000008");
+        createImmunization(a.getId(), patient.getId(), "Influenza");
+
+        Clinic b = clinicB("immunization");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/patients/" + patient.getId() + "/immunizations").with(asFrontDesk("fd", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/patients/" + patient.getId() + "/immunizations").with(asFrontDesk("fd", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.immunization.CreateImmunizationRequest(
+                                "Tetanus", java.time.LocalDate.now(), null, null, null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void vitalsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
         Clinic a = clinicA("vitals");
         Provider provider = createProvider(a.getId(), "Dr. A");
