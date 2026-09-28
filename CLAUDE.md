@@ -579,6 +579,10 @@ next (Finance reads its ledger, so it has to come after), Finance last.
 22. **Finance** (built 2026-09-28) - budgets, minimal payroll (salary + a
     monthly pay-run action), and P&L/budget-vs-actual reporting, built on
     top of phase 21's ledger. See "Phase 22: finance" below.
+23. **Recurring-series cancellation** (built 2026-09-28) - "cancel this and
+    the rest of the series," staff-only, closing a "Known gaps" item left
+    open since the original phase-2 series expansion. See "Phase 23:
+    recurring-series cancellation" below.
 
 Lower priority / only if the product genuinely wants full-EHR breadth:
 immunizations, structured physical-exam findings, discharge summaries -
@@ -1889,6 +1893,102 @@ own write-up already anticipated. New migration `V19__finance.sql`.
   named in that set (`pharmacist`, `accountant`) now has both a working
   backend and a real frontend, matching the `pharmacist` module's own
   phase-20 precedent.
+
+## Phase 23: recurring-series cancellation
+
+Closes the long-standing "Known gaps" item - cancelling one occurrence of a
+recurring series used to just cancel that one `Appointment` row, with no
+"cancel the rest of the series too" option. Scoped with one direct question
+to the user before writing any code (whether the action should exist at
+all, and who can use it) - answered staff-only, the recommended option,
+matching this project's own "ask before building" convention. No new
+migration - `appointments.series_id` has existed since the original
+recurring-series phase 2 expansion; this phase is pure new behavior on top
+of already-existing schema.
+
+- **`POST /api/appointments/{id}/cancel-series`** (`CancellationController`,
+  `front_desk`/`clinic_admin` - matching who can create a series in the
+  first place, `AppointmentSeriesController`) - triggered from one specific
+  occurrence, scoped to every still-`booked` occurrence sharing that
+  appointment's own `seriesId` (the triggering occurrence included, if it's
+  still booked itself). A plain `status = 'booked'` filter already means
+  "not yet happened and not already cancelled" - no separate chronological
+  -order comparison needed the way a naive "cancel this and everything
+  after it" reading might have required.
+- **Each occurrence goes through the exact same `CancellationService
+  .applyCancellation` path a single cancel uses** - same fee-tier
+  calculation, same `fee_auto_charged` Payment/journal posting, same
+  per-occurrence audit row and notification - deliberately not a bulk
+  shortcut that skips any of that. `CancellationService.cancelSeries` is
+  the new method (one more `@Transactional` public entry point on the
+  existing bean, reusing the already-private `applyCancellation` helper
+  in a loop) - 400 if the triggering appointment isn't part of any series
+  at all (`ResponseStatusException`, checked before touching anything).
+- **`AppointmentRepository.findAllBySeriesId` was never actually wired to
+  an endpoint before this phase** - added in the original recurring-series
+  work but unused until now, and not tenant-scoped. Replaced outright with
+  `findAllByTenantIdAndSeriesId(tenantId, seriesId)` - same "every
+  staff-scoped repository method takes the tenant id explicitly" convention
+  every other query in this codebase already follows, even though a
+  series' own occurrences never span tenants in practice. The one existing
+  test referencing the old bare method (`AppointmentControllerIntegrationTest
+  .recurringSeriesReportsAPartialConflictAndStaysIdempotentOnRetry`) was
+  updated to the new signature, not left broken.
+- **`SeriesCancellationResult { cancelled: List<Appointment> }`** (new,
+  `com.clinicops.appointment`) - same "wrapper record for one
+  always-together response" shape as `AppointmentSeriesResult`/
+  `EncounterWithPrescriptions`, deliberately simpler than the creation
+  flow's own `{created, conflicts}` shape: a booked occurrence is always
+  cancellable, there's no external resource (a slot) that could already be
+  taken the way booking a new one has, so there's no conflict/partial
+  -failure case to represent.
+- **Frontend**: `front-desk/AppointmentDetail.jsx` gains a second,
+  conditionally-shown link - "Cancel this and the rest of the series" -
+  visible only when the loaded appointment's own `seriesId` is non-null
+  (the plain `GET /api/appointments/{id}` response already serializes it,
+  no new field needed) and the appointment isn't already terminal. Same
+  confirm-then-act shape as the existing single-cancel button, plus a
+  dismissible success banner reporting how many occurrences were actually
+  cancelled (`fdAppointmentDetail.cancelSeriesSuccess`, a genuine
+  `_one`/`_other` pluralized key - Amharic only needs the `_other` form,
+  same established pattern as `myLabOrders.testCount`). New
+  `useCancelSeries(id)` hook (`api/queries.js`) invalidates not just the
+  triggering appointment but every appointment/payments query for each
+  entry in the response's own `cancelled[]` list, since a single action
+  here can affect several appointments' cached state at once - not
+  something the existing generic `invalidateAppointment` helper handles.
+- **Live-verified against the real running stack**, as `demo-front-desk`:
+  seeded a genuine 3-occurrence weekly series via a direct authenticated
+  `POST /api/appointments/series` call (no booking-a-series UI exists in
+  this app - staff-only backend feature, reachable via the API this
+  session used to seed it), then used the real browser UI end to end -
+  clicked "Cancel this and the rest of the series" on the first occurrence,
+  confirmed, and got "Cancelled 3 appointments in this series." Verified
+  independently (not just trusting the mutation's own response) via a
+  fresh `GET` on all three occurrence ids afterward - all three genuinely
+  `cancelled`. Also exercised the identical flow in Dark theme + Amharic
+  end to end on a second, freshly-seeded 2-occurrence series - the button
+  label, confirm warning, and the pluralized success banner
+  ("2 ቀጠሮዎች በዚህ ተከታታይ ውስጥ ተሰርዘዋል።") all rendered correctly, and the
+  cancellation itself completed successfully in that state too, not just
+  the translated copy.
+- **Tests**: `CancellationIntegrationTest` gained three cases -
+  `cancelSeriesCancelsEveryRemainingBookedOccurrenceAndFeesEachOne` (a real
+  3-occurrence series via the actual `POST /api/appointments/series`
+  endpoint, a catch-all `cutoffHours=0` fee tier so every occurrence gets
+  fee-charged, asserting all three end up `cancelled` and each has its own
+  separate `fee_auto_charged` Payment), `cancelSeriesOnAnAppointmentThatIsNot
+  PartOfASeriesIsRejected` (400), `cancelSeriesIsNotFoundForAnotherTenants
+  Appointment` (404, matching the existing single-cancel cross-tenant
+  case's own shape). No new `TenantIsolationIntegrationTest` case - the
+  cross-tenant check already lives inline in `CancellationIntegrationTest`
+  for the plain single-cancel endpoint too, same precedent. Confirmed via
+  a clean `mvn clean test-compile` and a full local run of every pure-unit
+  (non-Testcontainers) test class - `69/69` passing, unaffected. The three
+  new Testcontainers-only cases themselves are confirmed correct by the
+  live browser verification above (the exact same code path, actually
+  executed against a real Postgres), not by a local test run - still
+  Windows-npipe-blocked for this whole suite.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3911,6 +4011,16 @@ one - now the documented exception, not the rule.
   `Tests run: 312` (up from 289), every failure identical (`Could not
   find a valid Docker environment`), not a regression from this phase's
   own code.
+- `CancellationIntegrationTest` (phase 23) gained three cases -
+  cancel-series through a real 3-occurrence series cancelling all three and
+  fee-charging each one separately, rejected on a non-series appointment
+  (400), cross-tenant 404. No new `TenantIsolationIntegrationTest` case -
+  same reasoning the plain single-cancel endpoint already uses (its own
+  cross-tenant check lives inline here too). Local pure-unit run (`69/69`)
+  confirmed unaffected; the three new cases themselves were confirmed
+  correct via a full live browser verification of the exact same code
+  path against a real Postgres, not a local Testcontainers run (still
+  Windows-npipe-blocked).
 
 ## Verified-session logs
 
@@ -4017,10 +4127,8 @@ append new ones there too, not here.
   -generation call site. The *frontend* display picker (browser-local/
   clinic's/manual) closed the same day - see "Frontend phase N"'s
   timezone-display write-up.
-- Recurring-series cancellation isn't its own concept - cancelling one
-  occurrence just cancels that one `Appointment` row via the normal cancel
-  endpoint; there's no "cancel the rest of the series too" option. Not
-  decided whether one should exist.
+- ~~Recurring-series cancellation isn't its own concept~~ **closed
+  2026-09-28** - see "Phase 23: recurring-series cancellation" below.
 - Cross-tenant `front_desk` 403 and clinic-inactive 409 for the booking flow
   (phase 2), and patient self-reschedule through the browser specifically
   (phase 3), are covered by the (locally-blocked) integration suite but not

@@ -3,9 +3,15 @@ package com.clinicops.appointment;
 import com.clinicops.clinic.Clinic;
 import com.clinicops.provider.Provider;
 import com.clinicops.support.AbstractIntegrationTest;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,6 +23,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CancellationIntegrationTest extends AbstractIntegrationTest {
 
     private record Fixture(Clinic clinic, Provider provider, com.clinicops.appointmenttype.AppointmentType type, com.clinicops.patient.Patient patient, Appointment appointment) {
+    }
+
+    /** Same helper as AppointmentControllerIntegrationTest's own private one - a deterministic future day/time so a weekly series' every occurrence lands inside the seeded working hours regardless of when this test actually runs. */
+    private Instant nextInstantAt(DayOfWeek dayOfWeek, LocalTime time) {
+        LocalDate date = LocalDate.now(ZoneOffset.UTC).plusDays(14);
+        while (date.getDayOfWeek() != dayOfWeek) {
+            date = date.plusDays(1);
+        }
+        return date.atTime(time).toInstant(ZoneOffset.UTC);
     }
 
     private Fixture seedBookedAppointment(String orgAlias, String clinicName, Instant slotStart) {
@@ -166,5 +181,72 @@ class CancellationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[0].method").value("fee_auto_charged"))
                 .andExpect(jsonPath("$[0].amount").value(45.00))
                 .andExpect(jsonPath("$[0].recordedBy").isNotEmpty());
+    }
+
+    /** "Cancel this and the rest of the series" - every still-booked occurrence, each going through the normal fee/audit path. */
+    @Test
+    void cancelSeriesCancelsEveryRemainingBookedOccurrenceAndFeesEachOne() throws Exception {
+        Clinic clinic = createClinic("cancel-series-" + UUID.randomUUID(), "Series Cancel Clinic");
+        Provider provider = createProvider(clinic.getId(), "Dr. SeriesCancel");
+        var type = createAppointmentType(clinic.getId(), "Therapy / 30 min", 30, "50.00");
+        for (int day = 0; day <= 6; day++) {
+            createWorkingHours(clinic.getId(), provider.getId(), day, LocalTime.of(9, 0), LocalTime.of(17, 0));
+        }
+        var patient = createPatient(clinic.getId(), "Series", "Cancel", "+15550002222");
+        // A catch-all tier (cutoffHours=0) so every occurrence, however far
+        // out, still gets a 100% fee - see the sibling tests above for why
+        // cutoffHours=0, not some higher number, is what "always applies" means.
+        createFeePolicy(clinic.getId(), null, 0, 100);
+        Instant firstStart = nextInstantAt(DayOfWeek.MONDAY, LocalTime.of(9, 0));
+
+        String seriesBody = mockMvc.perform(post("/api/appointments/series")
+                        .with(asFrontDesk("fd-1", clinic.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateAppointmentSeriesRequest(
+                                patient.getId(), provider.getId(), type.getId(), firstStart, 1, 3, "idem-cancel-series"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.created.length()").value(3))
+                .andReturn().getResponse().getContentAsString();
+        UUID firstOccurrenceId = UUID.fromString(
+                objectMapper.readTree(seriesBody).get("created").get(0).get("id").asText());
+
+        mockMvc.perform(post("/api/appointments/" + firstOccurrenceId + "/cancel-series")
+                        .with(asFrontDesk("fd-1", clinic.getKeycloakOrgId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cancelled.length()").value(3))
+                .andExpect(jsonPath("$.cancelled[0].status").value("cancelled"))
+                .andExpect(jsonPath("$.cancelled[1].status").value("cancelled"))
+                .andExpect(jsonPath("$.cancelled[2].status").value("cancelled"));
+
+        for (JsonNode occurrence : objectMapper.readTree(seriesBody).get("created")) {
+            UUID occurrenceId = UUID.fromString(occurrence.get("id").asText());
+            mockMvc.perform(get("/api/appointments/" + occurrenceId + "/payments")
+                            .with(asFrontDesk("fd-1", clinic.getKeycloakOrgId())))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].method").value("fee_auto_charged"))
+                    .andExpect(jsonPath("$[0].amount").value(50.00));
+        }
+    }
+
+    @Test
+    void cancelSeriesOnAnAppointmentThatIsNotPartOfASeriesIsRejected() throws Exception {
+        Fixture fixture = seedBookedAppointment(
+                "cancel-series-notaseries-" + UUID.randomUUID(), "Not A Series Clinic", Instant.now().plusSeconds(3600));
+
+        mockMvc.perform(post("/api/appointments/" + fixture.appointment().getId() + "/cancel-series")
+                        .with(asFrontDesk("fd-1", fixture.clinic().getKeycloakOrgId())))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void cancelSeriesIsNotFoundForAnotherTenantsAppointment() throws Exception {
+        Fixture fixture = seedBookedAppointment(
+                "cancel-series-owner-" + UUID.randomUUID(), "Series Owner Clinic", Instant.now().plusSeconds(3600));
+        Clinic otherClinic = createClinic("cancel-series-other-" + UUID.randomUUID(), "Series Other Clinic");
+
+        mockMvc.perform(post("/api/appointments/" + fixture.appointment().getId() + "/cancel-series")
+                        .with(asFrontDesk("fd-1", otherClinic.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
     }
 }

@@ -96,7 +96,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
             """, nativeQuery = true)
     Optional<AppointmentWithSlotView> findByIdAndCustomerUserIdWithSlot(@Param("id") UUID id, @Param("customerUserId") UUID customerUserId);
 
-    List<Appointment> findAllBySeriesId(UUID seriesId);
+    /** Tenant-scoped, not a bare findAllBySeriesId - same "explicit tenant id, never an implicit read" convention as every other staff-scoped query here, even though a series' own occurrences never span tenants in practice. Backs the "cancel this and the rest of the series" action. */
+    List<Appointment> findAllByTenantIdAndSeriesId(UUID tenantId, UUID seriesId);
 
     /**
      * Bulk-flips every still-`booked` appointment whose slot has fully

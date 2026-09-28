@@ -53,6 +53,18 @@ public class CancellationController {
         return cancellationService.cancelAsCustomer(id, customerUserId, reason);
     }
 
+    /** "Cancel this and the rest of the series" - staff-only, matching who can create one (AppointmentSeriesController). */
+    @PostMapping("/api/appointments/{id}/cancel-series")
+    @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN')")
+    public SeriesCancellationResult cancelSeries(
+            @PathVariable UUID id,
+            @RequestBody(required = false) CancelAppointmentRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        UUID cancelledByUserId = currentUserService.resolveInternalUserId(jwt);
+        String reason = request != null ? request.reason() : null;
+        return cancellationService.cancelSeries(id, TenantContext.require(), cancelledByUserId, reason);
+    }
+
     @ExceptionHandler(AppointmentAlreadyCancelledException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public String handleAlreadyCancelled(AppointmentAlreadyCancelledException e) {

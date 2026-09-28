@@ -316,6 +316,21 @@ export function useCancelAppointment(id) {
   });
 }
 
+/** "Cancel this and the rest of the series" - the response's own cancelled[] list (every occurrence actually cancelled, not just the triggering one) drives which individual appointment/payments queries need invalidating, on top of the plain tenant-wide list. */
+export function useCancelSeries(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (reason) => apiPost(`/api/appointments/${id}/cancel-series`, reason ? { reason } : undefined),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      (result?.cancelled || []).forEach((appointment) => {
+        queryClient.invalidateQueries({ queryKey: ['appointment', appointment.id] });
+        queryClient.invalidateQueries({ queryKey: ['appointment-payments', appointment.id] });
+      });
+    },
+  });
+}
+
 export function useRescheduleAppointment(id) {
   const queryClient = useQueryClient();
   return useMutation({

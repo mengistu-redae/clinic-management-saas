@@ -342,7 +342,7 @@ class AppointmentControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.conflicts.length()").value(1));
 
         String seriesId = objectMapper.readTree(firstAttempt).get("series").get("id").asText();
-        assertThat(appointmentRepository.findAllBySeriesId(UUID.fromString(seriesId))).hasSize(2);
+        assertThat(appointmentRepository.findAllByTenantIdAndSeriesId(clinic.getId(), UUID.fromString(seriesId))).hasSize(2);
     }
 
     @Test

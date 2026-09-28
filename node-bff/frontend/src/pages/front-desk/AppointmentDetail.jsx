@@ -12,6 +12,7 @@ import {
   useCheckOut,
   useMarkNoShow,
   useCancelAppointment,
+  useCancelSeries,
   useAppointmentPayments,
   useCreateAppointmentPayment,
   useAppointmentInvoice,
@@ -65,11 +66,15 @@ export default function AppointmentDetail() {
   const checkOut = useCheckOut(id);
   const markNoShow = useMarkNoShow(id);
   const cancelAppointment = useCancelAppointment(id);
+  const cancelSeries = useCancelSeries(id);
 
   const [presentedId, setPresentedId] = useState('');
   const [actionError, setActionError] = useState(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelError, setCancelError] = useState(null);
+  const [confirmingCancelSeries, setConfirmingCancelSeries] = useState(false);
+  const [cancelSeriesError, setCancelSeriesError] = useState(null);
+  const [cancelSeriesResult, setCancelSeriesResult] = useState(null);
 
   const paymentsQuery = useAppointmentPayments(id);
   const createPayment = useCreateAppointmentPayment(id);
@@ -97,6 +102,18 @@ export default function AppointmentDetail() {
         setCancelError(err.message || t('appointmentDetail.errorCancel'));
       }
       setConfirmingCancel(false);
+    }
+  }
+
+  async function handleCancelSeries() {
+    setCancelSeriesError(null);
+    try {
+      const result = await cancelSeries.mutateAsync();
+      setConfirmingCancelSeries(false);
+      setCancelSeriesResult(result?.cancelled?.length ?? 0);
+    } catch (err) {
+      setCancelSeriesError(err.message || t('fdAppointmentDetail.errorCancelSeries'));
+      setConfirmingCancelSeries(false);
     }
   }
 
@@ -275,6 +292,54 @@ export default function AppointmentDetail() {
               <button
                 type="button"
                 onClick={() => setConfirmingCancel(false)}
+                className="shrink-0 text-sm text-ink-muted hover:underline"
+              >
+                {t('appointmentDetail.neverMind')}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {cancelSeriesResult !== null && (
+        <div className="mt-4 flex items-center justify-between rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success">
+          <span>{t('fdAppointmentDetail.cancelSeriesSuccess', { count: cancelSeriesResult })}</span>
+          <button type="button" onClick={() => setCancelSeriesResult(null)} className="font-semibold hover:underline">
+            {t('clinicsPage.dismiss')}
+          </button>
+        </div>
+      )}
+
+      {cancelSeriesError && (
+        <div className="mt-4">
+          <ErrorBanner message={cancelSeriesError} />
+        </div>
+      )}
+
+      {!isTerminal && appointment.seriesId && (
+        <div className="mt-3">
+          {!confirmingCancelSeries ? (
+            <button
+              type="button"
+              onClick={() => setConfirmingCancelSeries(true)}
+              className="text-sm font-medium text-danger hover:underline"
+            >
+              {t('fdAppointmentDetail.cancelSeries')}
+            </button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
+              <p className="text-sm text-danger">{t('fdAppointmentDetail.cancelSeriesConfirm')}</p>
+              <button
+                type="button"
+                disabled={cancelSeries.isPending}
+                onClick={handleCancelSeries}
+                className="shrink-0 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger/90 disabled:opacity-50"
+              >
+                {cancelSeries.isPending ? t('fdAppointmentDetail.cancellingSeries') : t('fdAppointmentDetail.yesCancelSeries')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingCancelSeries(false)}
                 className="shrink-0 text-sm text-ink-muted hover:underline"
               >
                 {t('appointmentDetail.neverMind')}

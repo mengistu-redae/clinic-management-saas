@@ -15,10 +15,14 @@ import com.clinicops.payment.PaymentRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
@@ -82,6 +86,40 @@ public class CancellationService {
         Appointment appointment = appointmentRepository.findByIdAndCustomerUserId(appointmentId, customerUserId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + appointmentId));
         return applyCancellation(appointment, null, customerUserId, reason);
+    }
+
+    /**
+     * "Cancel this and the rest of the series" - staff-only, triggered from
+     * one specific occurrence. Scoped to every still-{@code booked}
+     * occurrence sharing that appointment's own seriesId (the triggering
+     * occurrence included, if it's still booked itself) rather than only
+     * ones chronologically after it - a plain {@code status = 'booked'}
+     * filter already means "not yet happened and not already cancelled,"
+     * so there's no need for a separate time comparison. Each occurrence
+     * goes through the exact same {@link #applyCancellation} path a single
+     * cancel uses - same fee-tier calculation, same fee_auto_charged
+     * Payment/journal posting, same per-occurrence audit row and
+     * notification - deliberately not a bulk shortcut that skips any of
+     * that.
+     */
+    @Transactional
+    public SeriesCancellationResult cancelSeries(UUID appointmentId, UUID tenantId, UUID cancelledByUserId, String reason) {
+        Appointment triggering = appointmentRepository.findByIdAndTenantId(appointmentId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + appointmentId));
+        if (triggering.getSeriesId() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Appointment " + appointmentId + " is not part of a recurring series");
+        }
+
+        List<Appointment> occurrences = appointmentRepository.findAllByTenantIdAndSeriesId(tenantId, triggering.getSeriesId());
+        List<Appointment> cancelled = new ArrayList<>();
+        for (Appointment occurrence : occurrences) {
+            if (!"booked".equals(occurrence.getStatus())) {
+                continue; // already cancelled, or otherwise past the point where a bulk cancel still applies
+            }
+            cancelled.add(applyCancellation(occurrence, cancelledByUserId, cancelledByUserId, reason));
+        }
+        return new SeriesCancellationResult(cancelled);
     }
 
     /**
