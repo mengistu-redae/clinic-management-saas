@@ -985,3 +985,162 @@ export function useDispensePrescription(prescriptionId) {
     },
   });
 }
+
+// ---- accounting (phase 21 - AccountController/JournalController) ----
+
+export function useAccounts(enabled, status) {
+  return useQuery({
+    queryKey: ['clinic', 'accounts', status ?? 'all'],
+    queryFn: () => apiGet(`/api/clinic/accounts${status ? `?status=${status}` : ''}`),
+    enabled,
+  });
+}
+
+function invalidateAccounts(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['clinic', 'accounts'] });
+}
+
+export function useCreateAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/clinic/accounts', body),
+    onSuccess: () => invalidateAccounts(queryClient),
+  });
+}
+
+export function useUpdateAccount(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/clinic/accounts/${id}/update`, body),
+    onSuccess: () => invalidateAccounts(queryClient),
+  });
+}
+
+export function useJournalEntries(enabled) {
+  return useQuery({
+    queryKey: ['clinic', 'journal-entries'],
+    queryFn: () => apiGet('/api/clinic/journal-entries'),
+    enabled,
+  });
+}
+
+export function useTrialBalance(enabled) {
+  return useQuery({
+    queryKey: ['clinic', 'trial-balance'],
+    queryFn: () => apiGet('/api/clinic/trial-balance'),
+    enabled,
+  });
+}
+
+// ---- finance (phase 22 - EmployeeController/PayrollController/BudgetController/FinanceReportController) ----
+
+export function useEmployees(enabled, status) {
+  return useQuery({
+    queryKey: ['clinic', 'employees', status ?? 'all'],
+    queryFn: () => apiGet(`/api/clinic/employees${status ? `?status=${status}` : ''}`),
+    enabled,
+  });
+}
+
+function invalidateEmployees(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['clinic', 'employees'] });
+}
+
+export function useCreateEmployee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/clinic/employees', body),
+    onSuccess: () => invalidateEmployees(queryClient),
+  });
+}
+
+export function useUpdateEmployee(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/clinic/employees/${id}/update`, body),
+    onSuccess: () => invalidateEmployees(queryClient),
+  });
+}
+
+export function usePayrollRuns(enabled) {
+  return useQuery({
+    queryKey: ['clinic', 'payroll-runs'],
+    queryFn: () => apiGet('/api/clinic/payroll-runs'),
+    enabled,
+  });
+}
+
+export function usePayrollRun(id) {
+  return useQuery({
+    queryKey: ['clinic', 'payroll-runs', id],
+    queryFn: () => apiGet(`/api/clinic/payroll-runs/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useRunPayroll() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/clinic/payroll-runs', body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clinic', 'payroll-runs'] });
+      // A run posts real journal entries - the ledger views a payroll-run page can link out to need fresh data too.
+      queryClient.invalidateQueries({ queryKey: ['clinic', 'journal-entries'] });
+      queryClient.invalidateQueries({ queryKey: ['clinic', 'trial-balance'] });
+    },
+  });
+}
+
+export function useBudgets(enabled, year, month) {
+  const hasPeriod = year !== undefined && month !== undefined;
+  return useQuery({
+    queryKey: ['clinic', 'budgets', hasPeriod ? `${year}-${month}` : 'all'],
+    queryFn: () => apiGet(`/api/clinic/budgets${hasPeriod ? `?year=${year}&month=${month}` : ''}`),
+    enabled,
+  });
+}
+
+function invalidateBudgets(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['clinic', 'budgets'] });
+  queryClient.invalidateQueries({ queryKey: ['clinic', 'budget-vs-actual'] });
+}
+
+export function useCreateBudget() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/clinic/budgets', body),
+    onSuccess: () => invalidateBudgets(queryClient),
+  });
+}
+
+export function useUpdateBudget(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/clinic/budgets/${id}/update`, body),
+    onSuccess: () => invalidateBudgets(queryClient),
+  });
+}
+
+export function useDeleteBudget(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/clinic/budgets/${id}/delete`),
+    onSuccess: () => invalidateBudgets(queryClient),
+  });
+}
+
+export function useProfitAndLoss(enabled, year, month) {
+  return useQuery({
+    queryKey: ['clinic', 'profit-and-loss', year, month],
+    queryFn: () => apiGet(`/api/clinic/profit-and-loss?year=${year}&month=${month}`),
+    enabled: enabled && Boolean(year) && Boolean(month),
+  });
+}
+
+export function useBudgetVsActual(enabled, year, month) {
+  return useQuery({
+    queryKey: ['clinic', 'budget-vs-actual', year, month],
+    queryFn: () => apiGet(`/api/clinic/budget-vs-actual?year=${year}&month=${month}`),
+    enabled: enabled && Boolean(year) && Boolean(month),
+  });
+}

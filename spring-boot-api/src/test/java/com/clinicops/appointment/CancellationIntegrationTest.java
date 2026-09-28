@@ -33,8 +33,10 @@ class CancellationIntegrationTest extends AbstractIntegrationTest {
     void staffCancelFreesTheSlotAndRecordsTheConfiguredFee() throws Exception {
         Instant slotStart = Instant.now().plusSeconds(3600); // 1 hour notice
         Fixture fixture = seedBookedAppointment("cancel-fee-" + UUID.randomUUID(), "Fee Clinic", slotStart);
-        // 100% fee under 2h notice.
-        createFeePolicy(fixture.clinic().getId(), null, 2, 100);
+        // 100% fee under 2h notice - cutoffHours=0 is the catch-all tier
+        // FeeCalculator picks when notice doesn't clear any higher cutoff
+        // (it always applies the *highest* cutoff the notice period clears).
+        createFeePolicy(fixture.clinic().getId(), null, 0, 100);
         createFeePolicy(fixture.clinic().getId(), null, 24, 0);
 
         mockMvc.perform(post("/api/appointments/" + fixture.appointment().getId() + "/cancel")
@@ -139,8 +141,8 @@ class CancellationIntegrationTest extends AbstractIntegrationTest {
         Clinic clinic = createClinic("cancel-self-fee-" + UUID.randomUUID(), "Self Fee Clinic");
         Provider provider = createProvider(clinic.getId(), "Dr. SelfFee");
         var type = createAppointmentType(clinic.getId(), "Visit", 30, "90.00");
-        // 50% fee under 2h notice.
-        createFeePolicy(clinic.getId(), null, 2, 50);
+        // 50% fee under 2h notice - see the other test's comment on why this is cutoffHours=0, not 2.
+        createFeePolicy(clinic.getId(), null, 0, 50);
         var slot = createSlot(clinic.getId(), provider.getId(), type.getId(),
                 Instant.now().plusSeconds(3600), Instant.now().plusSeconds(5400));
 

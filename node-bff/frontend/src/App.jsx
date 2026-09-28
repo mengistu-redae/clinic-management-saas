@@ -39,6 +39,12 @@ import TrackLabOrder from './pages/TrackLabOrder.jsx';
 import PlatformAdminClinics from './pages/platform-admin/Clinics.jsx';
 import PharmacistDashboard from './pages/pharmacist/Dashboard.jsx';
 import PharmacistMedications from './pages/pharmacist/Medications.jsx';
+import AccountantDashboard from './pages/accountant/Dashboard.jsx';
+import AccountantAccounts from './pages/accountant/Accounts.jsx';
+import AccountantJournal from './pages/accountant/Journal.jsx';
+import AccountantEmployees from './pages/accountant/Employees.jsx';
+import AccountantPayroll from './pages/accountant/Payroll.jsx';
+import AccountantBudgets from './pages/accountant/Budgets.jsx';
 
 /**
  * Logged-out landing at "/" - previously title+subtitle only, with every
@@ -111,6 +117,7 @@ function RoleHome() {
   if (hasRole('clinic_admin')) return <ClinicAdminDashboard />;
   if (hasRole('platform_admin')) return <PlatformAdminDashboard />;
   if (hasRole('pharmacist')) return <PharmacistDashboard />;
+  if (hasRole('accountant')) return <AccountantDashboard />;
   return null;
 }
 
@@ -382,6 +389,61 @@ export default function App() {
           element={
             <RequireRole roles={['pharmacist', 'clinic_admin']}>
               <PharmacistMedications />
+            </RequireRole>
+          }
+        />
+        {/* Accounting/finance (phases 21/22) - every endpoint behind these
+            pages already grants clinic_admin full override access on the
+            backend (no ownership check, same as every other module), so
+            every route here allows both roles too - same "full route
+            parity, curated nav" shape already established for pharmacist
+            (clinic_admin's own sidebar only links Accounts + Payroll, not
+            all six, since clinic_admin already has its own Dashboard). */}
+        <Route
+          path="/accountant"
+          element={
+            <RequireRole roles={['accountant', 'clinic_admin']}>
+              <AccountantDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/accountant/accounts"
+          element={
+            <RequireRole roles={['accountant', 'clinic_admin']}>
+              <AccountantAccounts />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/accountant/journal"
+          element={
+            <RequireRole roles={['accountant', 'clinic_admin']}>
+              <AccountantJournal />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/accountant/employees"
+          element={
+            <RequireRole roles={['accountant', 'clinic_admin']}>
+              <AccountantEmployees />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/accountant/payroll"
+          element={
+            <RequireRole roles={['accountant', 'clinic_admin']}>
+              <AccountantPayroll />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/accountant/budgets"
+          element={
+            <RequireRole roles={['accountant', 'clinic_admin']}>
+              <AccountantBudgets />
             </RequireRole>
           }
         />

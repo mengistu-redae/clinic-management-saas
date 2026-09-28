@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -154,7 +155,11 @@ public class EncounterService {
         if (encounter.getSignedAt() != null) {
             return encounter; // idempotent re-call
         }
-        encounter.setSignedAt(Instant.now());
+        // Truncated to microseconds - Postgres' own storage precision - so
+        // this first response's signedAt matches byte-for-byte what a later
+        // read of the same row returns, rather than momentarily showing
+        // extra nanosecond digits that get silently dropped on persist.
+        encounter.setSignedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
         encounter.setSignedBy(signedByUserId);
         return encounterRepository.save(encounter);
     }

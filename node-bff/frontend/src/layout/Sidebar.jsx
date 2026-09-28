@@ -11,6 +11,8 @@ import {
   BuildingIcon,
   SettingsIcon,
   CloseIcon,
+  WalletIcon,
+  ReceiptIcon,
 } from '../components/icons.jsx';
 
 /**
@@ -62,6 +64,8 @@ function navGroups(t, hasRole) {
         { to: '/lab-orders', label: t('nav.clinicAdmin.labOrders'), icon: FlaskIcon },
         { to: '/referrals', label: t('nav.clinicAdmin.referrals'), icon: ClipboardIcon },
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
+        { to: '/accountant/accounts', label: t('nav.accountant.accounts'), icon: WalletIcon },
+        { to: '/accountant/payroll', label: t('nav.accountant.payroll'), icon: ReceiptIcon },
         { to: '/clinic-admin/settings', label: t('nav.clinicAdmin.settings'), icon: SettingsIcon },
       ],
     });
@@ -71,6 +75,18 @@ function navGroups(t, hasRole) {
       items: [
         { to: '/pharmacist', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
+      ],
+    });
+  }
+  if (hasRole('accountant')) {
+    groups.push({
+      items: [
+        { to: '/accountant', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
+        { to: '/accountant/accounts', label: t('nav.accountant.accounts'), icon: WalletIcon },
+        { to: '/accountant/journal', label: t('nav.accountant.journal'), icon: ClipboardIcon },
+        { to: '/accountant/employees', label: t('nav.accountant.employees'), icon: UsersIcon },
+        { to: '/accountant/payroll', label: t('nav.accountant.payroll'), icon: ReceiptIcon },
+        { to: '/accountant/budgets', label: t('nav.accountant.budgets'), icon: ClipboardIcon },
       ],
     });
   }

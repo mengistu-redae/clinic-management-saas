@@ -1882,13 +1882,13 @@ own write-up already anticipated. New migration `V19__finance.sql`.
   over) while every unbudgeted-but-active account showed `null`, not a
   misleading zero, and the untouched, unbudgeted Refunds & Allowances
   account didn't appear in the response at all.
-- **No frontend yet** - backend only, same "no dedicated UI this phase"
-  scope boundary every module in this set has used; `demo-accountant`'s
-  own dashboard still renders blank, unchanged from phase 21 (no
-  route/nav case for this role exists on the frontend yet). This closes
-  out the pharmacy/accounting/finance module set the user originally
-  scoped across phases 20-22 - a real accountant/finance-role frontend is
-  the natural next step if this set gets picked up again, not scoped here.
+- **Frontend built the same day (2026-09-28), a later session** - see
+  "Frontend phase R: accountant/finance UI" under "## Frontend" below for
+  the full write-up. This closes out the pharmacy/accounting/finance
+  module set the user originally scoped across phases 20-22 - every role
+  named in that set (`pharmacist`, `accountant`) now has both a working
+  backend and a real frontend, matching the `pharmacist` module's own
+  phase-20 precedent.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3430,6 +3430,106 @@ backend change without a real need" convention this project already keeps.
     membership via `GET /auth/me`) - its dashboard renders blank, expected
     since Phase 21 (Accounting) has no route/nav for this role yet.
 
+**Frontend phase R: accountant/finance UI** (built 2026-09-28) - gives the
+`accountant` role (and `clinic_admin` via override) a real frontend for
+the accounting/finance backend built in phases 21 (chart of accounts,
+journal, trial balance) and 22 (employees, payroll, budgets, P&L/budget
+-vs-actual). Closes the last gap the pharmacy/accounting/finance module
+set left open - `pharmacist` already had one since phase 20, `accountant`
+had none until now. Ported the same conventions phase 20's pharmacist
+pages already established (`DataTable` + `renderExpanded` for inline edit
+panels, a create-form-above-a-searchable-table shape) rather than
+inventing new ones. Zero backend changes - every endpoint this drives
+already existed and was already live-verified server-side in phases 21/22.
+
+- **Route/nav parity matches the `pharmacist` precedent exactly, not the
+  narrower split first guessed while writing it**: every one of the six
+  new routes (`/accountant`, `/accountant/accounts`, `/accountant/journal`,
+  `/accountant/employees`, `/accountant/payroll`, `/accountant/budgets`)
+  uses `roles={['accountant', 'clinic_admin']}` - full route parity, since
+  every endpoint behind these pages already grants `clinic_admin` full
+  override access on the backend (no ownership check, same as every other
+  module). The sidebar nav stays curated the way `pharmacist`'s already
+  was: `clinic_admin`'s own sidebar links only to `/accountant/accounts`
+  and `/accountant/payroll`, not the full six-item group `accountant`
+  itself sees - `clinic_admin` already has its own Dashboard, so it
+  doesn't need a second one. This was a real self-caught error, not
+  something the user flagged: the first draft split the six routes
+  `accountant`-only vs. `accountant`+`clinic_admin` on a guess, then was
+  corrected by re-reading the actual pharmacist routes in `App.jsx` before
+  any of this was shown to the user.
+- **Six new pages** (`pages/accountant/`) - `Dashboard.jsx` (stat cards for
+  cash balance/revenue/expense/net-income this month, computed from
+  `GET /api/clinic/profit-and-loss` + a trial-balance lookup for the
+  `1000` Cash account, plus five link tiles into the other pages; uses a
+  plain `"{year}-{month}"` numeric period label rather than inventing a
+  month-name i18n namespace this app has never needed before),
+  `Accounts.jsx` (chart-of-accounts CRUD, code fixed at creation matching
+  `UpdateAccountRequest`'s own shape), `Journal.jsx` (read-only trial
+  balance + journal entries, each entry's `renderExpanded` showing its
+  balanced debit/credit lines), `Employees.jsx` (create-by-email + salary/
+  status edit, mirroring `ProviderController.linkLogin`'s "email must
+  already belong to a real login" precedent), `Payroll.jsx` (run-payroll
+  form + history; each run's `renderExpanded` lazily fetches its own
+  per-employee payments via `usePayrollRun(runId)` - the same "each row
+  owns its own query" shape `PaymentsPanel.jsx` established in phase 16,
+  reused here since the list endpoint doesn't nest payments), and
+  `Budgets.jsx` (the most complex page - one shared year/month selector
+  drives three sections at once: budget CRUD with a real hard delete,
+  a P&L summary, and the budget-vs-actual table, all genuinely the same
+  "for this period" question).
+- **A real bug found and fixed live during this phase's own verification**:
+  `Budgets.jsx`'s create/update/delete mutations only invalidated the
+  `['clinic', 'budgets']` React Query key, never
+  `['clinic', 'budget-vs-actual']` - so the Budget vs. Actual table kept
+  showing a stale `—` for a just-created or just-edited budget until an
+  unrelated refetch happened to occur. Caught live: created a $2,000
+  budget for the `1000 Cash` account, watched it appear correctly in the
+  budgets list above but stay `—` in the budget-vs-actual table below on
+  the same page, in the same render pass. Fixed by having
+  `invalidateBudgets` (`api/queries.js`, shared by `useCreateBudget`/
+  `useUpdateBudget`/`useDeleteBudget`) invalidate both query keys -
+  confirmed live post-fix (after a `--force-recreate node-bff` +
+  `nginx` restart) that the same create/delete sequence now updates both
+  tables in the same pass with no manual refresh needed.
+- **The `/accountant/*` direct-navigation bounce-back investigated last
+  session turned out to be transient, not a real bug** - repeated direct
+  full-browser navigations to `/accountant/employees`, `/accountant/
+  payroll`, and `/accountant/budgets` this session all landed correctly
+  with no redirect to `/`, including several right after a
+  `--force-recreate node-bff` + `nginx restart` (the one point it did
+  reproduce once). `RequireRole.jsx`/`AuthContext.jsx` were read in full
+  and are already written correctly (waits for `useAuthMe()`'s own
+  `isLoading` before evaluating role access) - the one reproduction is
+  most plausibly a genuine transient blip in that narrow post-restart
+  window (nginx/node-bff still settling), not a deterministic race. Not
+  treated as a known gap requiring a fix; worth re-flagging only if it
+  starts reproducing outside a fresh-restart window.
+- **Live-verified against the real running stack**, as `demo-accountant`
+  (a real login, not simulated): Accounts (create "2000 Accounts Payable"/
+  liability, inline-edit its name, deactivate then reactivate - all
+  confirmed via the table updating in place); Journal (trial balance and
+  journal entries both rendering real data, including the two new payroll
+  entries from this session's own payroll runs; expanded a "Payroll
+  2026-9" entry and confirmed its balanced Salary Expense/Cash lines);
+  Employees (existing "Demo FrontDesk" row rendering correctly via SPA
+  navigation); Payroll (ran a genuine new payroll for 2026-10 - "Paid
+  1,200.00 across 1 employees" success banner, the new run appearing
+  correctly sorted above the existing 2026-09 one; re-running the
+  already-paid 2026-09 month correctly surfaced the backend's real 409
+  "Payroll for 2026-9 has already been run" message through the UI, not a
+  raw error; expanding a run's row lazily fetched and displayed its
+  per-employee payment); Budgets (create/edit/delete round-tripped
+  correctly, including the cache-invalidation bug found and fixed above;
+  P&L summary and budget-vs-actual both showed internally consistent
+  numbers matching the trial balance). Dark theme and Amharic were both
+  exercised together across every one of the six pages (Dashboard,
+  Accounts, Journal - including the header/sidebar/status pills/table
+  contents) and confirmed correctly themed and translated via real
+  screenshots, not just code review; switched back to Light/English
+  afterward. `npm run build` clean; `npm test` (node-bff's own suite,
+  unrelated to this frontend work) unaffected.
+
 ## Post-phase-7 backend additions
 
 Two of the "Known gaps" items closed in one session (built 2026-09-19),
@@ -3835,7 +3935,10 @@ append new ones there too, not here.
   vitals/history/consent/coding-depth/sign-and-lock/provider license+
   signature/referrals); **frontend phase M** (2026-09-21) closed the last
   remaining gap - billing (phase 15) now has a real invoice UI, see
-  "Frontend phase M" above.
+  "Frontend phase M" above. **Frontend phase R** (2026-09-28) closed the
+  last module-set gap - `accountant` (phases 21/22) now has a real
+  frontend matching `pharmacist`'s own phase-20 precedent, see "Frontend
+  phase R: accountant/finance UI" above.
 - ~~`clinic_admin` has no UI path to encounter documentation~~ **closed
   2026-09-15** - see "clinic_admin encounter-access fix" above.
   `front-desk/AppointmentDetail.jsx` is now shared with `clinic_admin` (a
@@ -3972,12 +4075,57 @@ append new ones there too, not here.
     signal on whether this suite (`AbstractIntegrationTest`'s
     Testcontainers Postgres+Redis) actually passes anywhere, since it's
     been Windows-npipe-blocked on every dev machine this whole project.
-    The actual CI failure reason is **still unknown** - downloading the
-    job logs/the `surefire-reports` artifact both 401/403 without `gh`
-    auth or a token, which remains unavailable. A same-session attempt to
-    reproduce locally hit the pre-existing Windows Testcontainers issue
-    instead (`Could not find a valid Docker environment` - a Windows
-    npipe detection quirk, not evidence about what broke on `ubuntu-latest`,
-    which has no such issue) - so the CI failure's real cause is still
-    open. Do not assume it's the same class of problem; get the actual
-    ubuntu-latest log before diagnosing further.
+    A same-session attempt to reproduce locally hit the pre-existing
+    Windows Testcontainers issue instead (`Could not find a valid Docker
+    environment`) - so the cause stayed open at the time.
+  - **Diagnosed and fixed 2026-09-28, once the user pasted the actual
+    ubuntu-latest job log directly** (the `gh`/API-token block above never
+    got resolved - the log arrived by another route). Confirms
+    `AbstractIntegrationTest`'s Testcontainers suite genuinely runs and
+    mostly passes on `ubuntu-latest` (`Tests run: 312, Failures: 5` -
+    307 green) - the Windows npipe issue really is Windows-only, not
+    evidence the suite itself is broken. Five real, pre-existing bugs
+    surfaced, none related to Windows/Testcontainers at all:
+    - **`AccountControllerIntegrationTest`'s two starter-account-count
+      assertions were stale** - `AccountSeedingService.STARTER_ACCOUNTS`
+      grew from 3 to 4 entries in phase 22 (Salary Expense added), but
+      this phase-21 test was never updated to match. Fixed by bumping
+      both `$.length()` assertions from 3 to 4 and asserting the new
+      Salary Expense row too.
+    - **A real, latent bug in `CancellationIntegrationTest`'s own fee
+      -policy fixtures** (two cases: `staffCancelFreesTheSlotAnd
+      RecordsTheConfiguredFee`, `aSelfCancelFeeIsAutoChargedAndAttributed
+      ToThePatientsOwnAccount`) - both configured their "under 2h notice"
+      tier at `cutoffHours=2` instead of `0`. `FeeCalculator.calculate`
+      always applies the *highest* `cutoffHours` the actual notice period
+      still clears (`noticeHours >= tier.cutoffHours`) - confirmed against
+      its own passing `FeeCalculatorTest` unit cases and against
+      `LabOrderIntegrationTest`'s already-correct `createFeePolicy(...,
+      0, 100)` usage - so a tier needs `cutoffHours=0` to act as the
+      catch-all for "any notice, however short." With only a `cutoffHours
+      =2` tier and ~1 hour of actual notice, no tier ever cleared, the fee
+      silently computed as `$0.00`, and `CancellationService.
+      applyCancellation`'s own `if (feeAmount.signum() > 0)` guard then
+      never created the `fee_auto_charged` Payment the tests expected -
+      not a Payment/JournalService bug at all, just an inverted test
+      fixture. Fixed both fixtures to `cutoffHours=0`.
+    - **A real precision bug in `EncounterService.sign`** -
+      `reSigningAnAlreadySignedEncounterIsIdempotent` compares the
+      `signedAt` from the first sign call against the second (idempotent
+      re-call) response and found them different:
+      `2026-09-28T14:32:43.980799027Z` (9 fractional digits, straight
+      from the in-memory `Instant.now()` the first response serializes
+      before it round-trips through Postgres) vs. `...980799Z` (6 digits
+      - Postgres' own `timestamptz` storage precision, what the second
+      call reads back). Same moment, genuinely inconsistent
+      serialization depending on whether the caller is looking at a
+      freshly-written value or a re-fetched one. Fixed at the source -
+      `encounter.setSignedAt(Instant.now().truncatedTo(ChronoUnit.MICROS))`
+      - so the very first response already matches what persists, rather
+      than tolerating the mismatch in the test.
+    - All three fixes confirmed via a clean `mvn clean test-compile` and
+      a full local run of every pure-unit (non-Testcontainers) test class
+      - `69/69` passing, unaffected. The Testcontainers-only assertions
+      themselves couldn't be re-run locally (still Windows-npipe-blocked)
+      - confirmed correct by re-reading the exact CI failure output
+      against the fixed code, not by re-running the suite.

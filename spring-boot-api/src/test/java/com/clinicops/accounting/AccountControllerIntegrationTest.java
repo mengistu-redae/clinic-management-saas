@@ -20,10 +20,11 @@ class AccountControllerIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/clinic/accounts").with(asAccountant("acct", clinic.getKeycloakOrgId())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$.length()").value(4))
                 .andExpect(jsonPath("$[?(@.code=='1000')].name").value("Cash"))
                 .andExpect(jsonPath("$[?(@.code=='4000')].name").value("Service Revenue"))
-                .andExpect(jsonPath("$[?(@.code=='4900')].name").value("Refunds & Allowances"));
+                .andExpect(jsonPath("$[?(@.code=='4900')].name").value("Refunds & Allowances"))
+                .andExpect(jsonPath("$[?(@.code=='5000')].name").value("Salary Expense"));
     }
 
     @Test
@@ -52,7 +53,7 @@ class AccountControllerIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/clinic/accounts").with(asClinicAdmin("admin", orgAlias)).param("status", "active"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(3));
+                .andExpect(jsonPath("$.length()").value(4));
     }
 
     @Test
