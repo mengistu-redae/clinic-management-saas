@@ -62,7 +62,7 @@ jobs:
       - run: npm test
 
   frontend:
-    name: frontend (vite build)
+    name: frontend (vitest + vite build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -78,4 +78,5 @@ jobs:
           cache-dependency-path: node-bff/frontend/package-lock.json
 
       - run: npm ci
+      - run: npm test
       - run: npm run build

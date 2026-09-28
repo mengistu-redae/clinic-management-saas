@@ -3630,6 +3630,74 @@ already existed and was already live-verified server-side in phases 21/22.
   afterward. `npm run build` clean; `npm test` (node-bff's own suite,
   unrelated to this frontend work) unaffected.
 
+**Frontend phase S: test infrastructure** (built 2026-09-28) - closes the
+"Known gaps" item flagging that every frontend claim in this file was
+`npm run build` plus a manual browser walkthrough, never a repeatable
+automated check. Scoped with one direct question to the user first - how
+much coverage this pass should add, given zero existing test
+infrastructure - answered "infrastructure + shared components," the
+recommended middle option over "infrastructure only" and "broad page-level
+coverage."
+
+- **Vitest, not Jest** - a deliberate, not-asked call: this is already a
+  Vite project (`vite.config.js`/`@vitejs/plugin-react` since phase 1), and
+  Vitest shares that same config/transform pipeline natively, where Jest
+  would need its own separate Babel/transform setup for the identical JSX
+  this app already builds with esbuild. `vitest@^2.1.x` specifically, not
+  the current `vitest@5` - the latest major requires Vite 6/7/8, and this
+  project is pinned to Vite 5 (`^5.4.8`); 2.1.x's own peer range covers
+  Vite 5 cleanly, confirmed by a real `npm install` rather than assumed
+  from the changelog. `@testing-library/react`/`jest-dom`/`user-event` +
+  `jsdom` (the DOM environment vitest needs to actually render components,
+  as opposed to running in a plain Node environment) round out the
+  toolchain.
+- **`vitest.config.js`, a separate file from `vite.config.js`** - the dev
+  -server proxy config in `vite.config.js` (forwarding `/api`/`/auth` to
+  node-bff on `:3000`) has nothing to do with running tests, so keeping
+  them apart means neither file needs a test-vs-dev conditional branch.
+  `src/test/setup.js` imports `@testing-library/jest-dom/vitest` (matcher
+  extensions) and, importantly, the same `i18n/index.js` `main.jsx` itself
+  imports - every test gets a working `useTranslation()` against the
+  app's **real** `en.json`/`am.json` locale files for free, so a
+  component test can assert on real translated copy ("Checked Out") rather
+  than mocking the whole i18n layer or asserting on raw keys.
+- **What got tested, and why these four and not others**: `lib/
+  tableUtils.js` (`matchesQuery`/`compareValues` - pure functions, the
+  actual search/sort logic every converted list page in the phase-Q
+  redesign depends on, easiest to test exhaustively in isolation);
+  `components/DataTable.jsx` (the shared table itself - search filtering,
+  ascending/descending/column-switch sort, loading/error/empty states,
+  the `renderExpanded` toggle - rendered and interacted with via RTL +
+  `user-event`, not just unit-testing its internals); `components/
+  StatusPill.jsx` (real translated labels for both status vocabularies,
+  plus the raw-underscore-split fallback for an unmapped status);
+  `auth/RequireRole.jsx` (the one role-gating component every staff route
+  in this app passes through - `useAuth` mocked directly via `vi.mock`
+  rather than exercising the real `AuthProvider`'s own `GET /auth/me`
+  fetch, so each case can drive `isLoading`/`authenticated`/`hasRole`
+  independently: loading renders nothing, unauthenticated does a real
+  `window.location.href` redirect not a client route change,
+  authenticated-but-wrong-role does a client-side redirect to `/`,
+  authenticated-with-role or -any-of-roles renders children); two
+  `api/queries.js` hooks - deliberately not "a couple of arbitrary ones"
+  but the two written earlier this same session: the budget mutations'
+  cache-invalidation fix (a genuine regression test for the real bug found
+  live earlier today - both query keys, not just one, get invalidated on
+  create/update/delete) and `useCancelSeries` (invalidates every
+  individual appointment/payments query named in the response's own
+  `cancelled[]` list, not just the tenant-wide list).
+- **`npm test` (`vitest run`) added to `package.json`**, and wired into
+  CI - the `frontend` job now runs `npm test` before `npm run build`
+  (renamed `frontend (vitest + vite build)`), so a real test failure
+  blocks the same way a build failure already does. Confirmed via a full
+  clean-install simulation of the exact CI sequence (`rm -rf node_modules
+  && npm ci && npm test && npm run build`), not just run once against an
+  already-populated `node_modules`.
+- **Live-verified is the wrong frame here - these are real automated
+  tests, confirmed by actually running them**, not manual browser
+  clicking: `34/34` passing locally (5 files) both before and after a
+  clean `npm ci`.
+
 ## Post-phase-7 backend additions
 
 Two of the "Known gaps" items closed in one session (built 2026-09-19),
@@ -4081,11 +4149,18 @@ append new ones there too, not here.
   this was actually checked. A genuine from-scratch realm-import test (wipe
   the Keycloak volume, `docker compose up`, run this script once) is still
   owed, not claimed here.
-- No automated frontend test suite (no Jest/Vitest/React Testing Library
-  set up in `node-bff/frontend/`) - every frontend claim above is `npm run
-  build` succeeding plus a real, manual browser walkthrough, not a repeatable
-  automated check. `node-bff`'s own server-side `npm test` (20 tests) is
-  unaffected/unrelated - it never touches `node-bff/frontend/`.
+- ~~No automated frontend test suite~~ **partially closed 2026-09-28** -
+  see "Frontend phase S: test infrastructure" below. Vitest + React Testing
+  Library are now real, with 34 passing tests covering the shared
+  primitives every page depends on (`DataTable`, `StatusPill`,
+  `RequireRole`, `lib/tableUtils.js`, two `api/queries.js` hooks) and wired
+  into CI. Deliberately **not** closed further this pass - the user was
+  asked directly and chose "infrastructure + shared components" over
+  broader page-level coverage, so most of every individual page's own
+  frontend claims in this file are still `npm run build` + a real manual
+  browser walkthrough, not a repeatable automated check. `node-bff`'s own
+  server-side `npm test` (20 tests) remains unaffected/unrelated - it
+  never touches `node-bff/frontend/`.
 - ~~No PHI-access audit log in v1~~ **closed 2026-09-20** - see
   "Post-phase-7 backend additions". Scoped to staff-initiated access only
   (not a patient viewing their own record) across
