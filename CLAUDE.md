@@ -595,10 +595,16 @@ confirmed they do, and chose sequential phases over one combined build:
     review-of-systems checklist added directly to `Encounter`, locking
     with the rest of the encounter when signed. See "Phase 25:
     physical-exam findings" below.
+26. **Visit/encounter summary document** (built 2026-09-28/29) - a
+    real on-demand PDF (encounter note, exam findings, prescriptions,
+    vitals, active allergies, visit-linked immunizations), reachable by
+    staff and, for the first time in this app, by the patient viewing
+    their own past visit. See "Phase 26: visit/encounter summary
+    document" below.
 
-Still queued, not yet built: a visit/encounter summary document (the
-outpatient equivalent of a discharge summary, generated at checkout) -
-the last of the three phases scoped alongside immunizations.
+The full-EHR-breadth backlog (immunizations, physical-exam findings,
+visit summary) is now fully built, closing out everything the user asked
+to pull forward 2026-09-28.
 
 Each phase gets its own `TenantIsolationIntegrationTest` coverage extension
 and a `CLAUDE.md` update recording what was verified live against the
@@ -1587,6 +1593,105 @@ free-text note" shape rather than that template's plain free-text-per
 Discharge/visit summary is the last remaining phase in this backlog, not
 touched here.
 
+## Phase 26: visit/encounter summary document
+
+Third and last phase of the full-EHR-breadth backlog. Four scoping
+questions were answered directly before any code was written, this time
+mostly with the broader/fuller option rather than the recommended
+minimal one (unlike phases 24/25): broad data scope (visit metadata,
+encounter note + phase-25 exam findings, prescriptions, vitals,
+allergies, immunizations), a real PDF (reusing the phase-16
+`InvoicePdfService`/OpenPDF pattern), staff **and** patient self-view
+access, and no sign requirement. New migration `V22__immunizations_visit_link.sql`.
+
+- **A real gap surfaced during research, closed by a fifth direct
+  question**: `Immunization` (phase 24) had no link to a specific visit
+  at all - only `patientId` + a date, so "immunizations given at this
+  visit" genuinely wasn't answerable. Rather than show unrelated full
+  history or drop the section, `Immunization` gained a nullable
+  `appointmentId` column; `CreateImmunizationRequest` grew a 6th optional
+  field (tenant-scoped validated, not a patient-match cross-check);
+  `ImmunizationRepository` gained `findAllByAppointmentIdAndTenantId`.
+  Existing rows stay unlinked - nothing to backfill from.
+- **`com.clinicops.visitsummary`** (new package) - `VisitSummaryPdfService`
+  has one method, `render(UUID appointmentId, UUID tenantId)`, used by
+  both controllers after they resolve ownership differently. Unlike
+  `Invoice` (which needed two `render*` methods only because it has two
+  structurally different owner types), a visit summary has exactly one
+  owner type, always an appointment, so one method suffices - it does all
+  its own lookups from scratch (`Appointment`/`Slot`/`Provider`/`Patient`
+  for the header via the same `resolvePatientName` guest-fallback pattern
+  `InvoicePdfService` already established; `Encounter` via
+  `EncounterRepository` directly, not `EncounterService.get` which throws
+  when missing - this needs graceful "no note yet" handling; `Prescription`;
+  `Vitals`; only `status = "active"` `Allergy` rows; and the newly
+  visit-linked `Immunization` rows). Every section prints only if it has
+  data - a freshly `booked` appointment with nothing documented yet still
+  renders a valid, mostly-empty PDF. Built with the identical OpenPDF
+  primitives `InvoicePdfService` already uses, no new dependency.
+- **`VisitSummaryController`** - `GET /api/appointments/{id}/visit-summary/pdf`
+  (staff, same 3-role gate `AppointmentInvoiceController`'s own PDF
+  endpoint uses, `TenantContext.require()`, PHI-audited as `"visit_summary"`
+  since this is a new aggregate view over clinical PHI) and
+  `GET /api/my-appointments/{id}/visit-summary/pdf` (patient - **this
+  app's first patient-facing document-download endpoint**, confirmed by
+  research that no precedent existed before this; resolved via
+  `CurrentUserService.resolveInternalUserId(jwt)` + `AppointmentRepository
+  .findByIdAndCustomerUserIdWithSlot`, never `TenantContext`, since
+  patient JWTs carry no org claim - the existing projection's own
+  `tenantId` feeds `render(...)` directly. Not PHI-audited, matching
+  `PhiAccessAuditService`'s own documented "staff-initiated access only"
+  scope, same as `PatientLabRequestController`'s patient endpoints).
+  Neither endpoint has a status gate, matching `Invoice`'s own precedent.
+- **Tests**: `VisitSummaryPdfServiceTest` (new, pure Mockito, genuinely
+  runs locally - 4/4 passing: full data across all six sources renders
+  correctly; a guest booking skips the allergy lookup entirely
+  (`verify(..., never())`) but immunizations still work since they're
+  keyed by `appointmentId` now, not `patientId`; a freshly-`booked`
+  appointment with nothing documented renders without crashing; a
+  patient with only resolved/unconfirmed allergies still renders
+  cleanly). `VisitSummaryControllerIntegrationTest` (new) - all three
+  staff roles succeed; cross-tenant 404; a patient generates their own
+  summary but a different patient's token gets 404 (never a
+  existence-leaking 403) on someone else's appointment; a patient token
+  is forbidden on the staff-only endpoint. `ImmunizationControllerIntegrationTest`
+  gained `immunizationAppointmentIdRoundTripsAndAnInvalidOneIs404`.
+  `mvn test` showed `Tests run: 331, Errors: 258` (up from 322/253 -
+  exactly 9 new tests: 4 pure-unit + 4 Testcontainers-blocked + 1
+  Testcontainers-blocked immunization case), 73 pure-unit tests now
+  passing (up from 69 - the 4 new `VisitSummaryPdfServiceTest` cases) -
+  not a regression.
+- **Live-verified against the real running stack** - `V22` confirmed
+  applied via `flyway_schema_history` and the container healthy. As
+  `demo-front-desk`, fetched the PDF for a real appointment already
+  carrying a signed encounter (chief complaint/assessment/plan/ICD-10),
+  vitals, and both an active allergy (Penicillin) and a resolved one
+  (Latex) - then created a real visit-linked immunization
+  (`POST /api/patients/{patientId}/immunizations` with `appointmentId`
+  set) through the actual API and re-fetched. Opened the resulting PDF
+  directly in the browser and visually confirmed every section: the
+  clinic letterhead, vitals table with a correctly computed BMI, the
+  Allergies table showing **only** Penicillin (Latex correctly excluded -
+  the active-only filter holding against real data, not just a mocked
+  test), the full clinical note, a Prescriptions table, and an
+  "Immunizations Given This Visit" table showing exactly the one
+  visit-linked dose just created. The Physical Exam Findings section was
+  correctly absent (this older encounter predates phase 25's exam
+  fields) - confirming the graceful-omission logic, not just the
+  happy-path table rendering. As `demo-patient`, fetched their own real
+  visit summary successfully, then confirmed a 404 (not 403) when
+  requesting `demo-front-desk`'s own appointment. Cross-checked the PHI
+  audit log directly in Postgres: exactly two `visit_summary` rows, both
+  `front_desk`-attributed from the staff fetches, correctly zero from the
+  patient's own self-view.
+- **No frontend yet** - backend only, closing out the full-EHR-breadth
+  backlog's backend work entirely. A "Download visit summary" link/button
+  (staff and patient side) is a natural next frontend-phase item.
+
+This closes the full-EHR-breadth backlog the user asked to pull forward
+2026-09-28 - immunizations, physical-exam findings, and now the visit
+summary document are all built.
+
 ## Phase 19: clinic-admin analytics dashboard
 
 Built 2026-09-24 at the user's direct request ("modify the dashboard
@@ -2267,6 +2372,24 @@ attributed to the patient's own account for a self-service cancel).
   verification in "Phase 25" above (a real signed encounter genuinely
   409ing, a real unsigned one genuinely accepting and persisting all 9
   systems), not by a local test run.
+- `VisitSummaryPdfServiceTest` (phase 26, new, pure Mockito - genuinely
+  runs locally, 4/4 passing) - full data across all six sources renders
+  a real PDF; a guest booking skips the allergy lookup entirely but
+  immunizations still resolve (keyed by `appointmentId`, not
+  `patientId`); a freshly-`booked` appointment with nothing documented
+  yet still renders without crashing; a patient with only resolved
+  allergies still renders cleanly. `VisitSummaryControllerIntegrationTest`
+  (new) - all three staff roles succeed; cross-tenant 404; a patient
+  generates their own summary, a different patient's token gets 404 on
+  it; the staff endpoint 403s a patient token.
+  `ImmunizationControllerIntegrationTest` gained
+  `immunizationAppointmentIdRoundTripsAndAnInvalidOneIs404`. `mvn test`
+  showed `Tests run: 331, Errors: 258` (up from 322/253 - exactly 9 new
+  tests), 73 pure-unit tests passing (up from 69). The Testcontainers
+  -only assertions are confirmed correct by the live browser verification
+  in "Phase 26" above (real PDF bytes visually inspected end to end,
+  including the active-only allergy filter holding against real data),
+  not by a local test run.
 
 ## Verified-session logs
 
@@ -2294,7 +2417,13 @@ append new ones there too, not here.
   "Frontend phase M" above. **Frontend phase R** (2026-09-28) closed the
   last module-set gap - `accountant` (phases 21/22) now has a real
   frontend matching `pharmacist`'s own phase-20 precedent, see "Frontend
-  phase R: accountant/finance UI" above.
+  phase R: accountant/finance UI" above. **A new gap, not yet closed**:
+  the full-EHR-breadth backlog (phases 24-26 - immunizations, physical
+  -exam findings, the visit-summary PDF) is backend-only, same as every
+  EHR-leaning phase's own initial build; no frontend phase has picked
+  these up yet. The visit-summary PDF in particular has no download
+  link/button anywhere in the UI yet, on either the staff or patient
+  side, even though the backend endpoint is fully live-verified.
 - ~~`clinic_admin` has no UI path to encounter documentation~~ **closed
   2026-09-15** - see "clinic_admin encounter-access fix" above.
   `front-desk/AppointmentDetail.jsx` is now shared with `clinic_admin` (a

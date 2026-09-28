@@ -1,5 +1,6 @@
 package com.clinicops.immunization;
 
+import com.clinicops.appointment.AppointmentRepository;
 import com.clinicops.patient.PatientRepository;
 import com.clinicops.phiaudit.PhiAccessAuditService;
 import com.clinicops.tenant.TenantContext;
@@ -36,16 +37,19 @@ public class ImmunizationController {
 
     private final ImmunizationRepository immunizationRepository;
     private final PatientRepository patientRepository;
+    private final AppointmentRepository appointmentRepository;
     private final CurrentUserService currentUserService;
     private final PhiAccessAuditService phiAccessAuditService;
 
     public ImmunizationController(
             ImmunizationRepository immunizationRepository,
             PatientRepository patientRepository,
+            AppointmentRepository appointmentRepository,
             CurrentUserService currentUserService,
             PhiAccessAuditService phiAccessAuditService) {
         this.immunizationRepository = immunizationRepository;
         this.patientRepository = patientRepository;
+        this.appointmentRepository = appointmentRepository;
         this.currentUserService = currentUserService;
         this.phiAccessAuditService = phiAccessAuditService;
     }
@@ -65,6 +69,10 @@ public class ImmunizationController {
             @PathVariable UUID patientId, @Valid @RequestBody CreateImmunizationRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
         requireOwnedPatient(patientId, tenantId);
+        if (request.appointmentId() != null) {
+            appointmentRepository.findByIdAndTenantId(request.appointmentId(), tenantId)
+                    .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + request.appointmentId()));
+        }
 
         Immunization immunization = new Immunization();
         immunization.setTenantId(tenantId);
@@ -74,6 +82,7 @@ public class ImmunizationController {
         immunization.setDoseNumber(request.doseNumber());
         immunization.setLotNumber(request.lotNumber());
         immunization.setSite(request.site());
+        immunization.setAppointmentId(request.appointmentId());
         immunization.setRecordedBy(currentUserService.resolveInternalUserId(jwt));
         immunization = immunizationRepository.save(immunization);
 

@@ -253,7 +253,7 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/patients/" + patient.getId() + "/immunizations").with(asFrontDesk("fd", bAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new com.clinicops.immunization.CreateImmunizationRequest(
-                                "Tetanus", java.time.LocalDate.now(), null, null, null))))
+                                "Tetanus", java.time.LocalDate.now(), null, null, null, null))))
                 .andExpect(status().isNotFound());
     }
 
