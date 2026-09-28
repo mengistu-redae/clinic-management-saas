@@ -1,0 +1,44 @@
+#### testing manually in browser 
+
+
+Go to http://localhost/ — that's the whole app through nginx.
+
+Login
+
+Click Log in, then sign in as one of these demo accounts (all password DemoPass123!):
+
+┌─────────────────────┬──────────────────────────────────┐
+│      Username       │               Role               │
+├─────────────────────┼──────────────────────────────────┤
+│ demo-platform-admin │ onboards clinics                 │
+├─────────────────────┼──────────────────────────────────┤
+│ demo-clinic-admin   │ manages one clinic (Demo Clinic) │
+├─────────────────────┼──────────────────────────────────┤
+│ demo-front-desk     │ walk-ins, check-in, payments     │
+├─────────────────────┼──────────────────────────────────┤
+│ demo-provider       │ clinical documentation           │
+├─────────────────────┼──────────────────────────────────┤
+│ demo-patient        │ patient portal                   │
+└─────────────────────┴──────────────────────────────────┘
+
+The login form is a two-step Keycloak page: type the username, submit, then the password field appears — don't try to type both at once.
+
+What to try, tied to what changed this session
+
+1. Clinic onboarding with auto-provisioned admin (as demo-platform-admin)
+Go to Clinics in the nav → fill in the create form, including the new "Initial admin email" / "Initial admin name" fields → submit. You'll see an amber banner with a one-time temporary password. Log out, log in as that new email with that password — Keycloak will force you to set a real password before continuing.
+
+2. Payment auto-charge on cancellation (as demo-front-desk or demo-clinic-admin)
+Book or find an appointment, cancel it (if a fee policy applies given how much notice remains, e.g. Demo Clinic has 50% under 2h notice / 100% under 0h). Reopen the appointment — a fee_auto_charged payment now appears automatically in the Payments section, with no one having typed it in.
+
+3. PHI access audit log — this one has no frontend page yet (backend only). To see it as demo-clinic-admin, open the browser's DevTools console on any page of the app and run:
+await fetch('/api/clinic/phi-access-log', {credentials:'include'}).then(r => r.json())
+That returns the log of who looked at / changed which patient's data. Filter to one patient with ?patientId=<uuid>.
+
+4. Notification worker — nothing visible in the UI; it just means booking/cancelling/rescheduling now gets picked up and logged (as [STUB EMAIL] ...) in the spring-boot-api container logs within ~10 seconds instead of sitting unsent forever. You can watch it with:
+docker logs -f clinic-management-saas-spring-boot-api-1
+
+If you ever need to restart the stack fresh: docker compose up --build -d from the repo root (D:\git-mengistu\SpringBoot\clinic-management-saas).
+
+
+
