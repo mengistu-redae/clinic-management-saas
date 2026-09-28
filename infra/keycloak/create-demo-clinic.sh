@@ -1,5 +1,12 @@
 #!/bin/bash
-# Creates one demo Organization ("Demo Clinic") and adds demo-clinic-admin as a member.
+# Creates one demo Organization ("Demo Clinic") and adds every clinic-scoped
+# demo user (clinic_admin/provider/front_desk/pharmacist/accountant - not
+# patient or platform_admin, neither of which is tied to a clinic) as a
+# member. realm-export.json's plain "users" array creates the accounts and
+# their realm roles on import, but Organization membership isn't part of
+# that same import (see the reliability note below) - this script is the
+# other half, meant to be run once right after `docker compose up` finishes
+# importing the realm.
 #
 # NOTE ON RELIABILITY: the Organizations REST API is newer than the rest of Keycloak's
 # admin API and its exact payload shape can vary slightly between Keycloak versions.
@@ -35,21 +42,47 @@ ORG_RESPONSE=$(curl -s -i -X POST "$KEYCLOAK_URL/admin/realms/$REALM/organizatio
 ORG_ID=$(echo "$ORG_RESPONSE" | grep -i "^location:" | sed -E 's#.*/organizations/([a-f0-9-]+).*#\1#' | tr -d '\r')
 
 if [ -z "$ORG_ID" ]; then
-  echo "Could not determine the new org id from the response below - create it manually in the Admin Console instead:"
+  # Most likely a re-run against an environment that already has this org
+  # (a 409 on the alias, no Location header) - idempotent fallback: look it
+  # up by alias instead of failing outright. `?search=` on this endpoint
+  # hasn't proven reliable in practice, so list every org and match by
+  # alias rather than relying on server-side filtering.
+  echo "No new org created (already exists?) - looking up '$ORG_ALIAS' by alias instead..."
+  ORG_ID=$(curl -s -X GET "$KEYCLOAK_URL/admin/realms/$REALM/organizations" \
+    -H "Authorization: Bearer $TOKEN" \
+    | python3 -c "import sys,json; orgs=json.load(sys.stdin); m=[o for o in orgs if o.get('alias')=='$ORG_ALIAS']; print(m[0]['id']) if m else print('')")
+fi
+
+if [ -z "$ORG_ID" ]; then
+  echo "Could not create or find the '$ORG_ALIAS' organization - create it manually in the Admin Console instead. Original create response:"
   echo "$ORG_RESPONSE"
   exit 1
 fi
-echo "Created organization: $ORG_ID"
+echo "Using organization: $ORG_ID"
 
-echo "Looking up demo-clinic-admin user id..."
-USER_ID=$(curl -s -X GET "$KEYCLOAK_URL/admin/realms/$REALM/users?username=demo-clinic-admin&exact=true" \
-  -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+# Every realm-export.json demo user tied to one clinic - clinic_admin,
+# provider, front_desk, pharmacist, accountant. Not demo-patient (patients
+# aren't Organization members at all) or demo-platform-admin (acts across
+# every tenant, deliberately not scoped to one org).
+CLINIC_STAFF_USERS=(demo-clinic-admin demo-provider demo-front-desk demo-pharmacist demo-accountant)
 
-echo "Adding demo-clinic-admin ($USER_ID) as a member of the organization..."
-curl -s -X POST "$KEYCLOAK_URL/admin/realms/$REALM/organizations/$ORG_ID/members" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "\"$USER_ID\""
+for USERNAME in "${CLINIC_STAFF_USERS[@]}"; do
+  echo "Looking up $USERNAME user id..."
+  USER_ID=$(curl -s -X GET "$KEYCLOAK_URL/admin/realms/$REALM/users?username=$USERNAME&exact=true" \
+    -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['id']) if d else print('')")
+
+  if [ -z "$USER_ID" ]; then
+    echo "  $USERNAME not found in this realm - skipping (realm-export.json may not have been imported, or the user was renamed)."
+    continue
+  fi
+
+  echo "Adding $USERNAME ($USER_ID) as a member of the organization..."
+  curl -s -X POST "$KEYCLOAK_URL/admin/realms/$REALM/organizations/$ORG_ID/members" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "\"$USER_ID\""
+  echo ""
+done
 
 echo ""
 echo "Done. Organization id (Keycloak-internal, not what goes in the app's db): $ORG_ID"

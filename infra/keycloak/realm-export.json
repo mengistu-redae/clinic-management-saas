@@ -45,7 +45,7 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "changeme", "temporary": true }
+        { "type": "password", "value": "DemoPass123!", "temporary": false }
       ],
       "realmRoles": ["clinic_admin"]
     },
@@ -55,7 +55,7 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "changeme", "temporary": true }
+        { "type": "password", "value": "DemoPass123!", "temporary": false }
       ],
       "realmRoles": ["patient"]
     },
@@ -65,7 +65,7 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "changeme", "temporary": true }
+        { "type": "password", "value": "DemoPass123!", "temporary": false }
       ],
       "realmRoles": ["provider"]
     },
@@ -75,9 +75,39 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "changeme", "temporary": true }
+        { "type": "password", "value": "DemoPass123!", "temporary": false }
       ],
       "realmRoles": ["platform_admin"]
+    },
+    {
+      "username": "demo-front-desk",
+      "email": "frontdesk@democlinic.example",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "DemoPass123!", "temporary": false }
+      ],
+      "realmRoles": ["front_desk"]
+    },
+    {
+      "username": "demo-pharmacist",
+      "email": "pharmacist@democlinic.example",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "DemoPass123!", "temporary": false }
+      ],
+      "realmRoles": ["pharmacist"]
+    },
+    {
+      "username": "demo-accountant",
+      "email": "accountant@democlinic.example",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "DemoPass123!", "temporary": false }
+      ],
+      "realmRoles": ["accountant"]
     }
   ]
 }

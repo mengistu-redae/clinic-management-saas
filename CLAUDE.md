@@ -3945,11 +3945,32 @@ append new ones there too, not here.
   new "Document encounter" link on it, gated by role + status), and
   `/provider/appointments/{id}/encounter`'s `RequireRole` widened to allow
   both roles.
-- `demo-front-desk` (created live for frontend-phase-A verification)
-  isn't yet in `infra/keycloak/realm-export.json` - same gap phase 4/6
-  already left for `demo-provider`/`demo-platform-admin`. Recreate it via
-  the admin REST API (realm role + org membership + password reset) on a
-  from-scratch environment until someone fixes the realm export properly.
+- ~~`demo-front-desk` isn't yet in `infra/keycloak/realm-export.json`~~
+  **closed 2026-09-28** - all seven demo users
+  (`demo-clinic-admin`/`demo-patient`/`demo-provider`/`demo-platform-admin`/
+  `demo-front-desk`/`demo-pharmacist`/`demo-accountant`) are now declared
+  there with their real realm roles, and all use the actually-documented
+  working credential (`DemoPass123!`, non-temporary) instead of the stale
+  `changeme`/temporary value the file had carried since phase 1 (already
+  out of date with reality per the `demo-keycloak-credentials` memory -
+  every one of these had already been reset by hand in some earlier
+  session). `create-demo-clinic.sh` (the org-membership half realm
+  -export's plain `users` array can't cover) now loops over every
+  clinic-scoped demo user (`clinic_admin`/`provider`/`front_desk`/
+  `pharmacist`/`accountant` - not `patient`/`platform_admin`, neither tied
+  to a clinic) instead of only `demo-clinic-admin`, and is now idempotent
+  itself - a re-run looks up the existing `demo-clinic` org by alias
+  instead of failing when the org already exists. **Verified live against
+  the real running dev Keycloak** (not a genuine from-scratch import - that
+  would mean wiping this environment's own volumes, not attempted here):
+  the idempotent org-lookup fallback correctly found the existing org, and
+  the membership loop correctly resolved all 5 usernames including the 3
+  new ones - all 5 came back "already a member," which incidentally also
+  corrects this gap's own stale claim that `demo-provider` had the same
+  missing-membership problem as `demo-front-desk`; it didn't, by the time
+  this was actually checked. A genuine from-scratch realm-import test (wipe
+  the Keycloak volume, `docker compose up`, run this script once) is still
+  owed, not claimed here.
 - No automated frontend test suite (no Jest/Vitest/React Testing Library
   set up in `node-bff/frontend/`) - every frontend claim above is `npm run
   build` succeeding plus a real, manual browser walkthrough, not a repeatable
@@ -4129,3 +4150,11 @@ append new ones there too, not here.
       themselves couldn't be re-run locally (still Windows-npipe-blocked)
       - confirmed correct by re-reading the exact CI failure output
       against the fixed code, not by re-running the suite.
+  - **Confirmed green on the real `ubuntu-latest` runner once pushed
+    (2026-09-28, commit `f5b7954`)** - the first fully passing CI run
+    this repo has ever had: `node-bff (npm test)`, `spring-boot-api (mvn
+    verify)`, and `frontend (vite build)` all `success`
+    (`github.com/mengistu-redae/clinic-management-saas/actions/runs/36446430246`).
+    Closes this gap for real, not just "fixed and assumed" - the fixes
+    above were verified against the actual CI environment, the one place
+    this suite has ever been provably runnable on this project.
