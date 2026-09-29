@@ -814,6 +814,7 @@
   "pharmacistPage": {
     "dashboardTitle": "ፋርማሲ",
     "pendingDispenses": "በመጠባበቅ ላይ ያሉ ስርጭቶች",
+    "suggestedMedicationHint": "ከማዘዣው በራስ-ሰር የተጠቆመ - ከማከፋፈልዎ በፊት እባክዎ ያረጋግጡ",
     "medication": "መድሃኒት",
     "dosage": "መጠን",
     "progress": "እድገት",

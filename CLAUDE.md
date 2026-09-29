@@ -1781,18 +1781,8 @@ full write-up.
 **31. Pharmacy billing integration** - **built 2026-09-29**. See "Phase
 31: pharmacy billing integration" below for the full write-up.
 
-**32. Smarter dispensing workflow** - adds *suggestions* on top of the
-existing manual-pick flow, deliberately not reversing phase 20's own
-pinned "no drug-name-matching logic" / "no automatic FEFO allocation"
-decisions at the data level: `GET /api/pharmacy/queue` gains a
-server-side fuzzy-matched `suggestedMedicationId` hint per prescription
-line (a real match still has to be explicitly confirmed by the
-pharmacist - `Prescription.medicationName` itself stays untouched free
-text, no new coupling introduced), and stock batches returned for a
-selected medication come pre-sorted earliest-expiry-first (FEFO order as
-a sort, not an automatic pick - the pharmacist still explicitly chooses
-the batch, same "staff makes the explicit call" convention `DispenseRecord`'s
-own javadoc already commits to).
+**32. Smarter dispensing workflow** - **built 2026-09-29**. See "Phase
+32: smarter dispensing workflow" below for the full write-up.
 
 **33. Patient-facing pharmacy features** - a new ownership-scoped
 `GET /api/my-prescriptions` (resolved via `customer_user_id`, same
@@ -2447,6 +2437,113 @@ keep all three owner types symmetric and reuse already-built machinery.
 - **Backend only** - no frontend this phase, same convention as 27-30.
   No new Keycloak role - `pharmacist` already exists (phase 20). No
   `node-bff`/`PUBLIC_ROUTES` change.
+
+## Phase 32: smarter dispensing workflow
+
+Sixth of the ten sequential phases sketched under "Pharmacy expansion +
+stock management module" above (built 2026-09-29, same session as
+27-31). Adds *suggestions* on top of the existing manual-pick dispense
+flow, deliberately not reversing phase 20's own pinned "no drug-name
+-matching logic" / "no automatic FEFO allocation" decisions at the data
+level - the pharmacist still makes every real choice, the system just
+narrows it down. No new migration - this phase adds no new
+tables/columns at all.
+
+One direct scoping question was put to the user before designing this
+session: unlike phases 27-31 (all backend-only, since none of them had
+an existing UI to plug into), this suggestion is only useful if a
+pharmacist can actually see it - there's a real, live pharmacist
+Dashboard (`pages/pharmacist/Dashboard.jsx`'s `DispensePanel`, built
+phase 20) this naturally plugs into. Answered **include the frontend
+wiring**, the recommended option - the first pharmacy-expansion phase
+this session to touch the frontend.
+
+- **`GET /api/pharmacy/queue` gains `suggestedMedicationId`** -
+  `PrescriptionDispenseView` (the existing queue projection) turned out
+  to be a plain interface tied directly to `findPendingDispense`'s
+  native-query column aliases, with no room for a computed field
+  without wrapping it. New **`PrescriptionQueueEntry`** record
+  (`com.clinicops.pharmacy`) carries every field the old view already
+  exposed (identical component names, so Jackson serializes
+  byte-identical JSON for every pre-existing field - purely additive,
+  confirmed via grep that `findPendingDispense` had exactly one
+  consumer anywhere in the codebase, so this was safe to change) plus
+  the new nullable field. `DispenseController.queue()` fetches the
+  tenant's active medications once and maps each row through a small
+  private `suggestMedication(...)` helper - same "controller composes
+  repositories directly for simple read-only aggregation" precedent
+  `InventoryItemController.reorderAlerts`/`ClinicAnalyticsController`
+  already established, no new service bean.
+- **The match itself is deliberately not real fuzzy matching** - the
+  same bidirectional, case-insensitive substring check phase 27's own
+  allergy-conflict check already uses, first match wins, no
+  scoring/ranking. Same "keep minimal in v1" convention this app
+  already applies to ICD-10/`Prescription.route` - a real
+  fuzzy-matching library or a Postgres trigram-similarity extension
+  would be real added infrastructure for a feature this sketch itself
+  only ever asked to be a *hint*.
+- **Stock batches for a medication come back FEFO-sorted** - new
+  `StockBatchRepository.findAllByMedicationIdAndTenantIdOrderByExpiryDateAsc`
+  (a plain Spring Data derived query; confirmed live that Postgres's
+  own default NULL-ordering on `ASC` already sorts a no-expiry batch
+  last, no explicit `NULLS LAST` clause needed).
+  `MedicationController.stockBatches` switches to it - the *only* code
+  change; the existing frontend (`useStockBatches`, the `<select>`
+  dropdown) needed **zero** changes to benefit, since array order from
+  the API flows straight through to the rendered options list. Scoped
+  to pharmacy/medication batches only - `InventoryItemController`'s own
+  general-inventory stock-batches endpoint is untouched, matching the
+  sketch's own "smarter *dispensing*" framing.
+- **Frontend: `pages/pharmacist/Dashboard.jsx`'s `DispensePanel`** -
+  `medicationId` state now initializes from
+  `prescription.suggestedMedicationId || ''` instead of always
+  starting empty (the pharmacist can still change the selection
+  freely - a plain pre-filled `<select>`, not a locked value); a small
+  muted hint line appears under the Medication field only when a
+  suggestion is present (`pharmacistPage.suggestedMedicationHint`, new
+  key added to both `en.json`/`am.json` in lockstep, confirmed 100%
+  key-parity afterward except the two pre-existing intentional
+  English-only pluralization keys). No other frontend file changes
+  needed - both backend changes reach the UI for free through the
+  hooks that already existed.
+- **Tests**: no new pure-unit test class or new frontend Vitest
+  coverage - `DispensePanel` isn't part of the "shared components"
+  scope Frontend phase S deliberately limited itself to, and the
+  matching/sort logic is simple enough to cover directly in
+  Testcontainers integration tests, same bar this session's other
+  CRUD-shaped phases used. `DispenseControllerIntegrationTest` gained 2
+  cases (a queue row's `suggestedMedicationId` correctly matches an
+  overlapping catalog medication; stays absent when nothing matches).
+  `MedicationControllerIntegrationTest` gained 1 case (stock batches
+  come back earliest-expiry-first with a no-expiry batch sorting
+  last). Confirmed via a clean `mvn clean test-compile` and a full
+  `mvn test` run showing `Tests run: 408, Errors: 320` (up from
+  405/317 - exactly the 3 new test methods, all Testcontainers-blocked,
+  no pure-unit count change), every failure the identical pre-existing
+  `Could not find a valid Docker environment` wall - not a regression.
+  `npm run build` clean, `npm test` (36/36) unaffected.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api
+  node-bff` + `docker compose restart nginx` (the known stale
+  -upstream-IP gotcha after a `node-bff` recreate), both containers
+  healthy. As a real `demo-pharmacist` login: confirmed via the real
+  API that all three genuine queue rows from earlier sessions'
+  verification work now carry a correct `suggestedMedicationId`
+  matching a real catalog medication; created three new stock batches
+  at different expiry dates (including one with no expiry at all) and
+  confirmed via a direct API call they came back earliest-expiry-first
+  with the no-expiry batch last. Then confirmed the same thing **in the
+  actual rendered browser UI** (Dark theme + Amharic, not simulated) -
+  expanding a real queue row showed "Amoxicillin 500mg" already
+  pre-selected in the Medication dropdown with the Amharic hint text
+  correctly rendered beneath it, and reading the real `<select>`'s own
+  option order confirmed the exact same FEFO ordering the API returned
+  (`EARLY-VERIFY (2027-01-01)` -> `LATE-VERIFY (2027-06-01)` ->
+  `BATCH-001 (no expiry)` -> `NO-EXPIRY-VERIFY (no expiry)`).
+- **Backend + one small, targeted frontend change** - the first
+  pharmacy-expansion phase this session to touch the frontend, for the
+  reason explained above. No new Keycloak role, no
+  `node-bff`/`PUBLIC_ROUTES` change, no new migration.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3367,6 +3464,22 @@ attributed to the patient's own account for a self-service cancel).
   `dispense_payment` journal entry with balanced lines, and a real 403
   confirming `demo-provider` cannot reach the new dispense billing
   endpoints), not by a local test run.
+- `DispenseControllerIntegrationTest`/`MedicationControllerIntegrationTest`
+  (phase 32, existing files extended, 3 new cases total) - a queue
+  row's `suggestedMedicationId` correctly matches an overlapping
+  catalog medication and stays absent when nothing matches; stock
+  batches for a medication come back earliest-expiry-first with a
+  no-expiry batch sorting last. No new pure-unit test class - same bar
+  this session's other CRUD-shaped phases used. Same Testcontainers
+  wall as every other integration test on this machine - `mvn test`
+  showed `Tests run: 408, Errors: 320` (up from 405/317 - exactly the
+  3 new test methods, all Testcontainers-blocked), no pure-unit count
+  change. The Testcontainers-only assertions are confirmed correct by
+  the live browser verification in "Phase 32" above (all three real
+  queue rows correctly suggested a real catalog medication, and the
+  real rendered `<select>` in the actual browser - not just the API -
+  showed the exact same FEFO order). Frontend `npm run build` clean,
+  `npm test` (36/36) unaffected by the `DispensePanel` change.
 
 ## Verified-session logs
 

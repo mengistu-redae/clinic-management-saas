@@ -89,7 +89,7 @@ export default function PharmacistDashboard() {
 function DispensePanel({ prescription, onDispensed }) {
   const { t } = useTranslation();
   const { data: medications } = useMedications(true, 'active');
-  const [medicationId, setMedicationId] = useState('');
+  const [medicationId, setMedicationId] = useState(prescription.suggestedMedicationId || '');
   const [batchId, setBatchId] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [notes, setNotes] = useState('');
@@ -133,6 +133,9 @@ function DispensePanel({ prescription, onDispensed }) {
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
+          {prescription.suggestedMedicationId && (
+            <span className="mt-1 block text-xs text-ink-muted">{t('pharmacistPage.suggestedMedicationHint')}</span>
+          )}
         </Field>
         <Field label={t('pharmacistPage.stockBatch')}>
           <select value={batchId} onChange={(e) => setBatchId(e.target.value)} disabled={!medicationId} className={`${inputClass} w-56`}>

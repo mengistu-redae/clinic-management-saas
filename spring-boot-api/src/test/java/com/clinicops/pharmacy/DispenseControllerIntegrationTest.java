@@ -180,4 +180,27 @@ class DispenseControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/prescriptions/" + prescription.getId() + "/dispense-records").with(asFrontDesk("fd", orgAlias)))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    void queueSuggestsAMatchingCatalogMedicationWhenTheFreeTextNameOverlaps() throws Exception {
+        Clinic clinic = createClinic("dispense-suggest-" + UUID.randomUUID(), "Suggest Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Prescription prescription = seedActivePrescription(clinic.getId(), "Amoxicillin 500mg", null);
+        Medication medication = createMedication(clinic.getId(), "Amoxicillin");
+
+        mockMvc.perform(get("/api/pharmacy/queue").with(asPharmacist("pharm", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].suggestedMedicationId").value(medication.getId().toString()));
+    }
+
+    @Test
+    void queueSuggestsNothingWhenNoActiveMedicationMatches() throws Exception {
+        Clinic clinic = createClinic("dispense-nosuggest-" + UUID.randomUUID(), "No Suggest Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        seedActivePrescription(clinic.getId(), "Zzzephyrexol 500mg", null);
+
+        mockMvc.perform(get("/api/pharmacy/queue").with(asPharmacist("pharm", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].suggestedMedicationId").doesNotExist());
+    }
 }

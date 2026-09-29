@@ -816,6 +816,7 @@
   "pharmacistPage": {
     "dashboardTitle": "Pharmacy",
     "pendingDispenses": "Pending dispenses",
+    "suggestedMedicationHint": "Auto-suggested from the prescription - please verify before dispensing",
     "medication": "Medication",
     "dosage": "Dosage",
     "progress": "Progress",

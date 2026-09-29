@@ -135,12 +135,13 @@ public class MedicationController {
         return medicationRepository.save(medication);
     }
 
+    /** Phase 32 - FEFO-sorted (earliest expiry first) - a sort, not an automatic pick; the pharmacist still explicitly chooses the batch. */
     @GetMapping("/api/clinic/medications/{id}/stock-batches")
     @PreAuthorize("hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')")
     public List<StockBatch> stockBatches(@PathVariable UUID id) {
         UUID tenantId = TenantContext.require();
         requireOwnedMedication(id, tenantId);
-        return stockBatchRepository.findAllByMedicationIdAndTenantId(id, tenantId);
+        return stockBatchRepository.findAllByMedicationIdAndTenantIdOrderByExpiryDateAsc(id, tenantId);
     }
 
     /** Receives a new batch into stock - quantityOnHand starts equal to quantityReceived. */

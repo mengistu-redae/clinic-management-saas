@@ -148,4 +148,30 @@ class MedicationControllerIntegrationTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(new UpdateControlledSubstanceScheduleRequest("schedule_ix"))))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void stockBatchesComeBackEarliestExpiryFirstWithNoExpiryBatchLast() throws Exception {
+        Clinic clinic = createClinic("med-fefo-" + UUID.randomUUID(), "FEFO Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Medication medication = createMedication(clinic.getId(), "Amoxicillin");
+
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/stock-batches").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateStockBatchRequest("NO-EXPIRY", 10, null))))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/stock-batches").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateStockBatchRequest("LATE", 10, java.time.LocalDate.of(2027, 6, 1)))))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/stock-batches").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateStockBatchRequest("EARLY", 10, java.time.LocalDate.of(2027, 1, 1)))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/clinic/medications/" + medication.getId() + "/stock-batches").with(asPharmacist("pharm", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].batchNumber").value("EARLY"))
+                .andExpect(jsonPath("$[1].batchNumber").value("LATE"))
+                .andExpect(jsonPath("$[2].batchNumber").value("NO-EXPIRY"));
+    }
 }

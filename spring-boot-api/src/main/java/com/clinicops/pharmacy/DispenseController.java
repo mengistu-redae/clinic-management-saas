@@ -34,23 +34,54 @@ public class DispenseController {
     private final PrescriptionRepository prescriptionRepository;
     private final DispenseService dispenseService;
     private final DispenseRecordRepository dispenseRecordRepository;
+    private final MedicationRepository medicationRepository;
     private final CurrentUserService currentUserService;
 
     public DispenseController(
             PrescriptionRepository prescriptionRepository,
             DispenseService dispenseService,
             DispenseRecordRepository dispenseRecordRepository,
+            MedicationRepository medicationRepository,
             CurrentUserService currentUserService) {
         this.prescriptionRepository = prescriptionRepository;
         this.dispenseService = dispenseService;
         this.dispenseRecordRepository = dispenseRecordRepository;
+        this.medicationRepository = medicationRepository;
         this.currentUserService = currentUserService;
     }
 
     @GetMapping("/api/pharmacy/queue")
     @PreAuthorize("hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')")
-    public List<PrescriptionDispenseView> queue() {
-        return prescriptionRepository.findPendingDispense(TenantContext.require());
+    public List<PrescriptionQueueEntry> queue() {
+        UUID tenantId = TenantContext.require();
+        List<Medication> activeMedications = medicationRepository.findAllByTenantIdAndStatus(tenantId, "active");
+        return prescriptionRepository.findPendingDispense(tenantId).stream()
+                .map(view -> toQueueEntry(view, activeMedications))
+                .toList();
+    }
+
+    private PrescriptionQueueEntry toQueueEntry(PrescriptionDispenseView view, List<Medication> activeMedications) {
+        return new PrescriptionQueueEntry(
+                view.getId(), view.getEncounterId(), view.getPatientId(), view.getContactName(),
+                view.getPatientName(), view.getMedicationName(), view.getDosage(), view.getInstructions(),
+                view.getRoute(), view.getFrequency(), view.getDuration(), view.getQuantityPrescribed(),
+                view.getRefillsAllowed(), view.getStatus(), view.getCreatedAt(), view.getQuantityAlreadyDispensed(),
+                suggestMedication(view.getMedicationName(), activeMedications));
+    }
+
+    /** A deliberately simple bidirectional case-insensitive substring match, same shape phase 27's own allergy-conflict check already uses - not real fuzzy matching, first match wins. */
+    private UUID suggestMedication(String prescriptionMedicationName, List<Medication> activeMedications) {
+        if (prescriptionMedicationName == null || prescriptionMedicationName.isBlank()) {
+            return null;
+        }
+        String needle = prescriptionMedicationName.toLowerCase();
+        for (Medication medication : activeMedications) {
+            String candidate = medication.getName().toLowerCase();
+            if (needle.contains(candidate) || candidate.contains(needle)) {
+                return medication.getId();
+            }
+        }
+        return null;
     }
 
     /** Phase 31 - closes a real gap: no way to read a DispenseRecord existed before a billing flow needed to look one up. */
