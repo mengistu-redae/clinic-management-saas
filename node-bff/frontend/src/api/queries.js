@@ -1029,6 +1029,15 @@ export function useDispensePrescription(prescriptionId) {
   });
 }
 
+/** Pharmacist dashboard analytics (phase 34) - see PharmacyAnalyticsController. Same shape as useClinicAnalytics; `days` defaults server-side to 30 when omitted. */
+export function usePharmacyAnalytics(enabled, days) {
+  return useQuery({
+    queryKey: ['pharmacy-analytics', days],
+    queryFn: () => apiGet(`/api/pharmacy/analytics${days ? `?days=${days}` : ''}`),
+    enabled,
+  });
+}
+
 // ---- accounting (phase 21 - AccountController/JournalController) ----
 
 export function useAccounts(enabled, status) {

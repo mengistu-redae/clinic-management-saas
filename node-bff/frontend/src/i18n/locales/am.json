@@ -859,6 +859,13 @@
     "expiringSoonCount": "{{count}} ጊዜው ያለፈ/እያለቀ",
     "dispenseConfirmed": "{{quantity}} የ{{medication}} ተሰጥቷል።"
   },
+  "pharmacistAnalytics": {
+    "totalDispensedWindow": "የተሰጠ፣ የመጨረሻዎቹ {{days}} ቀናት",
+    "dispensingVolumeTitle": "የመድሃኒት አሰጣጥ መጠን",
+    "dispensingVolumeSubtitle": "በቀን የተሰጠ መጠን",
+    "medicationDispenseCountsTitle": "በብዛት የተሰጡ መድሃኒቶች",
+    "medicationDispenseCountsSubtitle": "በተመረጠው ጊዜ ውስጥ ጠቅላላ መጠን"
+  },
   "accountType": {
     "asset": "ንብረት",
     "liability": "ዕዳ",

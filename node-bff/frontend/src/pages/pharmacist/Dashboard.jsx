@@ -1,15 +1,21 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { usePharmacyQueue, useMedications, useStockBatches, useDispensePrescription } from '../../api/queries.js';
+import { usePharmacyQueue, useMedications, useStockBatches, useDispensePrescription, usePharmacyAnalytics } from '../../api/queries.js';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
+import Skeleton from '../../components/Skeleton.jsx';
+import ChartCard from '../../components/analytics/ChartCard.jsx';
+import DispenseVolumeChart from '../../components/analytics/DispenseVolumeChart.jsx';
+import MedicationDispenseCountChart from '../../components/analytics/MedicationDispenseCountChart.jsx';
 
 const inputClass =
   'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+
+const WINDOW_OPTIONS = [7, 30, 90];
 
 /**
  * The pharmacist's own worklist - GET /api/pharmacy/queue, active
@@ -29,6 +35,8 @@ export default function PharmacistDashboard() {
   const { t } = useTranslation();
   const queue = usePharmacyQueue(true);
   const [lastDispensed, setLastDispensed] = useState(null);
+  const [windowDays, setWindowDays] = useState(30);
+  const analytics = usePharmacyAnalytics(true, windowDays);
 
   function patientName(row) {
     return row.patientName || row.contactName || t('frontDeskAppointments.guest');
@@ -82,6 +90,59 @@ export default function PharmacistDashboard() {
         emptyTitle={t('pharmacistPage.emptyQueueTitle')}
         emptyDescription={t('pharmacistPage.emptyQueueDescription')}
       />
+
+      <div className="mt-8 flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-bold text-ink">{t('clinicAnalytics.sectionTitle')}</h2>
+          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 text-xs font-medium" role="group" aria-label={t('clinicAnalytics.windowLabel', { days: windowDays })}>
+            {WINDOW_OPTIONS.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setWindowDays(d)}
+                aria-pressed={windowDays === d}
+                className={`rounded-md px-2.5 py-1 transition-colors ${
+                  windowDays === d ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
+                }`}
+              >
+                {t(`clinicAnalytics.days${d}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {analytics.isError && (
+          <ErrorBanner message={analytics.error?.message || t('clinicAnalytics.errorLoad')} onRetry={analytics.refetch} />
+        )}
+
+        {analytics.isLoading && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+        )}
+
+        {!analytics.isLoading && !analytics.isError && analytics.data && (
+          <>
+            <div className="max-w-xs">
+              <StatCard
+                label={t('pharmacistAnalytics.totalDispensedWindow', { days: windowDays })}
+                value={analytics.data.dispensingVolume.reduce((s, d) => s + Number(d.total), 0)}
+                mono
+              />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ChartCard title={t('pharmacistAnalytics.dispensingVolumeTitle')} subtitle={t('pharmacistAnalytics.dispensingVolumeSubtitle')}>
+                <DispenseVolumeChart data={analytics.data.dispensingVolume} />
+              </ChartCard>
+              <ChartCard title={t('pharmacistAnalytics.medicationDispenseCountsTitle')} subtitle={t('pharmacistAnalytics.medicationDispenseCountsSubtitle')}>
+                <MedicationDispenseCountChart data={analytics.data.medicationDispenseCounts} />
+              </ChartCard>
+            </div>
+          </>
+        )}
+      </div>
     </PageContainer>
   );
 }

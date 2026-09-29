@@ -861,6 +861,13 @@
     "expiringSoonCount": "{{count}} expired/expiring",
     "dispenseConfirmed": "Dispensed {{quantity}} of {{medication}}."
   },
+  "pharmacistAnalytics": {
+    "totalDispensedWindow": "Dispensed, last {{days}} days",
+    "dispensingVolumeTitle": "Dispensing volume",
+    "dispensingVolumeSubtitle": "Units dispensed per day",
+    "medicationDispenseCountsTitle": "Top dispensed medications",
+    "medicationDispenseCountsSubtitle": "Total units in the selected window"
+  },
   "accountType": {
     "asset": "Asset",
     "liability": "Liability",

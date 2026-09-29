@@ -497,6 +497,18 @@ public abstract class AbstractIntegrationTest {
         return stockBatchRepository.save(batch);
     }
 
+    /** Phase 34 - a direct insert (not through DispenseService) so a test can control createdAt for day-bucketed analytics assertions. createdAt must be set before the first save - the column is updatable=false, so a later save wouldn't move it. */
+    protected DispenseRecord createDispenseRecord(UUID tenantId, UUID medicationId, int quantityDispensed, java.time.Instant createdAt) {
+        DispenseRecord record = new DispenseRecord();
+        record.setTenantId(tenantId);
+        record.setMedicationId(medicationId);
+        record.setPrescriptionId(UUID.randomUUID());
+        record.setStockBatchId(UUID.randomUUID());
+        record.setQuantityDispensed(quantityDispensed);
+        record.setCreatedAt(createdAt);
+        return dispenseRecordRepository.save(record);
+    }
+
     protected InventoryItem createInventoryItem(UUID tenantId, String name) {
         InventoryItem item = new InventoryItem();
         item.setTenantId(tenantId);

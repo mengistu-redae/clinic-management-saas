@@ -1788,19 +1788,8 @@ full write-up.
 "Phase 33: patient-facing pharmacy features" below for the full
 write-up.
 
-**34. Unified reporting & analytics** (broadened from the original
-"pharmacy-only" sketch, built last since it aggregates everything above
-it - same "aggregates data from everything built before it" reasoning
-phase 19 itself was built out-of-order for) - `GET /api/pharmacy/analytics?days=`
-and a new `GET /api/inventory/analytics?days=` mirror `ClinicAnalyticsController`'s
-exact bundled-response shape (phase 19): dispensing volume over time,
-current inventory valuation (`SUM(quantityOnHand * unitPrice)` across
-active batches, both `Medication`- and `InventoryItem`-owned), an
-expiring-soon list, the phase-29 low-stock list, per-medication dispense
-counts, and asset status counts. Frontend charts reuse the
-dataviz-skill-validated palette and shared chart components phase
-19/frontend-phase-O already built, rather than re-doing that validation
-work.
+**34. Unified reporting & analytics** - **built 2026-09-29**. See "Phase
+34: unified reporting & analytics" below for the full write-up.
 
 Each phase gets the same treatment every other phase in this project
 does once actually built: its own migration, its own
@@ -2659,6 +2648,189 @@ dedicated frontend phase later). New migration
   above. No new Keycloak role - `patient`/`pharmacist`/`clinic_admin` all
   already exist. No `node-bff`/`PUBLIC_ROUTES` change (patient
   -authenticated, not public).
+
+## Phase 34: unified reporting & analytics
+
+Last of the ten sequential phases sketched under "Pharmacy expansion +
+stock management module" above (built 2026-09-29, same session as
+27-33) - closes out that whole module set. Two new bundled analytics
+endpoints mirror `ClinicAnalyticsController`'s exact shape (phase 19):
+`GET /api/pharmacy/analytics?days=` and `GET /api/inventory/analytics?days=`.
+Both new controllers live in `com.clinicops.analytics` (co-located with
+phase 19, reaching into `com.clinicops.pharmacy`/`com.clinicops.inventory`
+repositories directly - the same "plain read composition, no dedicated
+service bean" convention `ClinicAnalyticsController`'s own javadoc
+already documents). No new migration - purely new read queries against
+existing tables/columns.
+
+One direct scoping question was put to the user before designing this
+session: the sketch's own text commits to frontend charts, but general
+inventory (phases 29/30) has zero frontend at all (no `pages/inventory/`
+directory, no nav entry), unlike pharmacy, which already has a live
+page (`pharmacist/Dashboard.jsx`, phase 20) to extend. Answered
+**pharmacy frontend only**, the recommended option - inventory
+analytics still gets a real backend endpoint, but its frontend is
+deferred until a broader inventory-management frontend phase exists to
+host it in context, avoiding an orphan page. Matches phase 32's own
+precedent (frontend only where a live page already exists to plug
+into).
+
+- **`PharmacyAnalyticsController`** (`GET /api/pharmacy/analytics?days=`,
+  `hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')` - matches `DispenseController`'s
+  own gate) - same `DEFAULT_WINDOW_DAYS=30`/`MAX_WINDOW_DAYS=180` clamp
+  as phase 19. `PharmacyAnalyticsSummary(dispensingVolume,
+  medicationDispenseCounts)`. `DispenseRecordRepository.findDailyDispenseVolume`
+  (new, native query) sums `quantity_dispensed` per day - **units
+  dispensed, not a row count** - "volume" reads more usefully as units
+  than an event count. `DispenseRecordRepository.countByMedicationSince`
+  (new) embeds the medication name directly via a join (same "embed
+  what the caller needs, don't force a second lookup" convention the
+  phase-20 pharmacist-dashboard bug fix established), backing a new
+  `MedicationDispenseCount` projection.
+- **`InventoryAnalyticsController`** (`GET /api/inventory/analytics?days=`,
+  `hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK')` - matches
+  `InventoryItemController`'s own gate) - every field here is a
+  current-state snapshot, not a historical series, so the `days` param
+  currently governs nothing (kept for shape parity with the sibling
+  endpoint, documented explicitly as unused rather than silently dead).
+  `InventoryAnalyticsSummary(totalValuation, lowStock, expiringSoon,
+  assetStatusCounts)`.
+  - `totalValuation` - two new native scalar queries on
+    `StockBatchRepository` (`sumMedicationValuation`/
+    `sumInventoryItemValuation`, `SUM(quantity_on_hand * unit_price)`
+    each joined to its own owning catalog table, since `unitPrice`
+    lives on `Medication`/`InventoryItem`, not `StockBatch` itself),
+    summed together in the controller rather than a UNION query.
+  - `expiringSoon` - a **fixed 30-day forward-looking window,
+    deliberately not tied to the endpoint's own `days` param** - the
+    `days` param is a historical-lookback window everywhere else in
+    this app; expiry risk is forward-looking, a semantically different
+    question. New `StockBatchRepository.findExpiringSoon` native query,
+    backing a new `ExpiringBatch` projection that resolves the owning
+    name via two `LEFT JOIN`s (a batch owns exactly one of
+    medicationId/inventoryItemId).
+  - `lowStock` - **duplicates `InventoryItemController.reorderAlerts()`'s
+    own ~15-line aggregation loop** rather than depending on that
+    controller as a collaborator - a deliberate choice matching this
+    codebase's "plain composition across repositories, no
+    cross-controller coupling" convention (reuses the existing
+    `ReorderAlert` record type; identical data to
+    `GET /api/inventory/reorder-alerts`, just bundled into the unified
+    summary too).
+  - `assetStatusCounts` - new `AssetRepository.countByStatus`, identical
+    shape to `AppointmentRepository.countByStatus`, reusing the
+    existing `StatusCount` projection.
+- **Frontend (pharmacy only)** - `pages/pharmacist/Dashboard.jsx` gains
+  a day-range toggle (7/30/90, same `WINDOW_OPTIONS` pattern as
+  `clinic-admin/Dashboard.jsx`) and two new charts in a
+  `grid lg:grid-cols-2` of `ChartCard`s: `DispenseVolumeChart.jsx` (same
+  area-chart-over-time shape as `AppointmentVolumeChart.jsx`) and
+  `MedicationDispenseCountChart.jsx` (same categorical bar-top-N shape
+  as `ProviderUtilizationChart.jsx`, but - since the backend already
+  embeds `medicationName` - needs no separate name-resolution map prop
+  the way that chart does for providers). New `usePharmacyAnalytics`
+  hook in `api/queries.js`, mirroring `useClinicAnalytics`'s exact
+  shape.
+- **A real, significant pre-existing bug found live, not introduced by
+  this phase but first tripped by it** - `AppointmentVolumeChart.jsx`
+  and `RevenueChart.jsx` (both phase 19) pass `formatDayLabel` directly
+  as a Recharts `tickFormatter`. Recharts always calls a tick formatter
+  as `(value, index)`; `formatDayLabel`'s own second parameter is an
+  optional **timezone override** (`formatDayLabel(iso, zone)`, see
+  `lib/format.js`), not an index. Every tick past the first
+  (`index >= 1`, truthy) silently passed the tick's own numeric index as
+  `zone` into `resolveTimezone`, which - only under "clinic" timezone
+  -display mode (frontend phase N) - returned that raw number straight
+  through to `Intl.DateTimeFormat({ timeZone: 1 })`, throwing
+  `RangeError: Invalid time zone specified: 1` **during React's render
+  pass**, blanking the *entire* page (not just the chart - no error
+  boundary catches a render-phase throw here). Live-reproduced on the
+  pharmacist Dashboard (this phase's own new `DispenseVolumeChart.jsx`
+  copied the same broken pattern) with a real browser profile already
+  in "clinic" timezone mode from earlier phase-N verification - the
+  clinic-admin dashboard has almost certainly been silently carrying
+  this same crash for any real user in that mode with a multi-tick
+  analytics window, since phase 19 shipped. **Fixed in all three call
+  sites** - `tickFormatter={(day) => formatDayLabel(day)}` instead of
+  `tickFormatter={formatDayLabel}` - confirmed live post-fix across all
+  three day-range windows (7/30/90) with the same "clinic" timezone
+  -mode browser profile that originally reproduced it. `ChartTooltip`'s
+  own `formatLabel={formatDayLabel}` usage was unaffected (that call
+  site already passes exactly one argument).
+- **Tests**: `PharmacyAnalyticsControllerIntegrationTest` (new, 4 cases)
+  - dispensing volume correctly excludes a dispense outside the window;
+  medication dispense counts aggregate correctly and embed the right
+  name; role gate; cross-tenant scoping.
+  `InventoryAnalyticsControllerIntegrationTest` (new, 6 cases) -
+  valuation sums both owner types and excludes a non-active batch;
+  expiring-soon includes an in-window batch and excludes an
+  out-of-window one and a no-expiry one; low-stock matches
+  `GET /api/inventory/reorder-alerts`'s own result for identical
+  fixture data; asset status counts aggregate correctly; role gate;
+  cross-tenant scoping. No new pure-unit test class or `TenantIsolationIntegrationTest`
+  case - same reasoning phase 23's cancel-series case already used (a
+  read-only aggregation endpoint doesn't fit that file's per-resource
+  "seed in A, deny to B" shape as cleanly as a CRUD endpoint). New
+  `AbstractIntegrationTest.createDispenseRecord` fixture helper (a
+  direct repository insert, not through `DispenseService`, so a test
+  can control `createdAt` for day-bucketed assertions - the field must
+  be set *before* the first save, since the column is
+  `updatable = false`). Confirmed via a clean `mvn clean test-compile`
+  and a full `mvn test` run showing `Tests run: 430, Errors: 342` (up
+  from 420/332 - exactly the 10 new test methods), 88 pure-unit tests
+  unaffected; confirmed via grepping every surefire report that all 342
+  failures hit the identical pre-existing `Could not find a valid
+  Docker environment` wall, none any other way. Frontend: `npm run
+  build` clean, `npm test` (36/36) unaffected (page-level changes, not
+  shared-component changes - consistent with frontend phase S's own
+  scope boundary).
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`)** - `docker compose up -d --build --force-recreate
+  spring-boot-api node-bff` (both healthy). As a real `demo-pharmacist`
+  login: `GET /api/pharmacy/analytics?days=90` surfaced real dispense
+  data from this session's own earlier phases (27/28/31/32)
+  verification, cross-checked exactly against a direct Postgres query
+  (`SUM(quantity_dispensed) GROUP BY CAST(created_at AS date)`); loaded
+  the real pharmacist Dashboard and confirmed both new charts render
+  correctly (after finding and fixing the timezone crash above),
+  exercised all three day-range toggles (7/30/90) with zero console
+  errors post-fix, and confirmed the whole section renders correctly in
+  Dark theme + Amharic (both already active from an earlier session's
+  own preference, confirmed live not just read from code). As a real
+  `demo-front-desk` login: `GET /api/inventory/analytics` returned
+  `totalValuation: 961.50`, cross-checked exactly against a direct
+  Postgres query summing both owner types' active batches; `assetStatusCounts`
+  reflected the one real asset from phase 30's own verification. As a
+  real `demo-provider` login: confirmed a genuine `403` on both new
+  endpoints, the pinned role boundaries holding live.
+- **A real, separate Docker Desktop environment issue, not a code
+  problem, left the nginx (`:80`) route unverified this phase** - after
+  rebuilding `node-bff`, `nginx` repeatedly failed to start
+  (`host not found in upstream "node-bff:3000"` at config-load, despite
+  `node-bff` being healthy and its hostname resolving correctly from a
+  fresh throwaway container on the same network - confirmed directly),
+  then once that cleared, hit `Bind for 0.0.0.0:80 failed: port is
+  already allocated` on every subsequent recreate attempt even with the
+  container fully stopped and removed - `com.docker.backend.exe` and
+  `wslrelay.exe` (both real Docker Desktop/WSL2 infrastructure
+  processes, running since the stack's own last boot) kept holding the
+  port at the Docker Desktop internal-state level, out of sync with the
+  actual (absent) container. A full Docker Desktop restart would very
+  likely clear it, but was deliberately not done unilaterally - it
+  would take down the entire stack (postgres/keycloak/redis/mailpit
+  included) for what is otherwise a pure "verify through the alternate
+  route" nicety, not a correctness concern (nginx is a pure pass
+  -through reverse proxy for these routes with zero logic of its own -
+  every new endpoint and the frontend fix were already fully verified
+  through `node-bff` directly, the identical backend code path). Owed:
+  a real `curl`/browser check through `http://localhost/` once nginx is
+  confirmed healthy again.
+- **Backend + one small, targeted frontend change (pharmacy only)** -
+  matches phase 32's own precedent. No new Keycloak role, no
+  `node-bff`/`PUBLIC_ROUTES` change.
+
+This closes the entire "Pharmacy expansion + stock management module"
+- all ten sequential phases (27-34) sketched 2026-09-29 are now built.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3614,6 +3786,29 @@ attributed to the patient's own account for a self-service cancel).
   -> refill-request -> approve/deny chain built and exercised live, a
   real email landing in Mailpit, and two real bugs found and fixed along
   the way - see that section), not by a local test run.
+- `PharmacyAnalyticsControllerIntegrationTest`/`InventoryAnalyticsControllerIntegrationTest`
+  (phase 34, new, 10 cases total) - dispensing volume correctly windowed,
+  medication dispense counts aggregate correctly and embed the right
+  name, role gate, cross-tenant scoping (pharmacy side); valuation sums
+  both owner types and excludes a non-active batch, expiring-soon
+  respects the fixed 30-day window, low-stock matches the existing
+  reorder-alerts endpoint's own result, asset status counts aggregate
+  correctly, role gate, cross-tenant scoping (inventory side). No new
+  pure-unit test class or `TenantIsolationIntegrationTest` case - a
+  read-only aggregation endpoint doesn't fit that file's per-resource
+  shape as cleanly as a CRUD endpoint. Same Testcontainers wall as every
+  other integration test on this machine - `mvn test` showed `Tests run:
+  430, Errors: 342` (up from 420/332 - exactly the 10 new test methods),
+  88 pure-unit tests unaffected; confirmed via grepping every surefire
+  report that all 342 failures hit the identical pre-existing `Could not
+  find a valid Docker environment` wall, none any other way. The
+  Testcontainers-only assertions are confirmed correct by the live
+  browser/API verification in "Phase 34" above (both endpoints'
+  aggregate figures cross-checked exactly against direct Postgres
+  queries, both role gates confirmed live), not by a local test run.
+  Frontend: `npm run build` clean, `npm test` (36/36) unaffected - see
+  "Phase 34" above for the real, pre-existing chart-crash bug found and
+  fixed along the way.
 
 ## Verified-session logs
 

@@ -21,7 +21,7 @@ export default function RevenueChart({ data }) {
         <CartesianGrid stroke={palette.grid} vertical={false} />
         <XAxis
           dataKey="day"
-          tickFormatter={formatDayLabel}
+          tickFormatter={(day) => formatDayLabel(day)}
           interval={tickInterval}
           tick={{ fill: palette.axis, fontSize: 11 }}
           axisLine={{ stroke: palette.grid }}

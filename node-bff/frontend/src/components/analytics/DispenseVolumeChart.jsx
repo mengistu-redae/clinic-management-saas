@@ -5,13 +5,12 @@ import ChartTooltip from './ChartTooltip.jsx';
 import { formatDayLabel } from '../../lib/format.js';
 
 /**
- * Bookings per day, single series - a magnitude-over-time job, so one hue
- * (never a categorical set) per the dataviz skill's form-by-job rule. Area
- * fill at ~10% opacity is a wash under the line, not a second data channel.
- * Ticks are thinned for a 30/90-day window so labels don't collide - see
- * the dataviz skill's own "never a number on every point" labeling rule.
+ * Units dispensed per day, single series - same area-chart-over-time
+ * shape as AppointmentVolumeChart.jsx (a magnitude-over-time job, one hue).
+ * `total` here is a sum of quantityDispensed, not an event count - "volume"
+ * reads more usefully as units dispensed than a row count.
  */
-export default function AppointmentVolumeChart({ data }) {
+export default function DispenseVolumeChart({ data }) {
   const { t } = useTranslation();
   const palette = useChartPalette();
 
@@ -25,7 +24,6 @@ export default function AppointmentVolumeChart({ data }) {
     <ResponsiveContainer width="100%" height={220}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={palette.grid} vertical={false} />
-        {/* Recharts calls tickFormatter(value, index) - passing formatDayLabel directly leaks the tick index into its own second "zone" param, throwing under "clinic" timezone mode once index > 0 (a real bug found live in phase 34). */}
         <XAxis
           dataKey="day"
           tickFormatter={(day) => formatDayLabel(day)}
