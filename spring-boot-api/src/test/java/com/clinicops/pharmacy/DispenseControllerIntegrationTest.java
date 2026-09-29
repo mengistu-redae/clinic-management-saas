@@ -157,4 +157,27 @@ class DispenseControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.safetyOverrideAcknowledged").value(false));
     }
+
+    @Test
+    void dispenseRecordsListsWhatWasActuallyDispensedForAPrescription() throws Exception {
+        Clinic clinic = createClinic("dispense-records-" + UUID.randomUUID(), "Dispense Records Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Prescription prescription = seedActivePrescription(clinic.getId(), "Amoxicillin", null);
+        Medication medication = createMedication(clinic.getId(), "Amoxicillin");
+        StockBatch batch = createStockBatch(clinic.getId(), medication.getId(), 100);
+
+        mockMvc.perform(post("/api/prescriptions/" + prescription.getId() + "/dispense").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new DispenseRequest(medication.getId(), batch.getId(), 10, null, false))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/prescriptions/" + prescription.getId() + "/dispense-records").with(asPharmacist("pharm", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].quantityDispensed").value(10))
+                .andExpect(jsonPath("$[0].medicationId").value(medication.getId().toString()));
+
+        mockMvc.perform(get("/api/prescriptions/" + prescription.getId() + "/dispense-records").with(asFrontDesk("fd", orgAlias)))
+                .andExpect(status().isForbidden());
+    }
 }

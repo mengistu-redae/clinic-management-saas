@@ -7,6 +7,10 @@ import com.clinicops.appointmenttype.AppointmentTypeRepository;
 import com.clinicops.clinicsettings.ClinicSettingsService;
 import com.clinicops.laborder.LabOrder;
 import com.clinicops.laborder.LabOrderRepository;
+import com.clinicops.pharmacy.DispenseRecord;
+import com.clinicops.pharmacy.DispenseRecordRepository;
+import com.clinicops.pharmacy.Medication;
+import com.clinicops.pharmacy.MedicationRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +42,8 @@ public class InvoiceService {
     private final AppointmentRepository appointmentRepository;
     private final AppointmentTypeRepository appointmentTypeRepository;
     private final LabOrderRepository labOrderRepository;
+    private final DispenseRecordRepository dispenseRecordRepository;
+    private final MedicationRepository medicationRepository;
     private final ClinicSettingsService clinicSettingsService;
 
     public InvoiceService(
@@ -45,11 +51,15 @@ public class InvoiceService {
             AppointmentRepository appointmentRepository,
             AppointmentTypeRepository appointmentTypeRepository,
             LabOrderRepository labOrderRepository,
+            DispenseRecordRepository dispenseRecordRepository,
+            MedicationRepository medicationRepository,
             ClinicSettingsService clinicSettingsService) {
         this.invoiceRepository = invoiceRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentTypeRepository = appointmentTypeRepository;
         this.labOrderRepository = labOrderRepository;
+        this.dispenseRecordRepository = dispenseRecordRepository;
+        this.medicationRepository = medicationRepository;
         this.clinicSettingsService = clinicSettingsService;
     }
 
@@ -78,6 +88,28 @@ public class InvoiceService {
 
         Invoice invoice = build(tenantId, order.getTotalCost() != null ? order.getTotalCost() : BigDecimal.ZERO);
         invoice.setLabOrderId(labOrderId);
+        return invoiceRepository.save(invoice);
+    }
+
+    /**
+     * Phase 31 - the subtotal is Medication.unitPrice * DispenseRecord
+     * .quantityDispensed, the "computed suggestion" a future frontend
+     * would pre-fill (a staff-editable amount still governs the actual
+     * Payment, same as every other owner type).
+     */
+    @Transactional
+    public Invoice generateForDispenseRecord(UUID dispenseRecordId, UUID tenantId) {
+        if (invoiceRepository.findByDispenseRecordIdAndTenantId(dispenseRecordId, tenantId).isPresent()) {
+            throw new InvoiceAlreadyExistsException("An invoice already exists for dispense record " + dispenseRecordId);
+        }
+        DispenseRecord record = dispenseRecordRepository.findByIdAndTenantId(dispenseRecordId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Dispense record not found: " + dispenseRecordId));
+        Medication medication = medicationRepository.findByIdAndTenantId(record.getMedicationId(), tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Medication not found: " + record.getMedicationId()));
+
+        BigDecimal subtotal = medication.getUnitPrice().multiply(BigDecimal.valueOf(record.getQuantityDispensed()));
+        Invoice invoice = build(tenantId, subtotal);
+        invoice.setDispenseRecordId(dispenseRecordId);
         return invoiceRepository.save(invoice);
     }
 

@@ -5,9 +5,17 @@ import com.clinicops.appointment.AppointmentRepository;
 import com.clinicops.clinicsettings.ClinicBrandingView;
 import com.clinicops.clinicsettings.ClinicSettingsService;
 import com.clinicops.clinicsettings.EffectiveClinicSettings;
+import com.clinicops.encounter.Encounter;
+import com.clinicops.encounter.EncounterRepository;
+import com.clinicops.encounter.Prescription;
+import com.clinicops.encounter.PrescriptionRepository;
 import com.clinicops.laborder.LabOrder;
 import com.clinicops.laborder.LabOrderRepository;
 import com.clinicops.patient.PatientRepository;
+import com.clinicops.pharmacy.DispenseRecord;
+import com.clinicops.pharmacy.DispenseRecordRepository;
+import com.clinicops.pharmacy.Medication;
+import com.clinicops.pharmacy.MedicationRepository;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Element;
@@ -44,16 +52,28 @@ public class InvoicePdfService {
     private final AppointmentRepository appointmentRepository;
     private final LabOrderRepository labOrderRepository;
     private final PatientRepository patientRepository;
+    private final DispenseRecordRepository dispenseRecordRepository;
+    private final MedicationRepository medicationRepository;
+    private final PrescriptionRepository prescriptionRepository;
+    private final EncounterRepository encounterRepository;
 
     public InvoicePdfService(
             ClinicSettingsService clinicSettingsService,
             AppointmentRepository appointmentRepository,
             LabOrderRepository labOrderRepository,
-            PatientRepository patientRepository) {
+            PatientRepository patientRepository,
+            DispenseRecordRepository dispenseRecordRepository,
+            MedicationRepository medicationRepository,
+            PrescriptionRepository prescriptionRepository,
+            EncounterRepository encounterRepository) {
         this.clinicSettingsService = clinicSettingsService;
         this.appointmentRepository = appointmentRepository;
         this.labOrderRepository = labOrderRepository;
         this.patientRepository = patientRepository;
+        this.dispenseRecordRepository = dispenseRecordRepository;
+        this.medicationRepository = medicationRepository;
+        this.prescriptionRepository = prescriptionRepository;
+        this.encounterRepository = encounterRepository;
     }
 
     public byte[] renderForAppointment(Invoice invoice) {
@@ -68,6 +88,41 @@ public class InvoicePdfService {
         String ownerReference = order != null ? "Lab Order " + order.getOrderRef() : null;
         String patientName = order != null ? resolvePatientName(order.getPatientId(), invoice.getTenantId(), null) : null;
         return render(invoice, ownerReference, patientName);
+    }
+
+    /**
+     * Same multi-hop chain DispenseService.resolvePatientId already
+     * established (Prescription -> Encounter -> Appointment ->
+     * patientId), needed here only for display - falls back to the
+     * appointment's own contactName for a guest, same as
+     * renderForAppointment.
+     */
+    public byte[] renderForDispenseRecord(Invoice invoice) {
+        DispenseRecord record = dispenseRecordRepository.findByIdAndTenantId(invoice.getDispenseRecordId(), invoice.getTenantId()).orElse(null);
+        Medication medication = record != null
+                ? medicationRepository.findByIdAndTenantId(record.getMedicationId(), invoice.getTenantId()).orElse(null)
+                : null;
+        String ownerReference = medication != null
+                ? "Dispense of " + medication.getName() + " ×" + record.getQuantityDispensed()
+                : null;
+        String patientName = record != null ? resolveDispensePatientName(record, invoice.getTenantId()) : null;
+        return render(invoice, ownerReference, patientName);
+    }
+
+    private String resolveDispensePatientName(DispenseRecord record, UUID tenantId) {
+        Prescription prescription = prescriptionRepository.findById(record.getPrescriptionId()).orElse(null);
+        if (prescription == null) {
+            return null;
+        }
+        Encounter encounter = encounterRepository.findById(prescription.getEncounterId()).orElse(null);
+        if (encounter == null) {
+            return null;
+        }
+        Appointment appointment = appointmentRepository.findByIdAndTenantId(encounter.getAppointmentId(), tenantId).orElse(null);
+        if (appointment == null) {
+            return null;
+        }
+        return resolvePatientName(appointment.getPatientId(), tenantId, appointment.getContactName());
     }
 
     private String resolvePatientName(UUID patientId, UUID tenantId, String guestContactName) {

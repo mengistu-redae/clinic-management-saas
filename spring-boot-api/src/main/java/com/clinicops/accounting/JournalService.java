@@ -60,7 +60,9 @@ public class JournalService {
         accountSeedingService.ensureSeeded(tenantId);
         Account cash = requireAccount(tenantId, CASH_CODE);
         Account revenue = requireAccount(tenantId, REVENUE_CODE);
-        String sourceType = payment.getAppointmentId() != null ? "appointment_payment" : "lab_order_payment";
+        String sourceType = payment.getAppointmentId() != null ? "appointment_payment"
+                : payment.getLabOrderId() != null ? "lab_order_payment"
+                : "dispense_payment";
         post(tenantId, "Payment received (" + payment.getMethod() + ")", sourceType, payment.getId(),
                 payment.getRecordedBy(), cash, revenue, payment.getAmount());
     }

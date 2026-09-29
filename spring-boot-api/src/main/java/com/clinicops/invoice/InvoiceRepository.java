@@ -10,4 +10,6 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
     Optional<Invoice> findByAppointmentIdAndTenantId(UUID appointmentId, UUID tenantId);
 
     Optional<Invoice> findByLabOrderIdAndTenantId(UUID labOrderId, UUID tenantId);
+
+    Optional<Invoice> findByDispenseRecordIdAndTenantId(UUID dispenseRecordId, UUID tenantId);
 }

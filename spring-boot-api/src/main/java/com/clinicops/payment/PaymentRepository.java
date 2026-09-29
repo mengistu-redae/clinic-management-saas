@@ -16,6 +16,8 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
     List<Payment> findAllByLabOrderIdAndTenantId(UUID labOrderId, UUID tenantId);
 
+    List<Payment> findAllByDispenseRecordIdAndTenantId(UUID dispenseRecordId, UUID tenantId);
+
     /** Owner-agnostic lookup by the payment's own id - used by PaymentController/RefundService, which address a payment directly rather than through its appointment/lab-order owner. */
     Optional<Payment> findByIdAndTenantId(UUID id, UUID tenantId);
 

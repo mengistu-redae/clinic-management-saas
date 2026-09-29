@@ -2,7 +2,7 @@ package com.clinicops.payment;
 
 import com.clinicops.invoice.Invoice;
 import com.clinicops.invoice.InvoiceRepository;
-import com.clinicops.laborder.LabOrderRepository;
+import com.clinicops.pharmacy.DispenseRecordRepository;
 import com.clinicops.paymentgateway.PaymentGatewayException;
 import com.clinicops.tenant.TenantContext;
 import com.clinicops.user.CurrentUserService;
@@ -24,63 +24,70 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
-/** Separate from AppointmentPaymentController - a different owner column and base path nesting, same shared Payment entity/CreatePaymentRequest shape. No delete. */
+/**
+ * Same shape as AppointmentPaymentController/LabOrderPaymentController -
+ * recording a payment is a deliberate, separate staff action, no delete.
+ * Phase 31's own deliberate widening: pharmacist gets the same read+write
+ * access as front_desk/clinic_admin here (unlike provider's read-only role
+ * on appointment payments) - pharmacist is genuinely the counter-staff
+ * role for a pharmacy sale.
+ */
 @RestController
-public class LabOrderPaymentController {
+public class DispensePaymentController {
 
-    private final LabOrderRepository labOrderRepository;
+    private final DispenseRecordRepository dispenseRecordRepository;
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentService paymentService;
     private final CurrentUserService currentUserService;
 
-    public LabOrderPaymentController(
-            LabOrderRepository labOrderRepository,
+    public DispensePaymentController(
+            DispenseRecordRepository dispenseRecordRepository,
             InvoiceRepository invoiceRepository,
             PaymentRepository paymentRepository,
             PaymentService paymentService,
             CurrentUserService currentUserService) {
-        this.labOrderRepository = labOrderRepository;
+        this.dispenseRecordRepository = dispenseRecordRepository;
         this.invoiceRepository = invoiceRepository;
         this.paymentRepository = paymentRepository;
         this.paymentService = paymentService;
         this.currentUserService = currentUserService;
     }
 
-    @GetMapping("/api/lab-orders/{orderId}/payments")
-    @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PROVIDER')")
-    public List<Payment> payments(@PathVariable UUID orderId) {
+    @GetMapping("/api/dispense-records/{id}/payments")
+    @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PHARMACIST')")
+    public List<Payment> payments(@PathVariable UUID id) {
         UUID tenantId = TenantContext.require();
-        requireOwnedLabOrder(orderId, tenantId);
-        return paymentRepository.findAllByLabOrderIdAndTenantId(orderId, tenantId);
+        requireOwnedDispenseRecord(id, tenantId);
+        return paymentRepository.findAllByDispenseRecordIdAndTenantId(id, tenantId);
     }
 
-    @PostMapping("/api/lab-orders/{orderId}/payments")
-    @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN')")
-    public Payment recordPayment(@PathVariable UUID orderId, @Valid @RequestBody CreatePaymentRequest request, @AuthenticationPrincipal Jwt jwt) {
+    @PostMapping("/api/dispense-records/{id}/payments")
+    @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PHARMACIST')")
+    public Payment recordPayment(@PathVariable UUID id, @Valid @RequestBody CreatePaymentRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
-        requireOwnedLabOrder(orderId, tenantId);
-        UUID invoiceId = resolveInvoiceId(orderId, tenantId, request.invoiceId());
+        requireOwnedDispenseRecord(id, tenantId);
+        UUID invoiceId = resolveInvoiceId(id, tenantId, request.invoiceId());
         UUID recordedBy = currentUserService.resolveInternalUserId(jwt);
-        return paymentService.recordPayment(tenantId, null, orderId, null, invoiceId, request, recordedBy);
+        return paymentService.recordPayment(tenantId, null, null, id, invoiceId, request, recordedBy);
     }
 
-    /** Only this lab order's own already-issued invoice may be linked - never an arbitrary id from another owner/tenant. */
-    private UUID resolveInvoiceId(UUID labOrderId, UUID tenantId, UUID requestedInvoiceId) {
+    /** Only this dispense record's own already-issued invoice may be linked - never an arbitrary id from another owner/tenant. */
+    private UUID resolveInvoiceId(UUID dispenseRecordId, UUID tenantId, UUID requestedInvoiceId) {
         if (requestedInvoiceId == null) {
             return null;
         }
-        Invoice invoice = invoiceRepository.findByLabOrderIdAndTenantId(labOrderId, tenantId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "No invoice exists for this lab order"));
+        Invoice invoice = invoiceRepository.findByDispenseRecordIdAndTenantId(dispenseRecordId, tenantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "No invoice exists for this dispense record"));
         if (!invoice.getId().equals(requestedInvoiceId)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invoiceId does not match this lab order's own invoice");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invoiceId does not match this dispense record's own invoice");
         }
         return invoice.getId();
     }
 
-    private void requireOwnedLabOrder(UUID labOrderId, UUID tenantId) {
-        labOrderRepository.findByIdAndTenantId(labOrderId, tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Lab order not found: " + labOrderId));
+    private void requireOwnedDispenseRecord(UUID dispenseRecordId, UUID tenantId) {
+        dispenseRecordRepository.findByIdAndTenantId(dispenseRecordId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Dispense record not found: " + dispenseRecordId));
     }
 
     @ExceptionHandler(NoSuchElementException.class)

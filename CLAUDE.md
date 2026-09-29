@@ -1778,21 +1778,8 @@ foundation" below for the full write-up.
 2026-09-29**. See "Phase 30: equipment & asset tracking" below for the
 full write-up.
 
-**31. Pharmacy billing integration** - `payments` (and `invoices`) gain a
-nullable `dispense_record_id`, extending the existing exactly-one-owner
-CHECK to a three-way constraint. New payment endpoints mirror
-`AppointmentPaymentController`'s shape exactly, but with `pharmacist`
-swapped in for `provider` in the read/record gate (front_desk/clinic_admin/
-pharmacist - whoever is actually at the point of sale). The suggested
-charge amount is `Medication.unitPrice * DispenseRecord.quantityDispensed`,
-pre-filled but staff-editable, same "computed suggestion, not a locked
-value" shape every other staff-entered payment already uses. `JournalService`
-(phase 21's accounting module) auto-posts for this new payment source
-type too, matching its existing "every Payment/Refund gets a journal
-entry" convention - extending, not bypassing, the ledger. Whether a
-dispense also gets its own generate-once Invoice/PDF (matching
-appointments/lab-orders) or payment-only is left as a real open question
-for when this phase is actually built, not pinned here.
+**31. Pharmacy billing integration** - **built 2026-09-29**. See "Phase
+31: pharmacy billing integration" below for the full write-up.
 
 **32. Smarter dispensing workflow** - adds *suggestions* on top of the
 existing manual-pick flow, deliberately not reversing phase 20's own
@@ -2328,6 +2315,138 @@ that gate directly rather than re-asking. New migration
   `clinic_admin`+`front_desk` gate. No `node-bff`/`PUBLIC_ROUTES`
   change. No maintenance-due reminders/scheduling of any kind - the
   pinned "simple log" scope boundary from when this was first sketched.
+
+## Phase 31: pharmacy billing integration
+
+Fifth of the ten sequential phases sketched under "Pharmacy expansion +
+stock management module" above (built 2026-09-29, same session as
+27-30). Closes the last gap phase 20 left open ("dispensing stays
+separate from Payment/Invoice this phase") - a pharmacy dispense can
+now be paid for and invoiced through the exact same machinery
+appointments and lab orders already use, with the ledger
+(`JournalService`) picking it up automatically. New migration
+`V27__pharmacy_billing_integration.sql`.
+
+One direct scoping question was put to the user before designing this
+session - the sketch's own explicitly-flagged open fork, whether a
+dispense gets full generate-once Invoice/PDF parity or stays
+payment-only - answered **full parity**, the recommended option, to
+keep all three owner types symmetric and reuse already-built machinery.
+
+- **A real, deliberate widening of the role gate beyond the
+  appointment/lab-order precedent, per the sketch's own explicit
+  reasoning**: `AppointmentPaymentController`/`AppointmentInvoiceController`
+  give their third role (`provider`) *read-only* access -
+  `front_desk`/`clinic_admin` alone can record a payment or generate an
+  invoice. Here, `pharmacist` gets the **same read+write access** as
+  `front_desk`/`clinic_admin` on both the new payment and invoice
+  endpoints - `pharmacist` is genuinely the counter-staff role for a
+  pharmacy sale, not a read-only clinical overseer the way `provider`
+  is for an appointment. Confirmed live: `demo-provider` gets a real
+  403 on both endpoints while `demo-pharmacist` can read, record, and
+  generate freely.
+- **A real, pre-existing gap found during research, closed as part of
+  this phase's own scope**: there was **no way to read a
+  `DispenseRecord` at all** before this phase - `DispenseRecordRepository`
+  only ever supported an internal prescribed-total sum query; no
+  controller exposed dispense history for a prescription. Closed with
+  **`GET /api/prescriptions/{id}/dispense-records`** (same
+  `pharmacist`+`clinic_admin` gate `DispenseController` already uses -
+  a pharmacy-internal lookup, not part of the wider payment/invoice
+  gate above) and a new `DispenseRecordRepository.findByIdAndTenantId`.
+  Live-verified this gap was genuinely real, not theoretical: fetching
+  it for a real prescription surfaced a dispense record from an earlier
+  session's own phase-28 verification that had been created but was
+  never readable through any API until now.
+- **`payments`/`invoices` both gain `dispense_record_id`**, extending
+  the existing exactly-one-owner CHECK to a three-way "exactly one of
+  three" constraint (a summed-CASE form, since Postgres has no native
+  3-way XOR) - `invoices.dispense_record_id` also carries its own
+  `UNIQUE` constraint, matching `appointment_id`/`lab_order_id`'s
+  existing DB-level "generate once" enforcement, not just the app-level
+  409 check.
+- **`PaymentService.recordPayment`** gained a `dispenseRecordId`
+  parameter (the two existing call sites pass `null`, unchanged
+  otherwise); **`JournalService.postForPayment`**'s `sourceType`
+  branching grew a third arm (`"dispense_payment"`) - same
+  debit-Cash/credit-Revenue posting, unconditionally, matching this
+  service's own "the ledger picks up real cash events regardless of
+  source" convention already established for `fee_auto_charged` rows.
+- **`InvoiceService.generateForDispenseRecord`** (new) - subtotal is
+  `Medication.unitPrice * DispenseRecord.quantityDispensed`, the
+  "computed suggestion" the sketch describes (a future frontend would
+  pre-fill it; the actual `Payment.amount` still stays staff-editable,
+  same as every other owner type) - confirmed live: a real Fentanyl
+  dispense (unit price $15.00, quantity 5) generated an invoice with
+  subtotal/total exactly $75.00. **`InvoicePdfService.renderForDispenseRecord`**
+  (new) resolves the owner reference ("Dispense of `<medication>` ×`<
+  quantity>`") and the patient name via the same multi-hop chain
+  `DispenseService.resolvePatientId` already established
+  (`Prescription -> Encounter -> Appointment -> patientId`, falling
+  back to the guest `contactName`) - two new constructor deps
+  (`PrescriptionRepository`, `EncounterRepository`).
+- **`DispensePaymentController`**/**`DispenseInvoiceController`** (new)
+  - identical shape to their appointment/lab-order counterparts:
+  `GET/POST /api/dispense-records/{id}/payments`,
+  `GET/POST /api/dispense-records/{id}/invoice`,
+  `GET /api/dispense-records/{id}/invoice/pdf`.
+- **Refunds stay unchanged, deliberately** - `PaymentController`
+  (`POST /api/payments/{id}/refund`) is owner-agnostic by design
+  (addressed by the payment's own id, not its owner type), so widening
+  its role gate to include `pharmacist` would also let a pharmacist
+  refund an appointment or lab-order payment, out of scope. A
+  pharmacist wanting a dispense payment refunded still needs a
+  `front_desk`/`clinic_admin` login for that one action - a real,
+  documented limitation, not a silent gap.
+- **The clinic-admin analytics dashboard's `PaymentRepository.findDailyRevenue`
+  needed zero code change** - it already sums `payments.amount` with no
+  owner-column branching, so dispense payments are picked up
+  automatically now that this phase has shipped.
+- **Tests**: `PaymentServiceTest` (existing file, 2 cases updated for
+  the new parameter, 1 new case), `JournalServiceTest` (existing file,
+  1 new case for the `dispense_payment` source type), `InvoicePdfServiceTest`
+  (existing file, 2 new cases - a real PDF with medication/quantity/
+  patient name, and a guest-channel fallback to `contactName`) - all
+  pure Mockito, **13/13 passing locally** across the three files.
+  `DispensePaymentControllerIntegrationTest` (new, 4 cases: record +
+  list, `pharmacist` can both read and record while `provider` is
+  forbidden, a mismatched invoiceId 400, cross-tenant 404),
+  `DispenseInvoiceControllerIntegrationTest` (new, 5 cases: generate
+  from `unitPrice * quantityDispensed`, duplicate-generate 409,
+  pre-generation 404, a real PDF, cross-tenant 404), one new
+  `DispenseControllerIntegrationTest` case for the new
+  `GET /api/prescriptions/{id}/dispense-records` endpoint, one new
+  `TenantIsolationIntegrationTest` case covering dispense payments and
+  invoices together. Confirmed via a clean `mvn clean test-compile` and
+  a full `mvn test` run showing `Tests run: 405, Errors: 317` (up from
+  390/306 - exactly the 15 new test methods: 4 pure-unit + 11
+  Testcontainers-blocked), every failure the identical pre-existing
+  `Could not find a valid Docker environment` wall - not a regression,
+  not a new failure mode.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V27` confirmed applied via `flyway_schema_history`
+  (version 27, description "pharmacy billing integration",
+  `success = t`). As a real `demo-pharmacist` login: fetched
+  `GET /api/prescriptions/{id}/dispense-records` for a real prescription
+  and confirmed it surfaced a genuine dispense record from an earlier
+  session's own phase-28 verification that had never been readable
+  before; generated a real dispense invoice from it and confirmed the
+  subtotal/total computed to exactly $75.00 ($15.00 × 5); downloaded
+  the real PDF and confirmed the `%PDF` magic header; recorded a real
+  $75.00 card payment against it, invoice-linked, gateway-routed
+  (`gatewayStatus: "succeeded"`). As a real `demo-accountant` login:
+  confirmed `GET /api/clinic/journal-entries` showed a genuine new
+  entry with `sourceType: "dispense_payment"` and two balanced $75.00
+  debit-Cash/credit-Revenue lines, and that `GET /api/clinic/trial-balance`
+  reflected it in both accounts' running totals. As a real `demo-provider`
+  login: confirmed both `GET /api/dispense-records/{id}/payments` and
+  `GET /api/dispense-records/{id}/invoice` now correctly 403 - the
+  deliberately narrower (compared to appointments' own provider
+  -readable) gate holding live, not just documented.
+- **Backend only** - no frontend this phase, same convention as 27-30.
+  No new Keycloak role - `pharmacist` already exists (phase 20). No
+  `node-bff`/`PUBLIC_ROUTES` change.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3219,6 +3338,35 @@ attributed to the patient's own account for a self-service cancel).
   real room then cleared, two maintenance records confirmed accumulated
   in Postgres, and a real 403 confirming `demo-pharmacist` cannot reach
   the new asset endpoints), not by a local test run.
+- `PaymentServiceTest`/`JournalServiceTest`/`InvoicePdfServiceTest`
+  (phase 31, pure Mockito, existing files extended - **13/13 passing
+  locally**) - a payment recorded against a `dispenseRecordId` leaves
+  `appointmentId`/`labOrderId` both null; a dispense payment posts with
+  `sourceType = "dispense_payment"`; a real PDF renders for a dispense
+  invoice with the medication name/quantity and the resolved patient
+  name (via the `Prescription -> Encounter -> Appointment` chain), plus
+  a guest-channel fallback to `contactName`.
+  `DispensePaymentControllerIntegrationTest` (new, 4 cases: record +
+  list, `pharmacist` can both read and record while `provider` is
+  forbidden, a mismatched invoiceId 400, cross-tenant 404),
+  `DispenseInvoiceControllerIntegrationTest` (new, 5 cases: generate
+  from `unitPrice * quantityDispensed`, duplicate-generate 409,
+  pre-generation 404, a real PDF, cross-tenant 404). One new
+  `DispenseControllerIntegrationTest` case for
+  `GET /api/prescriptions/{id}/dispense-records` (a genuine gap closed
+  this phase). One new `TenantIsolationIntegrationTest` case covering
+  dispense payments and invoices together. Same Testcontainers wall as
+  every other integration test on this machine - `mvn test` showed
+  `Tests run: 405, Errors: 317` (up from 390/306 - exactly the 15 new
+  test methods: 4 pure-unit + 11 Testcontainers-blocked), 88 pure-unit
+  tests passing (up from 84, exactly the 4 new cases across the three
+  extended files). The Testcontainers-only assertions are confirmed
+  correct by the live browser verification in "Phase 31" above (a real
+  dispense record surfaced for the first time via the new gap-closing
+  endpoint, a real $75.00 invoice/PDF/payment round trip, a real
+  `dispense_payment` journal entry with balanced lines, and a real 403
+  confirming `demo-provider` cannot reach the new dispense billing
+  endpoints), not by a local test run.
 
 ## Verified-session logs
 

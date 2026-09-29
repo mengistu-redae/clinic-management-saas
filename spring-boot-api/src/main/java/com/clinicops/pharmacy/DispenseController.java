@@ -33,14 +33,17 @@ public class DispenseController {
 
     private final PrescriptionRepository prescriptionRepository;
     private final DispenseService dispenseService;
+    private final DispenseRecordRepository dispenseRecordRepository;
     private final CurrentUserService currentUserService;
 
     public DispenseController(
             PrescriptionRepository prescriptionRepository,
             DispenseService dispenseService,
+            DispenseRecordRepository dispenseRecordRepository,
             CurrentUserService currentUserService) {
         this.prescriptionRepository = prescriptionRepository;
         this.dispenseService = dispenseService;
+        this.dispenseRecordRepository = dispenseRecordRepository;
         this.currentUserService = currentUserService;
     }
 
@@ -48,6 +51,13 @@ public class DispenseController {
     @PreAuthorize("hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')")
     public List<PrescriptionDispenseView> queue() {
         return prescriptionRepository.findPendingDispense(TenantContext.require());
+    }
+
+    /** Phase 31 - closes a real gap: no way to read a DispenseRecord existed before a billing flow needed to look one up. */
+    @GetMapping("/api/prescriptions/{id}/dispense-records")
+    @PreAuthorize("hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')")
+    public List<DispenseRecord> dispenseRecords(@PathVariable UUID id) {
+        return dispenseRecordRepository.findAllByPrescriptionIdAndTenantId(id, TenantContext.require());
     }
 
     @PostMapping("/api/prescriptions/{id}/dispense")

@@ -62,7 +62,7 @@ public class AppointmentPaymentController {
         requireOwnedAppointment(id, tenantId);
         UUID invoiceId = resolveInvoiceId(id, tenantId, request.invoiceId());
         UUID recordedBy = currentUserService.resolveInternalUserId(jwt);
-        return paymentService.recordPayment(tenantId, id, null, invoiceId, request, recordedBy);
+        return paymentService.recordPayment(tenantId, id, null, null, invoiceId, request, recordedBy);
     }
 
     /** Only this appointment's own already-issued invoice may be linked - never an arbitrary id from another owner/tenant. */

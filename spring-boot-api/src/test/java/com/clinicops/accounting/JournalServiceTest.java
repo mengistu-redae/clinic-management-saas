@@ -102,6 +102,25 @@ class JournalServiceTest {
     }
 
     @Test
+    void aDispensePaymentUsesTheDispensePaymentSourceType() {
+        UUID tenantId = UUID.randomUUID();
+        stubAccounts(tenantId, account(tenantId, "1000", "asset"), account(tenantId, "4000", "revenue"));
+
+        Payment payment = new Payment();
+        payment.setId(UUID.randomUUID());
+        payment.setTenantId(tenantId);
+        payment.setDispenseRecordId(UUID.randomUUID());
+        payment.setAmount(new BigDecimal("15.00"));
+        payment.setMethod("card");
+
+        service.postForPayment(payment);
+
+        ArgumentCaptor<JournalEntry> entryCaptor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(entryCaptor.capture());
+        assertThat(entryCaptor.getValue().getSourceType()).isEqualTo("dispense_payment");
+    }
+
+    @Test
     void postingARefundDebitsRefundsAndAllowancesAndCreditsCash() {
         UUID tenantId = UUID.randomUUID();
         Account cash = account(tenantId, "1000", "asset");

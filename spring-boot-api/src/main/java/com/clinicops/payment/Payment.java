@@ -47,6 +47,10 @@ public class Payment extends BaseTenantEntity {
     @Column(name = "lab_order_id")
     private UUID labOrderId;
 
+    /** Phase 31 - a pharmacy dispense as a third owner type, same exactly-one-owner shape now enforced as a three-way DB CHECK. */
+    @Column(name = "dispense_record_id")
+    private UUID dispenseRecordId;
+
     @Column(nullable = false)
     private BigDecimal amount;
 

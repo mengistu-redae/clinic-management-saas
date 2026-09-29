@@ -496,6 +496,43 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void dispensePaymentsAndInvoicesAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("dispense-billing");
+        String aAlias = a.getKeycloakOrgId();
+        com.clinicops.provider.Provider provider = createProvider(a.getId(), "Dr. Bill");
+        com.clinicops.appointmenttype.AppointmentType type = createAppointmentType(a.getId(), "Visit", 30, "50.00");
+        com.clinicops.scheduling.Slot slot = createSlot(a.getId(), provider.getId(), type.getId(),
+                java.time.Instant.now().minusSeconds(3600), java.time.Instant.now().minusSeconds(1800));
+        com.clinicops.appointment.Appointment appointment = createBookedAppointment(a.getId(), slot.getId(), null, provider.getId(), type.getId(), null);
+        com.clinicops.encounter.Encounter encounter = createEncounter(a.getId(), appointment.getId(), provider.getId());
+        com.clinicops.encounter.Prescription prescription = createPrescription(a.getId(), encounter.getId(), "Amoxicillin", null);
+        com.clinicops.pharmacy.Medication medication = createMedication(a.getId(), "Amoxicillin");
+        com.clinicops.inventory.StockBatch batch = createStockBatch(a.getId(), medication.getId(), 100);
+
+        String body = mockMvc.perform(post("/api/prescriptions/" + prescription.getId() + "/dispense").with(asPharmacist("pharm", aAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.DispenseRequest(medication.getId(), batch.getId(), 10, null, false))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID dispenseRecordId = UUID.fromString(objectMapper.readTree(body).get("id").asText());
+
+        Clinic b = clinicB("dispense-billing");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/dispense-records/" + dispenseRecordId + "/payments").with(asPharmacist("pharm", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/dispense-records/" + dispenseRecordId + "/payments").with(asPharmacist("pharm", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.payment.CreatePaymentRequest(
+                                new java.math.BigDecimal("10.00"), "cash", null, null))))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/dispense-records/" + dispenseRecordId + "/invoice").with(asPharmacist("pharm", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/dispense-records/" + dispenseRecordId + "/invoice").with(asPharmacist("pharm", bAlias)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void accountsAreNotReadableOrWritableFromAnotherTenantAndJournalEntriesAreScopedPerTenant() throws Exception {
         Clinic a = clinicA("account");
         com.clinicops.accounting.Account account = createAccount(a.getId(), "1500", "Isolated Account", "asset");

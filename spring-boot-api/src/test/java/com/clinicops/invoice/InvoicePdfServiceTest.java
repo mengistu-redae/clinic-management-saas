@@ -5,9 +5,17 @@ import com.clinicops.appointment.AppointmentRepository;
 import com.clinicops.clinicsettings.ClinicBrandingView;
 import com.clinicops.clinicsettings.ClinicSettingsService;
 import com.clinicops.clinicsettings.EffectiveClinicSettings;
+import com.clinicops.encounter.Encounter;
+import com.clinicops.encounter.EncounterRepository;
+import com.clinicops.encounter.Prescription;
+import com.clinicops.encounter.PrescriptionRepository;
 import com.clinicops.laborder.LabOrderRepository;
 import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
+import com.clinicops.pharmacy.DispenseRecord;
+import com.clinicops.pharmacy.DispenseRecordRepository;
+import com.clinicops.pharmacy.Medication;
+import com.clinicops.pharmacy.MedicationRepository;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -31,8 +39,13 @@ class InvoicePdfServiceTest {
     private final AppointmentRepository appointmentRepository = mock(AppointmentRepository.class);
     private final LabOrderRepository labOrderRepository = mock(LabOrderRepository.class);
     private final PatientRepository patientRepository = mock(PatientRepository.class);
-    private final InvoicePdfService service =
-            new InvoicePdfService(clinicSettingsService, appointmentRepository, labOrderRepository, patientRepository);
+    private final DispenseRecordRepository dispenseRecordRepository = mock(DispenseRecordRepository.class);
+    private final MedicationRepository medicationRepository = mock(MedicationRepository.class);
+    private final PrescriptionRepository prescriptionRepository = mock(PrescriptionRepository.class);
+    private final EncounterRepository encounterRepository = mock(EncounterRepository.class);
+    private final InvoicePdfService service = new InvoicePdfService(
+            clinicSettingsService, appointmentRepository, labOrderRepository, patientRepository,
+            dispenseRecordRepository, medicationRepository, prescriptionRepository, encounterRepository);
 
     private static final byte[] PDF_MAGIC = {'%', 'P', 'D', 'F'};
 
@@ -53,6 +66,17 @@ class InvoicePdfServiceTest {
         invoice.setSubtotalAmount(new BigDecimal("100.00"));
         invoice.setTaxAmount(new BigDecimal("8.25"));
         invoice.setTotalAmount(new BigDecimal("108.25"));
+        return invoice;
+    }
+
+    private Invoice dispenseInvoice(UUID tenantId, UUID dispenseRecordId) {
+        Invoice invoice = new Invoice();
+        invoice.setId(UUID.randomUUID());
+        invoice.setTenantId(tenantId);
+        invoice.setDispenseRecordId(dispenseRecordId);
+        invoice.setSubtotalAmount(new BigDecimal("25.00"));
+        invoice.setTaxAmount(new BigDecimal("2.06"));
+        invoice.setTotalAmount(new BigDecimal("27.06"));
         return invoice;
     }
 
@@ -101,6 +125,88 @@ class InvoicePdfServiceTest {
         when(appointmentRepository.findByIdAndTenantId(appointmentId, tenantId)).thenReturn(Optional.of(appointment));
 
         byte[] pdf = service.renderForAppointment(invoice(tenantId, appointmentId, null));
+
+        assertThat(java.util.Arrays.copyOf(pdf, 4)).isEqualTo(PDF_MAGIC);
+    }
+
+    @Test
+    void rendersARealPdfForADispenseRecordInvoiceWithTheMedicationAndResolvedPatientName() {
+        UUID tenantId = UUID.randomUUID();
+        UUID dispenseRecordId = UUID.randomUUID();
+        UUID prescriptionId = UUID.randomUUID();
+        UUID encounterId = UUID.randomUUID();
+        UUID appointmentId = UUID.randomUUID();
+        UUID medicationId = UUID.randomUUID();
+        UUID patientId = UUID.randomUUID();
+        stubBrandingAndSettings(tenantId);
+
+        DispenseRecord record = new DispenseRecord();
+        record.setPrescriptionId(prescriptionId);
+        record.setMedicationId(medicationId);
+        record.setQuantityDispensed(10);
+        when(dispenseRecordRepository.findByIdAndTenantId(dispenseRecordId, tenantId)).thenReturn(Optional.of(record));
+
+        Medication medication = new Medication();
+        medication.setName("Amoxicillin");
+        when(medicationRepository.findByIdAndTenantId(medicationId, tenantId)).thenReturn(Optional.of(medication));
+
+        Prescription prescription = new Prescription();
+        prescription.setEncounterId(encounterId);
+        when(prescriptionRepository.findById(prescriptionId)).thenReturn(Optional.of(prescription));
+
+        Encounter encounter = new Encounter();
+        encounter.setAppointmentId(appointmentId);
+        when(encounterRepository.findById(encounterId)).thenReturn(Optional.of(encounter));
+
+        Appointment appointment = new Appointment();
+        appointment.setPatientId(patientId);
+        when(appointmentRepository.findByIdAndTenantId(appointmentId, tenantId)).thenReturn(Optional.of(appointment));
+
+        Patient patient = new Patient();
+        patient.setFirstName("Jane");
+        patient.setLastName("Doe");
+        when(patientRepository.findByIdAndTenantId(patientId, tenantId)).thenReturn(Optional.of(patient));
+
+        byte[] pdf = service.renderForDispenseRecord(dispenseInvoice(tenantId, dispenseRecordId));
+
+        assertThat(pdf).isNotEmpty();
+        assertThat(java.util.Arrays.copyOf(pdf, 4)).isEqualTo(PDF_MAGIC);
+    }
+
+    @Test
+    void aGuestChannelDispenseFallsBackToTheAppointmentsContactName() {
+        UUID tenantId = UUID.randomUUID();
+        UUID dispenseRecordId = UUID.randomUUID();
+        UUID prescriptionId = UUID.randomUUID();
+        UUID encounterId = UUID.randomUUID();
+        UUID appointmentId = UUID.randomUUID();
+        UUID medicationId = UUID.randomUUID();
+        stubBrandingAndSettings(tenantId);
+
+        DispenseRecord record = new DispenseRecord();
+        record.setPrescriptionId(prescriptionId);
+        record.setMedicationId(medicationId);
+        record.setQuantityDispensed(5);
+        when(dispenseRecordRepository.findByIdAndTenantId(dispenseRecordId, tenantId)).thenReturn(Optional.of(record));
+
+        Medication medication = new Medication();
+        medication.setName("Ibuprofen");
+        when(medicationRepository.findByIdAndTenantId(medicationId, tenantId)).thenReturn(Optional.of(medication));
+
+        Prescription prescription = new Prescription();
+        prescription.setEncounterId(encounterId);
+        when(prescriptionRepository.findById(prescriptionId)).thenReturn(Optional.of(prescription));
+
+        Encounter encounter = new Encounter();
+        encounter.setAppointmentId(appointmentId);
+        when(encounterRepository.findById(encounterId)).thenReturn(Optional.of(encounter));
+
+        Appointment appointment = new Appointment();
+        appointment.setPatientId(null);
+        appointment.setContactName("Walk-in Guest");
+        when(appointmentRepository.findByIdAndTenantId(appointmentId, tenantId)).thenReturn(Optional.of(appointment));
+
+        byte[] pdf = service.renderForDispenseRecord(dispenseInvoice(tenantId, dispenseRecordId));
 
         assertThat(java.util.Arrays.copyOf(pdf, 4)).isEqualTo(PDF_MAGIC);
     }
