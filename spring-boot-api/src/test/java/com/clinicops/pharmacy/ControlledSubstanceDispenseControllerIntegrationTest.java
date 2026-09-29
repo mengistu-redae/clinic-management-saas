@@ -5,6 +5,7 @@ import com.clinicops.appointmenttype.AppointmentType;
 import com.clinicops.clinic.Clinic;
 import com.clinicops.encounter.Encounter;
 import com.clinicops.encounter.Prescription;
+import com.clinicops.inventory.StockBatch;
 import com.clinicops.provider.Provider;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.support.AbstractIntegrationTest;

@@ -46,8 +46,18 @@ import com.clinicops.pharmacy.DrugInteractionPairRepository;
 import com.clinicops.pharmacy.PendingControlledSubstanceDispenseRepository;
 import com.clinicops.pharmacy.Medication;
 import com.clinicops.pharmacy.MedicationRepository;
-import com.clinicops.pharmacy.StockBatch;
-import com.clinicops.pharmacy.StockBatchRepository;
+import com.clinicops.inventory.InventoryItem;
+import com.clinicops.inventory.InventoryItemRepository;
+import com.clinicops.inventory.Supplier;
+import com.clinicops.inventory.SupplierRepository;
+import com.clinicops.inventory.PurchaseOrder;
+import com.clinicops.inventory.PurchaseOrderRepository;
+import com.clinicops.inventory.PurchaseOrderLine;
+import com.clinicops.inventory.PurchaseOrderLineRepository;
+import com.clinicops.inventory.StockAdjustment;
+import com.clinicops.inventory.StockAdjustmentRepository;
+import com.clinicops.inventory.StockBatch;
+import com.clinicops.inventory.StockBatchRepository;
 import com.clinicops.provider.Provider;
 import com.clinicops.provider.ProviderRepository;
 import com.clinicops.provider.ProviderWorkingHours;
@@ -228,6 +238,21 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected PendingControlledSubstanceDispenseRepository pendingControlledSubstanceDispenseRepository;
+
+    @Autowired
+    protected InventoryItemRepository inventoryItemRepository;
+
+    @Autowired
+    protected SupplierRepository supplierRepository;
+
+    @Autowired
+    protected PurchaseOrderRepository purchaseOrderRepository;
+
+    @Autowired
+    protected PurchaseOrderLineRepository purchaseOrderLineRepository;
+
+    @Autowired
+    protected StockAdjustmentRepository stockAdjustmentRepository;
 
     @Autowired
     protected AccountRepository accountRepository;
@@ -447,6 +472,57 @@ public abstract class AbstractIntegrationTest {
         batch.setQuantityReceived(quantity);
         batch.setQuantityOnHand(quantity);
         return stockBatchRepository.save(batch);
+    }
+
+    /** Phase 29 - same shape as createStockBatch(tenantId, medicationId, quantity), owned by an InventoryItem instead. */
+    protected StockBatch createStockBatchForItem(UUID tenantId, UUID inventoryItemId, int quantity) {
+        StockBatch batch = new StockBatch();
+        batch.setTenantId(tenantId);
+        batch.setInventoryItemId(inventoryItemId);
+        batch.setQuantityReceived(quantity);
+        batch.setQuantityOnHand(quantity);
+        return stockBatchRepository.save(batch);
+    }
+
+    protected InventoryItem createInventoryItem(UUID tenantId, String name) {
+        InventoryItem item = new InventoryItem();
+        item.setTenantId(tenantId);
+        item.setName(name);
+        item.setCategory("clinical_supply");
+        return inventoryItemRepository.save(item);
+    }
+
+    protected Supplier createSupplier(UUID tenantId, String name) {
+        Supplier supplier = new Supplier();
+        supplier.setTenantId(tenantId);
+        supplier.setName(name);
+        return supplierRepository.save(supplier);
+    }
+
+    protected PurchaseOrder createPurchaseOrder(UUID tenantId, UUID supplierId) {
+        PurchaseOrder order = new PurchaseOrder();
+        order.setTenantId(tenantId);
+        order.setSupplierId(supplierId);
+        return purchaseOrderRepository.save(order);
+    }
+
+    protected PurchaseOrderLine createPurchaseOrderLine(UUID tenantId, UUID purchaseOrderId, UUID medicationId, UUID inventoryItemId, int quantityOrdered) {
+        PurchaseOrderLine line = new PurchaseOrderLine();
+        line.setTenantId(tenantId);
+        line.setPurchaseOrderId(purchaseOrderId);
+        line.setMedicationId(medicationId);
+        line.setInventoryItemId(inventoryItemId);
+        line.setQuantityOrdered(quantityOrdered);
+        return purchaseOrderLineRepository.save(line);
+    }
+
+    protected StockAdjustment createStockAdjustment(UUID tenantId, UUID stockBatchId, int quantityDelta) {
+        StockAdjustment adjustment = new StockAdjustment();
+        adjustment.setTenantId(tenantId);
+        adjustment.setStockBatchId(stockBatchId);
+        adjustment.setQuantityDelta(quantityDelta);
+        adjustment.setReason("correction");
+        return stockAdjustmentRepository.save(adjustment);
     }
 
     protected DrugInteractionPair createDrugInteractionPair(UUID tenantId, UUID medicationAId, UUID medicationBId) {

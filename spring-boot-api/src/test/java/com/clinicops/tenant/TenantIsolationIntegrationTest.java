@@ -337,7 +337,7 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
     void medicationsAndStockBatchesAreNotReadableOrWritableFromAnotherTenant() throws Exception {
         Clinic a = clinicA("medication");
         com.clinicops.pharmacy.Medication medication = createMedication(a.getId(), "Amoxicillin 500mg");
-        com.clinicops.pharmacy.StockBatch batch = createStockBatch(a.getId(), medication.getId(), 100);
+        com.clinicops.inventory.StockBatch batch = createStockBatch(a.getId(), medication.getId(), 100);
 
         Clinic b = clinicB("medication");
         String bAlias = b.getKeycloakOrgId();
@@ -354,7 +354,7 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/stock-batches/" + batch.getId() + "/write-off")
                         .with(asPharmacist("pharm", bAlias))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.WriteOffStockBatchRequest("expired", "cross-tenant probe"))))
+                        .content(objectMapper.writeValueAsString(new com.clinicops.inventory.WriteOffStockBatchRequest("expired", "cross-tenant probe"))))
                 .andExpect(status().isNotFound());
     }
 
@@ -390,7 +390,7 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
         com.clinicops.pharmacy.Medication medication = createMedication(a.getId(), "Oxycodone");
         medication.setControlledSubstanceSchedule("schedule_ii");
         medicationRepository.save(medication);
-        com.clinicops.pharmacy.StockBatch batch = createStockBatch(a.getId(), medication.getId(), 30);
+        com.clinicops.inventory.StockBatch batch = createStockBatch(a.getId(), medication.getId(), 30);
 
         Clinic b = clinicB("controlled-substance");
         String bAlias = b.getKeycloakOrgId();
@@ -415,6 +415,56 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/pharmacy/controlled-substance-requests/" + pending.getId() + "/reject").with(asClinicAdmin("admin", bAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.RejectControlledSubstanceDispenseRequest(null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void inventoryItemsAndTheirStockBatchesAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("inventory-item");
+        com.clinicops.inventory.InventoryItem item = createInventoryItem(a.getId(), "Nitrile Gloves");
+        com.clinicops.inventory.StockBatch batch = createStockBatchForItem(a.getId(), item.getId(), 50);
+
+        Clinic b = clinicB("inventory-item");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/inventory/items/" + item.getId()).with(asClinicAdmin("admin", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/inventory/items/" + item.getId() + "/update").with(asClinicAdmin("admin", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.inventory.UpdateInventoryItemRequest(
+                                null, null, null, null, null, "inactive"))))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/inventory/items/" + item.getId() + "/stock-batches").with(asClinicAdmin("admin", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/inventory/items/" + item.getId() + "/stock-batches/" + batch.getId() + "/write-off")
+                        .with(asClinicAdmin("admin", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.inventory.WriteOffStockBatchRequest("expired", "cross-tenant probe"))))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/inventory/stock-batches/" + batch.getId() + "/adjustments").with(asClinicAdmin("admin", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.inventory.CreateStockAdjustmentRequest(-1, "used", null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void suppliersAndPurchaseOrdersAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("supplier-po");
+        com.clinicops.inventory.Supplier supplier = createSupplier(a.getId(), "MedSupply Co");
+        com.clinicops.inventory.PurchaseOrder order = createPurchaseOrder(a.getId(), supplier.getId());
+        com.clinicops.inventory.InventoryItem item = createInventoryItem(a.getId(), "Gauze");
+        createPurchaseOrderLine(a.getId(), order.getId(), null, item.getId(), 10);
+
+        Clinic b = clinicB("supplier-po");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/inventory/suppliers/" + supplier.getId()).with(asClinicAdmin("admin", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/inventory/purchase-orders/" + order.getId()).with(asClinicAdmin("admin", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/inventory/purchase-orders/" + order.getId() + "/receive").with(asClinicAdmin("admin", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/inventory/purchase-orders/" + order.getId() + "/cancel").with(asClinicAdmin("admin", bAlias)))
                 .andExpect(status().isNotFound());
     }
 

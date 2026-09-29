@@ -8,6 +8,8 @@ import com.clinicops.encounter.Encounter;
 import com.clinicops.encounter.EncounterRepository;
 import com.clinicops.encounter.Prescription;
 import com.clinicops.encounter.PrescriptionRepository;
+import com.clinicops.inventory.StockBatch;
+import com.clinicops.inventory.StockBatchRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 

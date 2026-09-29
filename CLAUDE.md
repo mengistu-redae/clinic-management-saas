@@ -1771,50 +1771,8 @@ See "Phase 28: controlled substance tracking" below for the full
 write-up.
 
 **29. Stock/inventory foundation** (new `com.clinicops.inventory`
-package - general, not pharmacy-scoped; supersedes the original
-pharmacy-only "supply chain" sketch) -
-
-- **`InventoryItem`** - the general-stock catalog entry (name, `category`
-  allow-listed `clinical_supply`/`ppe`/`office_supply`, `unitOfMeasure`,
-  `unitPrice`, `reorderThreshold`, status active/inactive) - same shape
-  as `Medication`, deliberately kept as a *separate* entity rather than
-  merging the two into one polymorphic table, since `Medication` is
-  already deeply wired into `Prescription`/`DispenseService` and a forced
-  merge would touch a lot of stable, working code for no functional gain
-  - "medications are one category" is achieved at the *stock-tracking*
-  layer below, not by literally renaming/merging the catalog entity.
-- **`StockBatch` generalized and relocated** - moves from
-  `com.clinicops.pharmacy` to the new `com.clinicops.inventory` package
-  (its natural home once it serves two domains, the same way `Payment`
-  lives in its own package rather than under `appointment`/`laborder`)
-  and gains a second nullable owner column, `inventory_item_id`, next to
-  the existing `medication_id` - the exact "exactly one owner" CHECK
-  -constraint pattern this codebase already uses for `Payment`/`Invoice`
-  (and phase 31 extends again for dispense payments), just applied one
-  layer earlier. `DispenseService` (pharmacy) keeps reading/writing it
-  cross-package, the same way `InvoicePdfService` already reaches into
-  several other packages.
-- **`Supplier`** (soft-deactivate, same shape as `Room`/`Provider`) and
-  **`PurchaseOrder`**/**`PurchaseOrderLine`** - generalized the same way:
-  a supplier isn't category-specific, and a PO line gets the identical
-  polymorphic `medicationId`/`inventoryItemId` exactly-one-owner shape.
-  Receiving a PO (`POST /api/inventory/purchase-orders/{id}/receive`)
-  auto-creates a `StockBatch` per line, reusing the existing stock
-  -receiving code path rather than duplicating it - now working for
-  either owner type.
-- **`StockAdjustment`** (new, not in the original pharmacy-only sketch) -
-  non-medication stock has no `Prescription` driving its consumption the
-  way `DispenseRecord` does, so a generic staff-initiated, append-only
-  adjustment record closes that gap: `stockBatchId`, `quantityDelta`
-  (negative for usage/waste, positive for a correction), `reason`
-  (allow-listed `used`/`wasted`/`expired`/`correction`/`other`),
-  `adjustedBy`, `notes` - same audit-row shape as `DispenseRecord` itself.
-- **`GET /api/inventory/reorder-alerts`** - generalized across both
-  `Medication` and `InventoryItem` (supersedes the pharmacy-only version
-  originally sketched), finally putting `reorderThreshold` (dormant on
-  `Medication` since phase 20) to use on both. Closes phase 20's own
-  documented simplification ("low-stock stayed a per-medication
-  client-side badge, not a dashboard banner").
+package) - **built 2026-09-29**. See "Phase 29: stock/inventory
+foundation" below for the full write-up.
 
 **30. Equipment & asset tracking** (`com.clinicops.inventory`, same
 package - deliberately its own phase, not folded into phase 29, since
@@ -2154,6 +2112,146 @@ workflow entity, never on the permanent record. New migration
   27 and every other phase in this module set so far. No new Keycloak
   role - `pharmacist`/`clinic_admin` cover both signers. No
   `node-bff`/`PUBLIC_ROUTES` change.
+
+## Phase 29: stock/inventory foundation
+
+Third of the ten sequential phases sketched under "Pharmacy expansion +
+stock management module" above (built 2026-09-29, same session as
+27/28). This is the phase that actually delivers the "medications are
+just one category of general stock" architecture the user asked for in
+the original round-3 scoping question - a new `com.clinicops.inventory`
+package (`InventoryItem`, generalized `StockBatch`, `Supplier`,
+`PurchaseOrder`/`PurchaseOrderLine`, `StockAdjustment`, reorder alerts).
+One direct scoping question was put to the user before designing this
+phase - which roles manage the new *general* inventory, since the
+sketch itself never pinned it - answered **`clinic_admin` + `front_desk`**,
+the recommended option, matching this app's existing precedent of
+extending `front_desk` into non-clinical-judgment operational work
+(vitals, immunizations) rather than adding a new role for routine
+logistics. Pharmacy/medication stock keeps its existing
+`pharmacist`+`clinic_admin` gate, completely unchanged. New migration
+`V25__inventory_foundation.sql`.
+
+- **`StockBatch` generalized and relocated - the one true refactor this
+  phase makes** - moves from `com.clinicops.pharmacy` to
+  `com.clinicops.inventory`, its natural home once it serves two
+  domains, the same "shared resource gets its own package" precedent
+  `Payment`/`Invoice` already established (living outside both
+  `appointment` and `laborder`). `medicationId` became nullable; a new
+  nullable `inventoryItemId` joins it, with a
+  `chk_stock_batches_exactly_one_owner` CHECK - identical style to the
+  existing `chk_payments_exactly_one_owner`/`chk_invoices_exactly_one_owner`.
+  `CreateStockBatchRequest`/`WriteOffStockBatchRequest` moved with it
+  (structurally about `StockBatch`, not `Medication`) -
+  `MedicationController` cross-package-imports all three, the same
+  direction `DispenseService` already reaches into this package, just
+  one hop further out now. **Confirmed genuinely behavior-neutral, not
+  just intended to be** - every one of the 14 files that referenced
+  `StockBatch` before this phase got an import-only change; the full
+  `mvn test` count before and after the relocation itself (before any
+  new phase-29 tests were added) was identical, `Tests run: 362,
+  Errors: 278` both times, and `DispenseServiceTest`'s own 17/17 needed
+  zero changes.
+- **`InventoryItemController` gets the identical nested stock-batch
+  shape `MedicationController` already has** (`GET/POST
+  /api/inventory/items/{id}/stock-batches`, `POST .../stock-batches/{id}/
+  write-off`), reusing the exact same relocated `CreateStockBatchRequest`/
+  `WriteOffStockBatchRequest` records rather than a parallel pair - keeps
+  medications and general items symmetric: both can be restocked
+  directly, not just through a purchase order. Plus **`GET
+  /api/inventory/reorder-alerts`** - spans both `Medication` and
+  `InventoryItem` (a new `MedicationRepository` cross-package dependency,
+  the reverse direction of `DispenseService`'s own existing reach): for
+  each catalog row with a real `reorderThreshold`, sums `quantityOnHand`
+  across its own `active`-status stock batches and flags it if the sum
+  is below threshold - a small `ReorderAlert(ownerType, ownerId, name,
+  currentQuantity, reorderThreshold)` wrapper record. Closes phase 20's
+  own documented simplification ("low-stock stayed a per-medication
+  client-side badge, not a cross-catalog endpoint"). `hasAnyRole
+  ('CLINIC_ADMIN', 'FRONT_DESK')` throughout - the phase's own pinned
+  role decision, deliberately not the pharmacy gate.
+- **`Supplier`** + **`SupplierController`** - plain soft-deactivate CRUD,
+  same shape as `RoomController`.
+- **`PurchaseOrder`**/**`PurchaseOrderLine`** + **`PurchaseOrderController`** -
+  `PurchaseOrderWithLines` wrapper record on every response, same
+  pattern as `JournalEntryWithLines`. Each line validates exactly one of
+  `medicationId`/`inventoryItemId` (400 otherwise) against the real
+  catalog row (404 if unowned/unknown), same
+  `requireOwnedMedication`-style check `DrugInteractionPairController`
+  already established. `POST .../{id}/receive` (dedicated action
+  endpoint, only from `status = "ordered"` - 409 otherwise) auto-creates
+  one `StockBatch` per line with the right owner; `POST .../{id}/cancel`
+  same guard. **All-or-nothing receipt only in v1 - no partial-receiving
+  granularity** - a real, documented scope boundary, not a silent gap.
+  No update/delete on lines once created - a placed order is a real
+  document, same "immutable once issued" reasoning `Invoice`/`LabOrder`
+  line items already use.
+- **`StockAdjustment`** + `StockAdjustmentController`
+  (`POST/GET /api/inventory/stock-batches/{batchId}/adjustments`) - a
+  generic, append-only correction against a batch owned by either side
+  (only the batch id is ever needed, so one controller covers both
+  owner types) - non-medication stock has no `Prescription` driving its
+  consumption the way `DispenseRecord` does, so this closes that real
+  gap. Rejects an adjustment that would take `quantityOnHand` negative
+  (400, same guard spirit as `DispenseService`'s own insufficient-stock
+  check), auto-flips to `depleted` at exactly zero, same convention
+  `DispenseService` already established.
+- **Tests**: no new pure-unit test class - this phase's own logic
+  (reorder-alert summing, the exactly-one-owner checks, the adjustment
+  guard) is simple enough to cover directly in Testcontainers
+  integration tests, same bar phase 20's own CRUD-shaped logic used.
+  `InventoryItemControllerIntegrationTest` (new, 6 cases: catalog CRUD,
+  invalid category/status 400, nested receive/write-off, reorder-alerts
+  correctly flags an under-threshold item and excludes an
+  above-threshold one, role gate, cross-tenant 404),
+  `SupplierControllerIntegrationTest` (new, 4 cases: CRUD +
+  deactivate/reactivate, invalid status 400, role gate, cross-tenant
+  404), `PurchaseOrderControllerIntegrationTest` (new, 5 cases: a mixed
+  medication+inventory-item order receives into exactly the right
+  StockBatch rows, receiving twice 409s, cancel-from-ordered works and
+  cancelling an already-received order 409s, a dual/no-owner line 400s,
+  cross-tenant 404), `StockAdjustmentControllerIntegrationTest` (new, 4
+  cases: a positive correction and a negative usage adjustment both
+  apply correctly against a medication-owned batch, a negative-pushing
+  adjustment 400s against an inventory-item-owned batch, an exact-zero
+  adjustment flips to `depleted`, an invalid reason 400s). Two new
+  `TenantIsolationIntegrationTest` cases
+  (`inventoryItemsAndTheirStockBatchesAreNotReadableOrWritableFromAnotherTenant`,
+  `suppliersAndPurchaseOrdersAreNotReadableOrWritableFromAnotherTenant`).
+  Confirmed via a clean `mvn clean test-compile` and a full `mvn test`
+  run showing `Tests run: 383, Errors: 299` (up from 362/278 - exactly
+  the 21 new test methods: 6+4+5+4+2), every failure the identical
+  pre-existing `Could not find a valid Docker environment` wall - not a
+  regression, not a new failure mode.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V25` confirmed applied via `flyway_schema_history`
+  (version 25, description "inventory foundation", `success = t`). As a
+  real `demo-front-desk` login through the actual browser: created a
+  real `InventoryItem` ("Nitrile Gloves (Box)", PPE, reorder threshold
+  20), received an initial 5-unit batch, confirmed it genuinely appeared
+  in `GET /api/inventory/reorder-alerts` (5 < 20); received a second
+  30-unit batch and confirmed the alert genuinely disappeared (35 ≥ 20).
+  Created a real `Supplier`, placed a real `PurchaseOrder` mixing one
+  medication line (200 units) and one inventory-item line (40 units),
+  received it, and confirmed exactly two new `StockBatch` rows appeared
+  with the correct owners and quantities, cross-checked directly in
+  Postgres. Recorded a real "wasted" stock adjustment (-6) against the
+  new gloves batch and confirmed `quantityOnHand` dropped from 40 to 34,
+  cross-checked in Postgres. Logged out via the app's own `/auth/logout`
+  form and back in as a genuinely different `demo-pharmacist` login:
+  confirmed `GET /api/inventory/items` now correctly 403s (the pinned
+  role boundary holding live, not just documented), and confirmed the
+  *existing* pharmacy `GET /api/clinic/medications/.../stock-batches`
+  flow still works completely unchanged - both the pre-existing batch
+  from an earlier session and the new PO-received batch rendered
+  correctly, with the relocated entity's `inventoryItemId`/`medicationId`
+  fields both serializing as expected (`inventoryItemId: null` for a
+  medication-owned row) - zero regression from the relocation.
+- **Backend only** - no frontend this phase, same convention as 27/28.
+  No new Keycloak role - `clinic_admin`+`front_desk` cover general
+  inventory, `pharmacist`+`clinic_admin` still cover pharmacy stock,
+  unchanged. No `node-bff`/`PUBLIC_ROUTES` change.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3000,6 +3098,36 @@ attributed to the patient's own account for a self-service cancel).
   `dispenseRecordId`, stock decremented exactly once and cross-checked
   in Postgres, and a real reject leaving stock untouched), not by a
   local test run.
+- Phase 29's `StockBatch` relocation was confirmed genuinely
+  behavior-neutral before any new tests were added - a full `mvn test`
+  run immediately after the move (14 files, import-only changes) showed
+  the identical `Tests run: 362, Errors: 278` as before the move,
+  `DispenseServiceTest`'s own 17/17 unaffected. `InventoryItemControllerIntegrationTest`
+  (new, 6 cases: catalog CRUD, invalid category/status 400, nested
+  receive/write-off, reorder-alerts flags an under-threshold item and
+  excludes an above-threshold one, role gate, cross-tenant 404),
+  `SupplierControllerIntegrationTest` (new, 4 cases: CRUD +
+  deactivate/reactivate, invalid status 400, role gate, cross-tenant
+  404), `PurchaseOrderControllerIntegrationTest` (new, 5 cases: a mixed
+  medication+inventory-item order receives into exactly the right
+  StockBatch rows, receiving twice 409s, cancel-from-ordered works and
+  cancelling an already-received order 409s, a dual/no-owner line 400s,
+  cross-tenant 404), `StockAdjustmentControllerIntegrationTest` (new, 4
+  cases: positive/negative adjustments apply correctly, a
+  negative-pushing adjustment 400s, an exact-zero adjustment flips to
+  `depleted`, an invalid reason 400s). Two new
+  `TenantIsolationIntegrationTest` cases (inventory items + stock
+  batches; suppliers + purchase orders). Same Testcontainers wall as
+  every other integration test on this machine - `mvn test` showed
+  `Tests run: 383, Errors: 299` (up from 362/278 - exactly the 21 new
+  test methods: 6+4+5+4+2), 84 pure-unit tests unaffected. The
+  Testcontainers-only assertions are confirmed correct by the live
+  browser verification in "Phase 29" above (a real mixed purchase order
+  received into exactly two correctly-owned stock batches, a real stock
+  adjustment cross-checked in Postgres, and a real 403 confirming
+  `demo-pharmacist` cannot reach the new inventory endpoints while the
+  existing pharmacy stock-batch flow renders unchanged), not by a local
+  test run.
 
 ## Verified-session logs
 

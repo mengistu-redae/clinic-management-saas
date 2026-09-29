@@ -1,6 +1,8 @@
 package com.clinicops.pharmacy;
 
 import com.clinicops.clinic.Clinic;
+import com.clinicops.inventory.CreateStockBatchRequest;
+import com.clinicops.inventory.WriteOffStockBatchRequest;
 import com.clinicops.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;

@@ -1,5 +1,9 @@
 package com.clinicops.pharmacy;
 
+import com.clinicops.inventory.CreateStockBatchRequest;
+import com.clinicops.inventory.StockBatch;
+import com.clinicops.inventory.StockBatchRepository;
+import com.clinicops.inventory.WriteOffStockBatchRequest;
 import com.clinicops.tenant.TenantContext;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;

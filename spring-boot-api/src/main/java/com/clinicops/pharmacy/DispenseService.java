@@ -8,6 +8,8 @@ import com.clinicops.encounter.Encounter;
 import com.clinicops.encounter.EncounterRepository;
 import com.clinicops.encounter.Prescription;
 import com.clinicops.encounter.PrescriptionRepository;
+import com.clinicops.inventory.StockBatch;
+import com.clinicops.inventory.StockBatchRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
