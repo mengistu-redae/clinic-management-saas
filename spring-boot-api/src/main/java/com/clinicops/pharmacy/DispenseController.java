@@ -68,4 +68,10 @@ public class DispenseController {
     public String handleInsufficientStock(InsufficientStockException e) {
         return e.getMessage();
     }
+
+    @ExceptionHandler(ClinicalSafetyConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public String handleClinicalSafetyConflict(ClinicalSafetyConflictException e) {
+        return e.getMessage();
+    }
 }

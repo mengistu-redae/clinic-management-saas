@@ -359,6 +359,25 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void drugInteractionPairsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("drug-interaction");
+        com.clinicops.pharmacy.Medication warfarin = createMedication(a.getId(), "Warfarin");
+        com.clinicops.pharmacy.Medication aspirin = createMedication(a.getId(), "Aspirin");
+        com.clinicops.pharmacy.DrugInteractionPair pair = createDrugInteractionPair(a.getId(), warfarin.getId(), aspirin.getId());
+
+        Clinic b = clinicB("drug-interaction");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/pharmacy/drug-interaction-pairs/" + pair.getId()).with(asPharmacist("pharm", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/pharmacy/drug-interaction-pairs").with(asPharmacist("pharm", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.CreateDrugInteractionPairRequest(
+                                warfarin.getId(), aspirin.getId(), null, null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void accountsAreNotReadableOrWritableFromAnotherTenantAndJournalEntriesAreScopedPerTenant() throws Exception {
         Clinic a = clinicA("account");
         com.clinicops.accounting.Account account = createAccount(a.getId(), "1500", "Isolated Account", "asset");

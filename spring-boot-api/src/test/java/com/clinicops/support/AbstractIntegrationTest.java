@@ -41,6 +41,8 @@ import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
 import com.clinicops.pharmacy.DispenseRecord;
 import com.clinicops.pharmacy.DispenseRecordRepository;
+import com.clinicops.pharmacy.DrugInteractionPair;
+import com.clinicops.pharmacy.DrugInteractionPairRepository;
 import com.clinicops.pharmacy.Medication;
 import com.clinicops.pharmacy.MedicationRepository;
 import com.clinicops.pharmacy.StockBatch;
@@ -219,6 +221,9 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected StockBatchRepository stockBatchRepository;
+
+    @Autowired
+    protected DrugInteractionPairRepository drugInteractionPairRepository;
 
     @Autowired
     protected AccountRepository accountRepository;
@@ -438,6 +443,14 @@ public abstract class AbstractIntegrationTest {
         batch.setQuantityReceived(quantity);
         batch.setQuantityOnHand(quantity);
         return stockBatchRepository.save(batch);
+    }
+
+    protected DrugInteractionPair createDrugInteractionPair(UUID tenantId, UUID medicationAId, UUID medicationBId) {
+        DrugInteractionPair pair = new DrugInteractionPair();
+        pair.setTenantId(tenantId);
+        pair.setMedicationAId(medicationAId);
+        pair.setMedicationBId(medicationBId);
+        return drugInteractionPairRepository.save(pair);
     }
 
     protected Allergy createAllergy(UUID tenantId, UUID patientId, String allergen) {

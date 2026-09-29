@@ -53,4 +53,24 @@ public interface PrescriptionRepository extends JpaRepository<Prescription, UUID
             ORDER BY p.created_at DESC
             """, nativeQuery = true)
     List<PrescriptionDispenseView> findPendingDispense(@Param("tenantId") UUID tenantId);
+
+    /**
+     * Phase 27 (pharmacy clinical safety checks) - the free-text
+     * medication names of a patient's other active prescriptions, for the
+     * drug-interaction substring check in
+     * {@code com.clinicops.pharmacy.DispenseService}. Same join shape as
+     * {@link #findPendingDispense}, scoped to one patient and excluding
+     * the prescription currently being dispensed. A scalar-column native
+     * query - the caller only needs the names, not full rows.
+     */
+    @Query(value = """
+            SELECT p.medication_name
+            FROM prescriptions p
+            JOIN encounters e ON p.encounter_id = e.id
+            JOIN appointments a ON e.appointment_id = a.id
+            WHERE a.patient_id = :patientId AND p.tenant_id = :tenantId
+              AND p.status = 'active' AND p.id <> :excludePrescriptionId
+            """, nativeQuery = true)
+    List<String> findActiveMedicationNamesForPatient(
+            @Param("patientId") UUID patientId, @Param("tenantId") UUID tenantId, @Param("excludePrescriptionId") UUID excludePrescriptionId);
 }

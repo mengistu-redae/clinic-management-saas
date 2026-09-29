@@ -1763,19 +1763,8 @@ below) happens when each phase is actually picked up, same as every
 other "sketched ahead of need" plan in this file (see phases 16-18's own
 precedent).
 
-**27. Clinical safety checks** (pharmacy) - before `DispenseService`
-decrements stock, cross-check the medication against the patient's own
-active `Allergy` rows (case-insensitive substring match against
-`allergen` - same "keep minimal, no drug-class ontology" limitation this
-app already accepts for ICD-10) and against a new tenant-scoped
-`DrugInteractionPair` table (`medicationAId`/`medicationBId`, hard-delete
-like `FeePolicy`/`LabRate` - pure config with a well-defined "missing =
-no known interaction" fallback) checked against the patient's other
-active prescriptions. Neither hard-blocks by default - mirrors the
-lab-order restricted-test pattern (`RestrictedTestsProperties`): the
-dispense request needs an explicit acknowledgment flag to proceed past a
-detected conflict, recorded on the `DispenseRecord`. `DrugInteractionPair`
-CRUD is `pharmacist`+`clinic_admin`, same gate as the rest of the module.
+**27. Clinical safety checks** (pharmacy) - **built 2026-09-29**. See
+"Phase 27: pharmacy clinical safety checks" below for the full write-up.
 
 **28. Controlled substance tracking** (pharmacy) - `Medication` gains a
 nullable `controlledSubstanceSchedule` (allow-listed `schedule_i`..
@@ -1913,6 +1902,127 @@ valuation), Testcontainers integration tests for the rest, a live
 -verification pass against the real running stack, and its own dated
 CLAUDE.md write-up - this section will be replaced by those real
 per-phase write-ups as each one lands, not left standing alongside them.
+
+## Phase 27: pharmacy clinical safety checks
+
+First of the ten sequential phases sketched under "Pharmacy expansion +
+stock management module" above (built 2026-09-29). Before
+`DispenseService` decrements stock, it now cross-checks the medication
+against the patient's active allergies and against other medications the
+patient is currently on, via a new self-maintained `DrugInteractionPair`
+table - neither check hard-blocks by default, matching the lab-order
+restricted-test acknowledgment pattern (`RestrictedTestsProperties`): an
+explicit `acknowledgeConflict` flag on the dispense request lets the
+pharmacist proceed past a detected conflict, and - unlike that
+precedent, which discards the flag after use - the override outcome is
+**persisted** on the `DispenseRecord` itself. New migration
+`V23__pharmacy_clinical_safety.sql`.
+
+- **Two implementation-level gaps closed while building, not just
+  sketched**: `DispenseService` had no patient-resolution path at all
+  before this phase (`Prescription` carries no `patientId`) - closed by
+  adding `EncounterRepository`/`AppointmentRepository` as two more
+  constructor dependencies and resolving `prescription -> encounter ->
+  appointment -> patientId` via two plain `findById` hops, rather than
+  writing a new native query for a need `PrescriptionRepository
+  .findPendingDispense`'s own existing join doesn't actually cover (that
+  query returns a *view* for the queue UI, never a raw `patientId` a
+  service could reuse). And a guest-channel booking (`patientId` null)
+  has no `Allergy` data and no other prescriptions to check against -
+  `resolvePatientId` returns `null` in that case and `checkClinicalSafety`
+  short-circuits, silently skipping both checks - a deliberate, documented
+  limitation, not an oversight, matching phase 20's own "no drug-name
+  -matching logic" tone for pinned scope boundaries.
+- **`com.clinicops.pharmacy.DrugInteractionPair`** (new entity) -
+  `medicationAId`/`medicationBId` (both required, fixed at creation - like
+  `LabRate.testCode`, corrected via delete+recreate not update),
+  `severity` (nullable free string), `description` (nullable, free text -
+  what actually surfaces in the conflict message).
+  **`DrugInteractionPairController`** - same hard-delete CRUD shape as
+  `FeePolicyController`/`LabRateController`
+  (`GET`/`GET {id}`/`POST`/`POST {id}/update`/`POST {id}/delete`), all
+  `hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')` matching `DispenseController`'s
+  own gate. Validates both medication ids are real tenant-scoped
+  `Medication` rows (404 otherwise), rejects `medicationAId ==
+  medicationBId` (400), and rejects a duplicate pair **in either
+  order** - (A,B) and (B,A) are the same conflict - before insert (409).
+- **`DispenseService`** - new constructor deps: `AllergyRepository`,
+  `DrugInteractionPairRepository`, `EncounterRepository`,
+  `AppointmentRepository` (8 total). `checkClinicalSafety` runs right
+  after the medication is resolved, before any stock-batch/quantity work
+  (fail fast on a safety conflict before touching stock): resolves
+  `patientId`, checks the patient's `status.equals("active")` allergies
+  for a case-insensitive substring match against the medication name
+  either direction (same "keep minimal, no drug-class ontology"
+  limitation this app already accepts for ICD-10), then checks every
+  tenant `DrugInteractionPair` involving this medication against the
+  patient's other active prescription names (via a new
+  `PrescriptionRepository.findActiveMedicationNamesForPatient` native
+  query - a scalar-column projection, same join shape as the existing
+  `findPendingDispense`) for the same substring match. If either check
+  finds something and `request.acknowledgeConflict()` is false, throws
+  the new `ClinicalSafetyConflictException` (mapped to **409** in
+  `DispenseController` - matches `InsufficientStockException`'s own use
+  of 409 for "a real precondition blocks this," deliberately not the
+  400 `RestrictedTestException` uses, since this is a state conflict,
+  not malformed input) with every conflict found joined into one message,
+  not just the first. `DispenseRecord.safetyOverrideAcknowledged` is set
+  `true` only when a real conflict was found *and* acknowledged - never
+  just because the flag was sent with nothing to override, keeping the
+  audit trail meaningful. `DispenseRequest` gained the plain boolean
+  `acknowledgeConflict` field (5th field, default `false` at every
+  pre-existing call site) - same shape `CreateLabOrderRequest
+  .consentAcknowledged` already uses.
+- **Tests**: `DispenseServiceTest` (pure Mockito, existing file
+  extended) - every pre-existing case updated only for the new
+  constructor/request arity (proving current behavior is unchanged), plus
+  3 new cases: a guest-channel prescription skips both checks entirely
+  (`verify(..., never())` on both new repositories), a real allergy match
+  blocks without acknowledgment and succeeds with it
+  (`safetyOverrideAcknowledged` true only then), a real interaction match
+  behaves the same way. **9/9 passing locally.**
+  `DispenseControllerIntegrationTest` (existing file extended) - the same
+  three cases end-to-end through the real endpoint.
+  `DrugInteractionPairControllerIntegrationTest` (new, 6 cases) - CRUD
+  round trip, duplicate-pair-either-order 409, self-pair 400,
+  unknown-medication 404, cross-tenant 404, role gate
+  (front_desk/provider forbidden). One new `TenantIsolationIntegrationTest`
+  case (`drugInteractionPairsAreNotReadableOrWritableFromAnotherTenant`).
+  Confirmed via a clean `mvn clean test-compile` and by checking every
+  other, unrelated integration test class in the same run failed
+  identically (`Could not find a valid Docker environment`) - the same
+  Testcontainers/Windows-npipe wall as every prior phase, not a new
+  failure mode.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V23` confirmed applied via `flyway_schema_history`
+  (version 23, description "pharmacy clinical safety", `success = t`).
+  As a real `demo-pharmacist` login through the actual browser: created
+  two real medications ("Penicillin V", "Amoxicillin") with stock
+  batches, and a real `DrugInteractionPair` between them via
+  `POST /api/pharmacy/drug-interaction-pairs`. Dispensed against a real
+  pre-existing "Walk In" patient's Amoxicillin prescription while that
+  same patient had an active Penicillin V prescription - got a genuine
+  `409` interaction conflict, then successfully dispensed with
+  `acknowledgeConflict:true`, confirming `safetyOverrideAcknowledged:true`
+  in the response. Dispensed against that same patient's Penicillin V
+  prescription - since the patient also had a genuine pre-existing active
+  Penicillin allergy (from an earlier session's own verification) *and*
+  was now on Amoxicillin, got a real **consolidated** conflict message
+  surfacing both hits at once: `"Patient has an active allergy to
+  Penicillin; Potential interaction with Amoxicillin (Both are
+  beta-lactams, redundant/cross-reactive)"` - not just the first one
+  found - then successfully acknowledged and completed it. Cross-checked
+  both resulting `dispense_records` rows directly in Postgres, confirming
+  `safety_override_acknowledged = true` on both, and confirming a
+  pre-existing older dispense row (created before this phase existed)
+  correctly defaulted to `false` via the migration's own
+  `DEFAULT false` - the backfill working, not just the write path for new
+  rows.
+- **Backend only** - no frontend this phase, matching this module's own
+  "backend first" convention; a conflict-warning dialog on the
+  pharmacist dispense form is a natural later frontend item, not scoped
+  here. No new Keycloak role, no `node-bff`/`PUBLIC_ROUTES` change.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -2708,6 +2818,29 @@ attributed to the patient's own account for a self-service cancel).
   in "Phase 26" above (real PDF bytes visually inspected end to end,
   including the active-only allergy filter holding against real data),
   not by a local test run.
+- `DispenseServiceTest` (phase 27, pure Mockito, existing file extended -
+  genuinely runs locally, **9/9 passing**, up from 6/6) - every
+  pre-existing case updated only for the new constructor/request arity
+  (proving current behavior unchanged), plus 3 new cases: a guest-channel
+  prescription skips both new safety checks entirely
+  (`verify(allergyRepository, never())`/`verify(drugInteractionPairRepository,
+  never())`), a real allergy match blocks without acknowledgment and
+  succeeds with it, a real interaction match behaves the same way.
+  `DrugInteractionPairControllerIntegrationTest` (new, 6 cases: CRUD round
+  trip, duplicate-pair-either-order 409, self-pair 400,
+  unknown-medication 404, cross-tenant 404, role gate) +
+  `DispenseControllerIntegrationTest` gained the same three
+  conflict/acknowledgment/guest-skip cases end-to-end through the real
+  endpoint, plus one new `TenantIsolationIntegrationTest` case. Same
+  Testcontainers wall as every other integration test on this machine -
+  `mvn test` showed `Tests run: 344, Errors: 268` (up from 331/258 -
+  exactly the 13 new test methods), 76 pure-unit tests passing (up from
+  73, exactly the 3 new `DispenseServiceTest` cases). The
+  Testcontainers-only assertions are confirmed correct by the live
+  browser verification in "Phase 27" above (a real 409 interaction
+  conflict, a real consolidated allergy+interaction conflict message, and
+  both overridden dispenses cross-checked in Postgres), not by a local
+  test run.
 
 ## Verified-session logs
 

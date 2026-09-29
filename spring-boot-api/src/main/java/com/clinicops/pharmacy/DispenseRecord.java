@@ -19,6 +19,14 @@ import java.util.UUID;
  * "staff makes the explicit call" convention (fee-policy tiers, lab-order
  * test entry). No FK back into billing - dispensing stays separate from
  * Payment/Invoice this phase.
+ *
+ * {@code safetyOverrideAcknowledged} (phase 27) is set once at creation,
+ * never updated after - the append-only invariant above still holds. True
+ * only when a real allergy/drug-interaction conflict was actually found
+ * by {@link DispenseService} AND the request explicitly acknowledged it -
+ * never true just because the request's own acknowledge flag was sent
+ * with nothing to override, so this column stays a meaningful audit
+ * signal ("this dispense knowingly overrode a real conflict").
  */
 @Entity
 @Table(name = "dispense_records")
@@ -43,4 +51,7 @@ public class DispenseRecord extends BaseTenantEntity {
     private UUID dispensedBy;
 
     private String notes;
+
+    @Column(name = "safety_override_acknowledged", nullable = false)
+    private boolean safetyOverrideAcknowledged = false;
 }
