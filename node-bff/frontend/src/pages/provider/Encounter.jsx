@@ -17,6 +17,7 @@ import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import PatientChart from '../../components/PatientChart.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import VisitSummaryLink from '../../components/VisitSummaryLink.jsx';
 
 const inputClass =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -28,6 +29,16 @@ const DOCUMENTABLE_STATUSES = new Set(['with_provider', 'checked_out']);
 const ROUTES = ['oral', 'iv', 'im', 'subcutaneous', 'topical', 'inhaled', 'rectal', 'sublingual', 'other'];
 /** Phase 11 - matches EncounterService.VALID_PRESCRIPTION_STATUSES exactly. */
 const PRESCRIPTION_STATUSES = ['active', 'completed', 'discontinued'];
+
+/** Phase 25 - the fixed 9-system review-of-systems checklist, same order as the backend columns/PDF. */
+const BODY_SYSTEMS = [
+  'generalAppearance', 'heent', 'cardiovascular', 'respiratory', 'abdominal',
+  'musculoskeletal', 'neurological', 'skin', 'psychiatric',
+];
+
+function emptyExamForm() {
+  return Object.fromEntries(BODY_SYSTEMS.flatMap((s) => [[`${s}Normal`, ''], [`${s}Note`, '']]));
+}
 
 const emptyLine = () => ({
   medicationName: '', dosage: '', instructions: '',
@@ -62,7 +73,7 @@ export default function Encounter() {
   const signEncounter = useSignEncounter(id);
   const addAddendum = useAddAddendum(id);
 
-  const [form, setForm] = useState({ chiefComplaint: '', assessment: '', plan: '', icd10Codes: '' });
+  const [form, setForm] = useState({ chiefComplaint: '', assessment: '', plan: '', icd10Codes: '', ...emptyExamForm() });
   const [formError, setFormError] = useState(null);
   const [saved, setSaved] = useState(false);
 
@@ -79,7 +90,11 @@ export default function Encounter() {
   useEffect(() => {
     if (encounterQuery.data) {
       const e = encounterQuery.data.encounter;
-      setForm({ chiefComplaint: e.chiefComplaint || '', assessment: e.assessment || '', plan: e.plan || '', icd10Codes: e.icd10Codes || '' });
+      const examFields = Object.fromEntries(BODY_SYSTEMS.flatMap((s) => [
+        [`${s}Normal`, e[`${s}Normal`] === true ? 'true' : e[`${s}Normal`] === false ? 'false' : ''],
+        [`${s}Note`, e[`${s}Note`] || ''],
+      ]));
+      setForm({ chiefComplaint: e.chiefComplaint || '', assessment: e.assessment || '', plan: e.plan || '', icd10Codes: e.icd10Codes || '', ...examFields });
       const rx = encounterQuery.data.prescriptions;
       setLines(rx.length > 0 ? rx.map((p) => ({
         medicationName: p.medicationName, dosage: p.dosage || '', instructions: p.instructions || '',
@@ -94,11 +109,16 @@ export default function Encounter() {
     setFormError(null);
     setSaved(false);
     try {
+      const examFields = Object.fromEntries(BODY_SYSTEMS.flatMap((s) => [
+        [`${s}Normal`, form[`${s}Normal`] === '' ? null : form[`${s}Normal`] === 'true'],
+        [`${s}Note`, form[`${s}Note`].trim() || null],
+      ]));
       await upsertEncounter.mutateAsync({
         chiefComplaint: form.chiefComplaint.trim() || null,
         assessment: form.assessment.trim() || null,
         plan: form.plan.trim() || null,
         icd10Codes: form.icd10Codes.trim() || null,
+        ...examFields,
       });
       setSaved(true);
     } catch (err) {
@@ -190,9 +210,11 @@ export default function Encounter() {
         <h1 className="text-2xl font-bold text-ink">{t('encounterPage.title')}</h1>
         <StatusPill status={appointment.status} />
       </div>
-      <p className="mb-6 text-sm text-ink-muted">
+      <p className="mb-4 text-sm text-ink-muted">
         {patientName} · <span className="font-mono">{appointment.appointmentRef}</span>
       </p>
+
+      <VisitSummaryLink href={`/api/appointments/${id}/visit-summary/pdf`} />
 
       <PatientChart patientId={appointment.patientId} appointmentId={id} />
 
@@ -236,6 +258,35 @@ export default function Encounter() {
                 <Field label={t('encounterPage.icd10Optional')}>
                   <input disabled={signed} value={form.icd10Codes} onChange={(e) => { setForm({ ...form, icd10Codes: e.target.value }); setSaved(false); }} placeholder="J20.9, R05" className={`${inputClass} disabled:bg-slate-50 disabled:text-ink-muted`} />
                 </Field>
+
+                <p className="mt-2 text-sm font-semibold text-ink">{t('encounterPage.physicalExam')}</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {BODY_SYSTEMS.map((s) => (
+                    <div key={s} className="flex flex-col gap-2 rounded-lg border border-slate-100 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-medium text-ink">{t(`encounterPage.${s}`)}</span>
+                        <select
+                          disabled={signed}
+                          value={form[`${s}Normal`]}
+                          onChange={(e) => { setForm({ ...form, [`${s}Normal`]: e.target.value }); setSaved(false); }}
+                          className={`${inputClass} w-32 disabled:bg-slate-50 disabled:text-ink-muted`}
+                        >
+                          <option value="">{t('encounterPage.notExamined')}</option>
+                          <option value="true">{t('encounterPage.normal')}</option>
+                          <option value="false">{t('encounterPage.abnormal')}</option>
+                        </select>
+                      </div>
+                      <textarea
+                        rows={1}
+                        disabled={signed}
+                        value={form[`${s}Note`]}
+                        onChange={(e) => { setForm({ ...form, [`${s}Note`]: e.target.value }); setSaved(false); }}
+                        className={`${inputClass} disabled:bg-slate-50 disabled:text-ink-muted`}
+                      />
+                    </div>
+                  ))}
+                </div>
+
                 {formError && <ErrorBanner message={formError} />}
                 {!signed && (
                   <div className="flex flex-wrap items-center gap-3">

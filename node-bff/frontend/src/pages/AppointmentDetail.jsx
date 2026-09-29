@@ -8,6 +8,7 @@ import StatusPill from '../components/StatusPill.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
 import PageContainer from '../components/PageContainer.jsx';
+import VisitSummaryLink from '../components/VisitSummaryLink.jsx';
 import { formatDateTime } from '../lib/format.js';
 import { useActiveClinicZone } from '../theme/TimezoneProvider.jsx';
 
@@ -107,6 +108,13 @@ export default function AppointmentDetail() {
           </div>
         </dl>
       </div>
+
+      {/* This app's first patient-facing document download - no status gate, matches the backend's own "generatable anytime" design. */}
+      {authenticated && hasRole('patient') && (
+        <div className="mt-4">
+          <VisitSummaryLink href={`/api/my-appointments/${id}/visit-summary/pdf`} />
+        </div>
+      )}
 
       {!authenticated && (
         <div className="mt-4 rounded-lg border border-slate-200 bg-surface p-3 text-sm text-ink-muted">

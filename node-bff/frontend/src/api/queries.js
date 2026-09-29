@@ -643,6 +643,34 @@ export function useUpdateAllergy(patientId, id) {
   });
 }
 
+// ---- immunizations (phase 24 backend) - same list+create+partial-update
+// shape as allergies, mounted in the same PatientChart.jsx panel ----
+
+export function useImmunizations(patientId) {
+  return useQuery({
+    queryKey: ['immunizations', patientId],
+    queryFn: () => apiGet(`/api/patients/${patientId}/immunizations`),
+    enabled: Boolean(patientId),
+  });
+}
+
+export function useCreateImmunization(patientId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/patients/${patientId}/immunizations`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['immunizations', patientId] }),
+  });
+}
+
+/** Partial update - doseNumber/lotNumber/site only, per ImmunizationController.updateImmunization. */
+export function useUpdateImmunization(patientId, id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/patients/${patientId}/immunizations/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['immunizations', patientId] }),
+  });
+}
+
 /** 404 (nothing recorded yet) is an expected, common state here, same reasoning as useEncounter - retry:false so it surfaces immediately instead of retrying a few times first. */
 export function useVitals(appointmentId) {
   return useQuery({

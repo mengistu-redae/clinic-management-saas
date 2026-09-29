@@ -4,6 +4,9 @@ import {
   useAllergies,
   useCreateAllergy,
   useUpdateAllergy,
+  useImmunizations,
+  useCreateImmunization,
+  useUpdateImmunization,
   useVitals,
   useUpsertVitals,
   useMedicalHistory,
@@ -66,6 +69,7 @@ export default function PatientChart({ patientId, appointmentId }) {
       {open && (
         <div className="mt-4 flex flex-col gap-5">
           {patientId && <AllergiesSection patientId={patientId} />}
+          {patientId && <ImmunizationsSection patientId={patientId} appointmentId={appointmentId} />}
           {appointmentId && <VitalsSection appointmentId={appointmentId} />}
           {patientId && <MedicalHistorySection patientId={patientId} />}
           {patientId && <ConsentSection patientId={patientId} />}
@@ -188,6 +192,165 @@ function AllergyRow({ allergy, patientId, canWrite }) {
         </div>
       </div>
       {allergy.identifiedAt && <p className="mt-1 text-xs text-ink-muted">{t('patientChart.identifiedPrefix', { date: allergy.identifiedAt })}</p>}
+      {rowError && <p className="mt-1 text-xs text-danger">{rowError}</p>}
+    </li>
+  );
+}
+
+/**
+ * Same accumulating-list shape as Allergies (never full-replace), but
+ * writable by all three staff roles - matches ImmunizationController's
+ * own gate (provider/front_desk/clinic_admin, an immunization is
+ * physically administered the same way vitals are, not intake-recorded
+ * data the way allergies are). `appointmentId` is never a form field -
+ * when this panel is mounted inside a specific appointment's own context
+ * (front-desk detail page, provider encounter page), every immunization
+ * added here is naturally "given at this visit," so the create payload
+ * links it silently.
+ */
+function ImmunizationsSection({ patientId, appointmentId }) {
+  const { t } = useTranslation();
+  const { hasRole } = useAuth();
+  const canWrite = hasRole('provider') || hasRole('front_desk') || hasRole('clinic_admin');
+  const immunizationsQuery = useImmunizations(patientId);
+  const createImmunization = useCreateImmunization(patientId);
+
+  const [form, setForm] = useState({ vaccineName: '', administeredAt: '', doseNumber: '', lotNumber: '', site: '' });
+  const [formError, setFormError] = useState(null);
+
+  async function handleCreate(event) {
+    event.preventDefault();
+    setFormError(null);
+    if (!form.vaccineName.trim() || !form.administeredAt) {
+      setFormError(t('patientChart.errorImmunizationRequired'));
+      return;
+    }
+    try {
+      await createImmunization.mutateAsync({
+        vaccineName: form.vaccineName.trim(),
+        administeredAt: form.administeredAt,
+        doseNumber: form.doseNumber === '' ? undefined : Number(form.doseNumber),
+        lotNumber: form.lotNumber.trim() || undefined,
+        site: form.site.trim() || undefined,
+        appointmentId: appointmentId ?? undefined,
+      });
+      setForm({ vaccineName: '', administeredAt: '', doseNumber: '', lotNumber: '', site: '' });
+    } catch (err) {
+      setFormError(err.message || t('patientChart.errorAddImmunization'));
+    }
+  }
+
+  const immunizations = immunizationsQuery.data || [];
+
+  return (
+    <div className="border-t border-slate-100 pt-4">
+      <p className="mb-3 text-sm font-semibold text-ink">{t('patientChart.immunizationsSection')}</p>
+      {immunizationsQuery.isLoading && <Skeleton className="h-12 w-full" />}
+      {immunizationsQuery.isError && <ErrorBanner message={immunizationsQuery.error?.message} onRetry={immunizationsQuery.refetch} />}
+      {!immunizationsQuery.isLoading && !immunizationsQuery.isError && immunizations.length === 0 && (
+        <p className="text-sm text-ink-muted">{t('patientChart.noImmunizations')}</p>
+      )}
+      {immunizations.length > 0 && (
+        <ul className="mb-3 flex flex-col gap-2">
+          {immunizations.map((i) => (
+            <ImmunizationRow key={i.id} immunization={i} patientId={patientId} canWrite={canWrite} />
+          ))}
+        </ul>
+      )}
+      {canWrite && (
+        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
+          <Field label={t('patientChart.vaccineName')}>
+            <input value={form.vaccineName} onChange={(e) => setForm({ ...form, vaccineName: e.target.value })} placeholder="Influenza" className={`${inputClass} w-36`} />
+          </Field>
+          <Field label={t('patientChart.administeredAt')}>
+            <input type="date" value={form.administeredAt} onChange={(e) => setForm({ ...form, administeredAt: e.target.value })} className={inputClass} />
+          </Field>
+          <Field label={t('patientChart.doseNumberOptional')}>
+            <input type="number" min="1" value={form.doseNumber} onChange={(e) => setForm({ ...form, doseNumber: e.target.value })} className={`${inputClass} w-20`} />
+          </Field>
+          <Field label={t('patientChart.lotNumberOptional')}>
+            <input value={form.lotNumber} onChange={(e) => setForm({ ...form, lotNumber: e.target.value })} className={`${inputClass} w-28`} />
+          </Field>
+          <Field label={t('patientChart.siteOptional')}>
+            <input value={form.site} onChange={(e) => setForm({ ...form, site: e.target.value })} placeholder="left deltoid" className={`${inputClass} w-32`} />
+          </Field>
+          <button type="submit" disabled={createImmunization.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
+            {createImmunization.isPending ? t('common.adding') : t('patientChart.addImmunization')}
+          </button>
+        </form>
+      )}
+      {formError && <div className="mt-3"><ErrorBanner message={formError} /></div>}
+    </div>
+  );
+}
+
+function ImmunizationRow({ immunization, patientId, canWrite }) {
+  const { t } = useTranslation();
+  const updateImmunization = useUpdateImmunization(patientId, immunization.id);
+  const [editing, setEditing] = useState(false);
+  const [rowError, setRowError] = useState(null);
+  const [editForm, setEditForm] = useState({
+    doseNumber: immunization.doseNumber ?? '',
+    lotNumber: immunization.lotNumber || '',
+    site: immunization.site || '',
+  });
+
+  async function handleSave(event) {
+    event.preventDefault();
+    setRowError(null);
+    try {
+      await updateImmunization.mutateAsync({
+        doseNumber: editForm.doseNumber === '' ? undefined : Number(editForm.doseNumber),
+        lotNumber: editForm.lotNumber.trim() || undefined,
+        site: editForm.site.trim() || undefined,
+      });
+      setEditing(false);
+    } catch (err) {
+      setRowError(err.message || t('patientChart.errorUpdateImmunization'));
+    }
+  }
+
+  return (
+    <li className="rounded-lg border border-slate-100 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <span className="text-sm font-semibold text-ink">{immunization.vaccineName}</span>
+          <span className="ml-2 text-sm text-ink-muted">{immunization.administeredAt}</span>
+        </div>
+        {canWrite && !editing && (
+          <button type="button" onClick={() => setEditing(true)} className="text-xs font-medium text-brand-text hover:underline">
+            {t('common.edit')}
+          </button>
+        )}
+      </div>
+      {!editing && (
+        <p className="mt-1 text-xs text-ink-muted">
+          {[
+            immunization.doseNumber != null && t('patientChart.dosePrefix', { dose: immunization.doseNumber }),
+            immunization.lotNumber && t('patientChart.lotPrefix', { lot: immunization.lotNumber }),
+            immunization.site,
+          ].filter(Boolean).join(' · ') || '—'}
+        </p>
+      )}
+      {editing && (
+        <form onSubmit={handleSave} className="mt-2 flex flex-wrap items-end gap-3">
+          <Field label={t('patientChart.doseNumberOptional')}>
+            <input type="number" min="1" value={editForm.doseNumber} onChange={(e) => setEditForm({ ...editForm, doseNumber: e.target.value })} className={`${inputClass} w-20`} />
+          </Field>
+          <Field label={t('patientChart.lotNumberOptional')}>
+            <input value={editForm.lotNumber} onChange={(e) => setEditForm({ ...editForm, lotNumber: e.target.value })} className={`${inputClass} w-28`} />
+          </Field>
+          <Field label={t('patientChart.siteOptional')}>
+            <input value={editForm.site} onChange={(e) => setEditForm({ ...editForm, site: e.target.value })} className={`${inputClass} w-32`} />
+          </Field>
+          <button type="submit" disabled={updateImmunization.isPending} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
+            {t('common.save')}
+          </button>
+          <button type="button" onClick={() => setEditing(false)} className="text-xs font-medium text-ink-muted hover:underline">
+            {t('common.cancel')}
+          </button>
+        </form>
+      )}
       {rowError && <p className="mt-1 text-xs text-danger">{rowError}</p>}
     </li>
   );

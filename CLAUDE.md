@@ -2248,6 +2248,102 @@ coverage."
   clicking: `34/34` passing locally (5 files) both before and after a
   clean `npm ci`.
 
+**Frontend phase T: UI for phases 24-26** (built 2026-09-29) - closes the
+"backend only" gap the full-EHR-breadth backlog left open. Unlike most
+frontend phases, this one needed almost no clarifying questions - nearly
+every UI decision followed directly from an existing pattern (the plan
+was written straight from reading the real files, not a round of
+questions), so this write-up is mostly "which existing pattern got
+reused where," not new design.
+
+- **Immunizations** - a new sub-section in `components/PatientChart.jsx`,
+  mirroring the file's own Allergies sub-section almost exactly (same
+  accumulating-list shape, not the full-replace shape Vitals/Medical
+  History use) - list + add-form, using the file's shared `inputClass`/
+  `Field` helpers. Write gate is `provider`+`front_desk`+`clinic_admin`
+  (Immunization's real backend gate, broader than Allergy's own
+  front_desk+clinic_admin). `appointmentId` is never a form field - when
+  `PatientChart` is mounted inside a specific appointment's own context
+  (front-desk detail page, provider encounter page), the create payload
+  sets it silently from the existing prop, so an immunization added from
+  within a visit is automatically "given at this visit" - the whole point
+  of the phase-26 schema fix, now actually reachable from the UI, not
+  just curl. `ImmunizationRow` gets a small local edit-toggle (three
+  inputs + Save/Cancel) since its editable fields (dose/lot/site) don't
+  reduce to Allergy's own single-button "Mark resolved" pattern. New
+  `useImmunizations`/`useCreateImmunization`/`useUpdateImmunization`
+  hooks in `api/queries.js`, directly mirroring the Allergy hooks' shape.
+- **Physical-exam findings** - extends `pages/provider/Encounter.jsx`
+  inside the *same* note form as chief complaint/assessment/plan/ICD-10,
+  not a separate section with its own save button - one upsert call
+  already accepts arbitrary `Encounter` fields, so the 18 new fields just
+  join the existing form-state object and payload, and lock for free
+  (every input already gets `disabled={signed}` the same way the
+  existing fields do - no new frontend locking logic needed, confirmed
+  live: all 9 tri-state selects correctly disabled on an already-signed
+  encounter). A `BODY_SYSTEMS` array (same 9-system order as the
+  backend/PDF) is `.map()`'d to render one row per system - a 3-option
+  `<select>` (unset/Normal/Abnormal, converting `''` ⇄ `null` the same
+  way `PatientChart.jsx`'s own numeric Vitals fields already convert
+  `''` ⇄ `Number(...)`) plus a `<textarea>` note.
+- **Visit summary PDF** - new `components/VisitSummaryLink.jsx`, much
+  simpler than `InvoicePanel` since there's no JSON resource to check
+  first (the PDF is always generated fresh) - just an unconditionally
+  -rendered same-origin `<a href target="_blank">`, the identical
+  cookie-auth mechanism `InvoicePanel`'s own `pdfUrl` link already
+  relies on. Mounted three places: `front-desk/AppointmentDetail.jsx`
+  (next to the existing `InvoicePanel`), `provider/Encounter.jsx` (covers
+  the `provider` role, which never reaches the front-desk page), and -
+  **this app's first patient-facing document-download link** - the
+  patient-facing `AppointmentDetail.jsx`, gated `authenticated &&
+  hasRole('patient')` with deliberately no status gate, matching the
+  backend's own "generatable anytime" design rather than inventing a
+  client-side restriction it doesn't have.
+- New locale keys added to both `en.json`/`am.json` in lockstep - most
+  nested inside the existing `patientChart`/`encounterPage` namespaces
+  (these are extensions of existing pages, not new ones), plus one new
+  top-level `visitSummary` namespace (one key) following the
+  `invoicePanel`/`paymentsPanel` precedent of "one small namespace per
+  shared component." Confirmed exact key parity between both files after
+  the edit (805 keys each side, the same two pre-existing intentional
+  English-only pluralization keys as before - not a new gap).
+- **Tests**: `VisitSummaryLink.test.jsx` (new, 2 cases) - consistent with
+  Frontend phase S's own explicit scope decision ("infrastructure +
+  shared components," not broad page-level coverage); the `PatientChart.jsx`/
+  `Encounter.jsx` edits themselves stay outside that scope, same as every
+  other extension to those already-large, already-excluded files. `npm
+  test` showed `36/36` passing (up from 34), `npm run build` clean.
+- **Live-verified against the real running stack** (`docker compose up
+  -d --build --force-recreate node-bff` + `docker compose restart
+  nginx`) - as `demo-provider`: opened a genuine guest-booking encounter
+  (no `patientId`) and confirmed Allergies/Immunizations both gracefully
+  absent while Vitals still rendered (the `{patientId && ...}` gate
+  holding against a real guest, not just read from the code); opened a
+  different, real-patient encounter and confirmed the existing Allergy/
+  Immunization/Vitals/Consent data from earlier sessions' own live
+  verification rendered correctly, including the exact `dosePrefix`/
+  `lotPrefix`-formatted "Dose 1 · Lot LOT-VS · right arm" line; live
+  -edited a Physical Exam field (Respiratory: Normal → Abnormal, with a
+  new note) on an *unsigned* encounter and confirmed it persisted in
+  Postgres, while the pre-existing Cardiovascular abnormal finding
+  (recorded during phase 26's own backend verification) stayed
+  untouched; edited an immunization's lot number inline and confirmed
+  the update endpoint round-tripped; added a brand-new immunization from
+  within an appointment's own chart and confirmed it auto-linked via
+  `appointmentId` with no picker involved; confirmed the "Download visit
+  summary" link renders with the correct `href` on all three host pages
+  (front-desk detail, provider encounter, patient's own detail) and is
+  absent for an unauthenticated/guest view of the patient page. Exercised
+  the entire Physical Exam section and the new Immunizations list in
+  Dark theme + Amharic together - all 9 body-system labels, the
+  tri-state select options, and the interpolated dose/lot copy all
+  rendered correctly, and the 9 exam-finding selects were confirmed
+  genuinely `disabled` (not just styled to look disabled) on a real
+  signed encounter.
+
+This closes the "no frontend yet" gap the full-EHR-breadth backlog
+(phases 24-26) left open - see "Known gaps" below, updated accordingly.
+
 ## Post-phase-7 backend additions
 
 Built 2026-09-19/20, later extended the same session. Two "Known gaps"
@@ -2417,13 +2513,13 @@ append new ones there too, not here.
   "Frontend phase M" above. **Frontend phase R** (2026-09-28) closed the
   last module-set gap - `accountant` (phases 21/22) now has a real
   frontend matching `pharmacist`'s own phase-20 precedent, see "Frontend
-  phase R: accountant/finance UI" above. **A new gap, not yet closed**:
-  the full-EHR-breadth backlog (phases 24-26 - immunizations, physical
-  -exam findings, the visit-summary PDF) is backend-only, same as every
-  EHR-leaning phase's own initial build; no frontend phase has picked
-  these up yet. The visit-summary PDF in particular has no download
-  link/button anywhere in the UI yet, on either the staff or patient
-  side, even though the backend endpoint is fully live-verified.
+  phase R: accountant/finance UI" above. **Frontend phase T** (2026-09-29)
+  closed the full-EHR-breadth backlog's own frontend gap - immunizations
+  and physical-exam findings both have real UI now (in `PatientChart.jsx`
+  and `provider/Encounter.jsx` respectively), and the visit-summary PDF
+  has a real download link on all three host pages, including this app's
+  first ever patient-facing document download. See "Frontend phase T: UI
+  for phases 24-26" above.
 - ~~`clinic_admin` has no UI path to encounter documentation~~ **closed
   2026-09-15** - see "clinic_admin encounter-access fix" above.
   `front-desk/AppointmentDetail.jsx` is now shared with `clinic_admin` (a
