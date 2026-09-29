@@ -606,6 +606,15 @@ The full-EHR-breadth backlog (immunizations, physical-exam findings,
 visit summary) is now fully built, closing out everything the user asked
 to pull forward 2026-09-28.
 
+**Pharmacy module expansion, sketched 2026-09-29, not yet built**: seven
+more phases (27-33) turning phase 20's minimal pharmacy module into a
+full-featured one - clinical safety checks, controlled-substance
+dual-sign-off, supply chain (suppliers/purchase orders/reorder alerts),
+billing integration, smarter dispensing suggestions, patient-facing
+prescription/refill features, and a reporting dashboard. See "Pharmacy
+module expansion" below for the full write-up and the pinned
+architecture decisions.
+
 Each phase gets its own `TenantIsolationIntegrationTest` coverage extension
 and a `CLAUDE.md` update recording what was verified live against the
 running stack.
@@ -1691,6 +1700,134 @@ access, and no sign requirement. New migration `V22__immunizations_visit_link.sq
 This closes the full-EHR-breadth backlog the user asked to pull forward
 2026-09-28 - immunizations, physical-exam findings, and now the visit
 summary document are all built.
+
+## Pharmacy module expansion - sketched 2026-09-29, not yet built
+
+The user asked to turn phase 20's pharmacy module (catalog + batch stock
++ manual dispensing, deliberately minimal - no drug-name matching, no
+billing integration, no supply chain) into a "full featured" module.
+Two rounds of direct questions were put to the user before sketching
+anything, matching this project's own "ask before building" convention
+for every new module set - which capability areas to include (answered:
+essentially all of them), then three genuine architecture forks within
+those areas (answered, all with the recommended option):
+
+- **Drug-interaction checking**: a self-maintained interaction-pairs
+  table, not a licensed external drug database this app has no access to.
+- **Pharmacy billing**: a new `Payment`/`Invoice` owner type tied to a
+  dispense, reusing the existing appointment/lab-order owner pattern
+  exactly, rather than making `Invoice` itemized.
+- **Controlled substances**: a real dual-sign-off workflow gate before a
+  controlled-substance dispense completes, not just enhanced logging.
+
+Seven new sequential phases, building on phase 20's existing
+`com.clinicops.pharmacy` package (`Medication`/`StockBatch`/
+`DispenseRecord`). Migrations start at `V23` (highest existing is
+`V22__immunizations_visit_link.sql`). None of this is built yet - full
+field-by-field design (and any smaller remaining forks, flagged inline
+below) happens when each phase is actually picked up, same as every
+other "sketched ahead of need" plan in this file (see phases 16-18's own
+precedent).
+
+**27. Clinical safety checks** - before `DispenseService` decrements
+stock, cross-check the medication against the patient's own active
+`Allergy` rows (case-insensitive substring match against `allergen` -
+same "keep minimal, no drug-class ontology" limitation this app already
+accepts for ICD-10) and against a new tenant-scoped `DrugInteractionPair`
+table (`medicationAId`/`medicationBId`, hard-delete like `FeePolicy`/
+`LabRate` - pure config with a well-defined "missing = no known
+interaction" fallback) checked against the patient's other active
+prescriptions. Neither hard-blocks by default - mirrors the lab-order
+restricted-test pattern (`RestrictedTestsProperties`): the dispense
+request needs an explicit acknowledgment flag to proceed past a
+detected conflict, recorded on the `DispenseRecord`. `DrugInteractionPair`
+CRUD is `pharmacist`+`clinic_admin`, same gate as the rest of the module.
+
+**28. Controlled substance tracking** - `Medication` gains a nullable
+`controlledSubstanceSchedule` (allow-listed `schedule_i`..`schedule_v`),
+settable by `clinic_admin` only (tighter than the general catalog gate).
+Dispensing one goes through a **new, separate, mutable** workflow entity
+(`PendingControlledSubstanceDispense` - requestedBy/medicationId/
+stockBatchId/prescriptionId/quantity/status/coSignedBy) rather than
+touching `DispenseRecord` itself mid-flight, since that entity's own
+javadoc commits it to being genuinely append-only. Only once a
+*different* pharmacist/clinic_admin co-signs does `DispenseService`
+create the real, permanent `DispenseRecord` - which gains its own
+nullable `coSignedBy` column, populated once at creation (never updated
+after), so the append-only invariant holds exactly as already documented.
+
+**29. Supply chain management** - new `Supplier` (soft-deactivate, same
+shape as `Room`/`Provider`), `PurchaseOrder` (`supplierId`, status
+draft/ordered/received/cancelled), `PurchaseOrderLine`. Receiving a PO
+(`POST /api/clinic/purchase-orders/{id}/receive`) auto-creates a
+`StockBatch` per line, reusing the existing stock-receiving code path
+rather than duplicating it. A new `GET /api/pharmacy/reorder-alerts`
+finally puts `Medication.reorderThreshold` (dormant since phase 20) to
+use - every medication whose total on-hand quantity across active,
+non-expired batches has dropped below it. This also closes phase 20's
+own documented simplification ("low-stock stayed a per-medication
+client-side badge, not a dashboard banner").
+
+**30. Pharmacy billing integration** - `payments` (and `invoices`) gain a
+nullable `dispense_record_id`, extending the existing exactly-one-owner
+CHECK to a three-way constraint. New payment endpoints mirror
+`AppointmentPaymentController`'s shape exactly, but with `pharmacist`
+swapped in for `provider` in the read/record gate (front_desk/clinic_admin/
+pharmacist - whoever is actually at the point of sale). The suggested
+charge amount is `Medication.unitPrice * DispenseRecord.quantityDispensed`,
+pre-filled but staff-editable, same "computed suggestion, not a locked
+value" shape every other staff-entered payment already uses. `JournalService`
+(phase 21's accounting module) auto-posts for this new payment source
+type too, matching its existing "every Payment/Refund gets a journal
+entry" convention - extending, not bypassing, the ledger. Whether a
+dispense also gets its own generate-once Invoice/PDF (matching
+appointments/lab-orders) or payment-only is left as a real open question
+for when this phase is actually built, not pinned here.
+
+**31. Smarter dispensing workflow** - adds *suggestions* on top of the
+existing manual-pick flow, deliberately not reversing phase 20's own
+pinned "no drug-name-matching logic" / "no automatic FEFO allocation"
+decisions at the data level: `GET /api/pharmacy/queue` gains a
+server-side fuzzy-matched `suggestedMedicationId` hint per prescription
+line (a real match still has to be explicitly confirmed by the
+pharmacist - `Prescription.medicationName` itself stays untouched free
+text, no new coupling introduced), and stock batches returned for a
+selected medication come pre-sorted earliest-expiry-first (FEFO order as
+a sort, not an automatic pick - the pharmacist still explicitly chooses
+the batch, same "staff makes the explicit call" convention `DispenseRecord`'s
+own javadoc already commits to).
+
+**32. Patient-facing pharmacy features** - a new ownership-scoped
+`GET /api/my-prescriptions` (resolved via `customer_user_id`, same
+pattern as `my-appointments`/`my-lab-orders`), each prescription
+annotated with a derived dispensed-so-far status computed the same way
+`PrescriptionRepository.findPendingDispense` already does internally. A
+new lightweight `PrescriptionRefillRequest` (patientId/prescriptionId/
+status requested/approved/denied) reuses `LabOrder`'s own two-phase
+patient-request-then-staff-confirm shape (phase 7's precedent) rather
+than inventing a new workflow pattern. Approving a request can reuse the
+existing real-email notification outbox (phase 17's Mailpit infra) for a
+"your refill is ready" message - existing infrastructure, not new.
+
+**33. Pharmacy reporting & analytics** - `GET /api/pharmacy/analytics?days=`
+mirrors `ClinicAnalyticsController`'s exact bundled-response shape (phase
+19): dispensing volume over time, current inventory valuation (`SUM
+(quantityOnHand * unitPrice)` across active batches), an expiring-soon
+list, the phase-29 low-stock list, and per-medication dispense counts.
+Frontend charts reuse the dataviz-skill-validated palette and shared
+chart components phase 19/frontend-phase-O already built, rather than
+re-doing that validation work. Built last, same "aggregates data from
+everything built before it" reasoning phase 19 itself was built
+out-of-order for in the original plan.
+
+Each phase gets the same treatment every other phase in this project
+does once actually built: its own migration, its own
+`TenantIsolationIntegrationTest` case(s), pure-unit tests for anything
+calculation-heavy (the FEFO sort, the fuzzy-match scoring, inventory
+valuation), Testcontainers integration tests for the rest, a live
+-verification pass against the real running stack, and its own dated
+CLAUDE.md write-up - this section will be replaced by those real
+per-phase write-ups as each one lands, not left standing alongside them.
 
 ## Phase 19: clinic-admin analytics dashboard
 
