@@ -13,6 +13,8 @@ import {
   CloseIcon,
   WalletIcon,
   ReceiptIcon,
+  BoxIcon,
+  WrenchIcon,
 } from '../components/icons.jsx';
 
 /**
@@ -41,6 +43,11 @@ function navGroups(t, hasRole) {
         { to: '/front-desk', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
         { to: '/front-desk/patients', label: t('nav.frontDesk.bookWalkIn'), icon: UsersIcon },
         { to: '/front-desk/appointments', label: t('nav.frontDesk.appointments'), icon: CalendarIcon },
+        { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: BoxIcon },
+        { to: '/inventory/items', label: t('nav.inventory.items'), icon: BoxIcon },
+        { to: '/inventory/suppliers', label: t('nav.inventory.suppliers'), icon: BuildingIcon },
+        { to: '/inventory/purchase-orders', label: t('nav.inventory.purchaseOrders'), icon: ReceiptIcon },
+        { to: '/inventory/assets', label: t('nav.inventory.assets'), icon: WrenchIcon },
       ],
     });
   }
@@ -66,6 +73,11 @@ function navGroups(t, hasRole) {
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
         { to: '/accountant/accounts', label: t('nav.accountant.accounts'), icon: WalletIcon },
         { to: '/accountant/payroll', label: t('nav.accountant.payroll'), icon: ReceiptIcon },
+        { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: BoxIcon },
+        { to: '/inventory/items', label: t('nav.inventory.items'), icon: BoxIcon },
+        { to: '/inventory/suppliers', label: t('nav.inventory.suppliers'), icon: BuildingIcon },
+        { to: '/inventory/purchase-orders', label: t('nav.inventory.purchaseOrders'), icon: ReceiptIcon },
+        { to: '/inventory/assets', label: t('nav.inventory.assets'), icon: WrenchIcon },
         { to: '/clinic-admin/settings', label: t('nav.clinicAdmin.settings'), icon: SettingsIcon },
       ],
     });

@@ -1196,3 +1196,204 @@ export function useBudgetVsActual(enabled, year, month) {
     enabled: enabled && Boolean(year) && Boolean(month),
   });
 }
+
+// ---- general inventory (phases 29/30/34 - see InventoryItemController/SupplierController/
+// PurchaseOrderController/StockAdjustmentController/AssetController/InventoryAnalyticsController) ----
+
+export function useInventoryItems(enabled, status) {
+  return useQuery({
+    queryKey: ['inventory-items', status ?? 'all'],
+    queryFn: () => apiGet(`/api/inventory/items${status ? `?status=${status}` : ''}`),
+    enabled,
+  });
+}
+
+export function useCreateInventoryItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/inventory/items', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
+  });
+}
+
+export function useUpdateInventoryItem(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/inventory/items/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
+  });
+}
+
+/** Separate from useStockBatches (medication-scoped) - a different base path, not a generalization of it. */
+export function useInventoryStockBatches(itemId) {
+  return useQuery({
+    queryKey: ['inventory-stock-batches', itemId],
+    queryFn: () => apiGet(`/api/inventory/items/${itemId}/stock-batches`),
+    enabled: Boolean(itemId),
+  });
+}
+
+export function useReceiveInventoryStockBatch(itemId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/inventory/items/${itemId}/stock-batches`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-stock-batches', itemId] }),
+  });
+}
+
+export function useWriteOffInventoryStockBatch(itemId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ batchId, ...body }) => apiPost(`/api/inventory/items/${itemId}/stock-batches/${batchId}/write-off`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-stock-batches', itemId] }),
+  });
+}
+
+export function useStockAdjustments(batchId) {
+  return useQuery({
+    queryKey: ['stock-adjustments', batchId],
+    queryFn: () => apiGet(`/api/inventory/stock-batches/${batchId}/adjustments`),
+    enabled: Boolean(batchId),
+  });
+}
+
+export function useCreateStockAdjustment(batchId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/inventory/stock-batches/${batchId}/adjustments`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stock-adjustments', batchId] });
+      // The adjustment changes quantityOnHand on both possible parent lists - prefix-match invalidate both, same "can't know which parent" reasoning useDispensePrescription already uses for stock-batches.
+      queryClient.invalidateQueries({ queryKey: ['inventory-stock-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-batches'] });
+    },
+  });
+}
+
+export function useSuppliers(enabled, status) {
+  return useQuery({
+    queryKey: ['suppliers', status ?? 'all'],
+    queryFn: () => apiGet(`/api/inventory/suppliers${status ? `?status=${status}` : ''}`),
+    enabled,
+  });
+}
+
+export function useCreateSupplier() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/inventory/suppliers', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['suppliers'] }),
+  });
+}
+
+export function useUpdateSupplier(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/inventory/suppliers/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['suppliers'] }),
+  });
+}
+
+/** Each row is a PurchaseOrderWithLines - {order, lines} - lines are already embedded, no second fetch needed. */
+export function usePurchaseOrders(enabled) {
+  return useQuery({
+    queryKey: ['purchase-orders'],
+    queryFn: () => apiGet('/api/inventory/purchase-orders'),
+    enabled,
+  });
+}
+
+export function useCreatePurchaseOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/inventory/purchase-orders', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchase-orders'] }),
+  });
+}
+
+export function useReceivePurchaseOrder(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/inventory/purchase-orders/${id}/receive`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      // Receiving auto-creates new stock batches against whichever items/medications the order's lines named.
+      queryClient.invalidateQueries({ queryKey: ['inventory-stock-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-batches'] });
+    },
+  });
+}
+
+export function useCancelPurchaseOrder(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/inventory/purchase-orders/${id}/cancel`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchase-orders'] }),
+  });
+}
+
+export function useAssets(enabled, status) {
+  return useQuery({
+    queryKey: ['assets', status ?? 'all'],
+    queryFn: () => apiGet(`/api/inventory/assets${status ? `?status=${status}` : ''}`),
+    enabled,
+  });
+}
+
+export function useCreateAsset() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/inventory/assets', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['assets'] }),
+  });
+}
+
+export function useUpdateAsset(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/inventory/assets/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['assets'] }),
+  });
+}
+
+export function useAssignAssetRoom(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (roomId) => apiPost(`/api/inventory/assets/${id}/assign-room`, { roomId: roomId || null }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['assets'] }),
+  });
+}
+
+export function useAssetMaintenanceRecords(assetId) {
+  return useQuery({
+    queryKey: ['asset-maintenance-records', assetId],
+    queryFn: () => apiGet(`/api/inventory/assets/${assetId}/maintenance-records`),
+    enabled: Boolean(assetId),
+  });
+}
+
+export function useCreateAssetMaintenanceRecord(assetId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/inventory/assets/${assetId}/maintenance-records`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['asset-maintenance-records', assetId] }),
+  });
+}
+
+/** Spans both Medication and InventoryItem - see InventoryItemController.reorderAlerts. */
+export function useReorderAlerts(enabled) {
+  return useQuery({
+    queryKey: ['inventory', 'reorder-alerts'],
+    queryFn: () => apiGet('/api/inventory/reorder-alerts'),
+    enabled,
+  });
+}
+
+/** Inventory dashboard analytics (phase 34) - see InventoryAnalyticsController. Every field is a current-state snapshot; `days` is accepted for shape parity with usePharmacyAnalytics but currently unused server-side. */
+export function useInventoryAnalytics(enabled, days) {
+  return useQuery({
+    queryKey: ['inventory-analytics', days],
+    queryFn: () => apiGet(`/api/inventory/analytics${days ? `?days=${days}` : ''}`),
+    enabled,
+  });
+}

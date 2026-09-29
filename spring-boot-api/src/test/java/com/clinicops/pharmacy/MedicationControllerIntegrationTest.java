@@ -80,6 +80,24 @@ class MedicationControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    /** Phase 35 (inventory frontend) - front_desk can read the catalog (a real gap closed live: it can already create a medication-owned PurchaseOrderLine on the backend, but had no way to look one up), still can't write it. */
+    @Test
+    void frontDeskCanReadTheCatalogButNotWriteIt() throws Exception {
+        Clinic clinic = createClinic("med-fd-read-" + UUID.randomUUID(), "Front Desk Read Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Medication medication = createMedication(clinic.getId(), "Amoxicillin 500mg");
+
+        mockMvc.perform(get("/api/clinic/medications").with(asFrontDesk("fd", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/api/clinic/medications/" + medication.getId()).with(asFrontDesk("fd", orgAlias)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/clinic/medications").with(asFrontDesk("fd", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateMedicationRequest("Paracetamol", null, null, null, null))))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     void receivingStockThenWritingItOffZeroesQuantityOnHand() throws Exception {
         Clinic clinic = createClinic("med-batch-" + UUID.randomUUID(), "Batch Clinic");

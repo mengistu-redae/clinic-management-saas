@@ -49,8 +49,18 @@ public class MedicationController {
         this.stockBatchRepository = stockBatchRepository;
     }
 
+    /**
+     * Phase 35 (inventory frontend) - a real gap found live: front_desk can
+     * already create a medication-owned PurchaseOrderLine on the backend
+     * (PurchaseOrderController's own gate), but had no way to read the
+     * medication catalog to pick one - front_desk genuinely couldn't use
+     * half of the new purchase-order page. Widened read-only, deliberately
+     * asymmetric from the write endpoints below (still pharmacist+
+     * clinic_admin only) - same "broader read gate than write gate"
+     * precedent RoomController's own provider-readable GET already sets.
+     */
     @GetMapping("/api/clinic/medications")
-    @PreAuthorize("hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')")
+    @PreAuthorize("hasAnyRole('PHARMACIST', 'CLINIC_ADMIN', 'FRONT_DESK')")
     public List<Medication> medications(@RequestParam(required = false) String status) {
         UUID tenantId = TenantContext.require();
         return status == null || status.isBlank()
@@ -59,7 +69,7 @@ public class MedicationController {
     }
 
     @GetMapping("/api/clinic/medications/{id}")
-    @PreAuthorize("hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')")
+    @PreAuthorize("hasAnyRole('PHARMACIST', 'CLINIC_ADMIN', 'FRONT_DESK')")
     public Medication medication(@PathVariable UUID id) {
         return requireOwnedMedication(id, TenantContext.require());
     }

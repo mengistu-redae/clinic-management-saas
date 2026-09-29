@@ -2832,6 +2832,151 @@ into).
 This closes the entire "Pharmacy expansion + stock management module"
 - all ten sequential phases (27-34) sketched 2026-09-29 are now built.
 
+## Frontend gap-closing, sketched 2026-09-29
+
+Asked directly whether every role and backend API has a frontend - the
+honest answer was no. A grep of every `*Controller.java` against every
+frontend route/hook found six real gaps: general inventory
+(`com.clinicops.inventory` - phases 29/30/34) had **zero** frontend at
+all, plus four smaller pharmacy-expansion features left deliberately
+backend-only when built (drug-interaction pairs, controlled substances,
+dispense billing, patient prescriptions/refills + the staff refill
+review queue). The user asked to close all six, as sequential phases -
+phase 35 (below) is the first, the biggest by far since it's a whole
+unbuilt module; the remaining five are smaller, later phases.
+
+## Phase 35: general inventory UI
+
+First of the six frontend gap-closing phases above. A new
+`pages/inventory/` section (Dashboard/Items/Suppliers/PurchaseOrders/
+Assets) against the fully-built, fully-tested backend from phases
+29/30/34 - zero backend changes planned going in (two were found live,
+see below). `clinic_admin`+`front_desk` throughout - a co-equal
+two-role gate, not a primary-role-plus-clinic_admin-override the way
+`pharmacist`/`accountant` work, since the backend already grants both
+roles full, symmetric access with no ownership distinction (phase 29's
+own pinned decision).
+
+- **`Items.jsx`** - closely mirrors `pharmacist/Medications.jsx`'s own
+  create-form-above-`DataTable`+`renderExpanded` shape (edit/deactivate,
+  a nested plain-`<ul>` stock-batches panel with receive/write-off), one
+  level deeper: each active batch gets an "Adjustments" toggle showing
+  its `StockAdjustment` history plus a one-line add-adjustment form -
+  new nested-within-nested pattern, still a plain list, not a further
+  `DataTable`, matching `Medications.jsx`'s own shallow-nesting
+  precedent. New parallel hooks (`useInventoryStockBatches`/
+  `useReceiveInventoryStockBatch`/`useWriteOffInventoryStockBatch`)
+  pointed at the `/api/inventory/items/...` paths - deliberately not a
+  generalization of the existing pharmacy `useStockBatches` hook, since
+  the path differs and touching the working pharmacist code for this
+  was unnecessary risk for zero benefit.
+- **`Suppliers.jsx`** - plain CRUD, same inline-edit-in-place shape as
+  `clinic-admin/Rooms.jsx` (simpler than Items - no nested panel).
+- **`PurchaseOrders.jsx`** - a dynamic line-item create form (each line
+  toggles medication vs. inventory-item, `CreatePurchaseOrderRequest`'s
+  own nested-lines-in-one-request shape), `renderExpanded` showing the
+  response's own already-embedded `lines` (`PurchaseOrderWithLines`) -
+  same "no second fetch needed" pattern `accountant/Journal.jsx`'s own
+  journal-entry lines already established - plus Receive/Cancel buttons
+  gated on `order.status === 'ordered'`.
+- **`Assets.jsx`** - status transitions, a dedicated room-assign
+  `<select>` wired to the null-clearing `AssignRoomRequest` action, and
+  a nested append-only maintenance-record log (same shallow-list shape
+  as Items' stock batches).
+- **`Dashboard.jsx`** - mirrors `accountant/Dashboard.jsx`'s own stat
+  -cards-plus-link-tiles shape, finally giving the phase-34
+  `GET /api/inventory/analytics` endpoint a real UI home (it had zero
+  consumers since being built). One inline asset-status bar chart
+  (`ChartCard`/`useChartPalette`/`ChartTooltip`, the exact phase-19
+  -validated palette) - not a new shared chart component for one page,
+  matching this session's own "no premature abstraction" bar.
+- **Two real, structural bugs found live, not introduced by this phase
+  but first tripped by it - the same "no shortcut past real gaps"
+  standard this session has held throughout:**
+  1. **`front_desk` had no way to read the medication catalog at all**
+     (`MedicationController`'s `GET` endpoints were `pharmacist`+
+     `clinic_admin` only) - even though `PurchaseOrderController`
+     already lets `front_desk` create a medication-owned
+     `PurchaseOrderLine` on the backend. The new page's own medication
+     picker silently had zero options for `front_desk`, and an existing
+     order's medication line rendered as a raw UUID instead of a name.
+     **Fixed by widening only the two read endpoints**
+     (`GET /api/clinic/medications`, `GET /api/clinic/medications/{id}`)
+     to include `front_desk` - deliberately asymmetric from the write
+     endpoints below them (still `pharmacist`+`clinic_admin` only),
+     same "broader read gate than write gate" precedent
+     `RoomController`'s own provider-readable `GET` already sets.
+     Confirmed live: `demo-front-desk` now sees real medication options
+     and can place a real medication-line purchase order end to end;
+     `demo-provider` still gets a clean 403.
+  2. **`PurchaseOrders.jsx`/`Assets.jsx` resolved names only against
+     `active`-status lists** (correctly scoped to the create-form's own
+     pickers), so a historical order/asset referencing a since
+     -deactivated supplier, medication, item, or room would show a raw
+     id instead of its name. Fixed by fetching a second, unfiltered list
+     purely for the name-resolution maps, leaving the active-only lists
+     untouched for the pickers.
+- **Tests**: `MedicationControllerIntegrationTest` gained
+  `frontDeskCanReadTheCatalogButNotWriteIt` (read succeeds, write still
+  403s) - the one backend test this phase needed, since everything else
+  driving these pages was already covered by phases 29/30/34's own
+  suites. Confirmed via a clean `mvn clean test-compile` and a full
+  `mvn test` run showing `Tests run: 431, Errors: 343` (up from 430/342
+  - exactly the one new test method), 88 pure-unit tests unaffected;
+  confirmed via grepping every surefire report that all 343 failures
+  hit the identical pre-existing `Could not find a valid Docker
+  environment` wall, none any other way. Frontend: `npm run build`
+  clean, `npm test` (36/36) unaffected - this phase adds no new
+  shared-component test surface per frontend phase S's own scope
+  boundary (page-level changes).
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`)** - `docker compose up -d --build --force-recreate
+  spring-boot-api node-bff` (both healthy). As a real `demo-front-desk`
+  login: the Dashboard's stat cards/chart matched a direct Postgres
+  cross-check of total valuation exactly ($961.50); created a real
+  `InventoryItem` ("Surgical Masks (Box)"), received 15 units, confirmed
+  the low-stock badge and the Dashboard's own low-stock count both
+  reflected it; opened the nested Adjustments panel (untested further
+  live due to the tool-flakiness noted below, but confirmed correct via
+  the same component pattern `Medications.jsx` already proved). Created
+  a real `Supplier` ("Northside Medical Supplies"). Placed a real
+  medication-owned purchase order against it (Penicillin V × 25, the
+  bug-1 fix's own live proof), received it, and cross-checked a genuine
+  new 25-unit `StockBatch` directly in Postgres. Confirmed the
+  pre-existing PO's own medication line now resolves to "Amoxicillin"
+  instead of a raw UUID (bug-2's own live proof). On the Autoclave
+  asset: assigned it to "Room 1" then cleared the assignment (both
+  confirmed via a direct `GET /api/inventory/assets` fetch, not just
+  the UI), cycled status to `under_maintenance` and back, and added a
+  real third maintenance record ("Filter replaced") confirmed via a
+  direct fetch of the endpoint. Confirmed `demo-pharmacist` and
+  `demo-provider` both correctly 403 on `/api/inventory/*` and (for
+  `demo-provider`) on the now-front-desk-readable `/api/clinic/
+  medications` too. Exercised the whole Inventory section once in Dark
+  theme + Amharic together (nav group, stat cards, and the chart all
+  confirmed correctly translated/themed via real screenshots).
+- **A real browser-automation tool-flakiness pattern hit repeatedly
+  this phase, not a product bug** - `computer` tool screenshots
+  intermittently timed out ("renderer frozen") and, several times
+  independent of click position (including once on a plain local-state
+  toggle with zero network calls), the SPA landed back on `/` after an
+  action - `/auth/me` always confirmed the session stayed genuinely
+  authenticated throughout. Worked around by re-verifying state via
+  direct authenticated `fetch` calls after each such incident rather
+  than trusting the visual result alone, and by using native-setter +
+  `dispatchEvent` JS to drive `<select>`/`<input>` elements reliably
+  for the create-purchase-order and assign-room flows once repeated
+  coordinate-based clicks proved unreliable in this session.
+- **Standing note, unresolved since phase 34**: `nginx` (`:80`) is
+  still stuck in the same Docker Desktop internal port-allocation
+  desync - every `docker compose up -d nginx` this phase started the
+  container, then it exited again within seconds, still holding no
+  network attachment. Not a code issue (confirmed again this phase -
+  every new endpoint and page work identically through `node-bff`
+  directly, the identical backend/BFF code path nginx would just proxy
+  through). Owed: a real check through `http://localhost/` once this
+  clears or a deliberate Docker Desktop restart is authorized.
+
 ## Phase 19: clinic-admin analytics dashboard
 
 Built 2026-09-24 at the user's direct request ("modify the dashboard
@@ -3809,6 +3954,22 @@ attributed to the patient's own account for a self-service cancel).
   Frontend: `npm run build` clean, `npm test` (36/36) unaffected - see
   "Phase 34" above for the real, pre-existing chart-crash bug found and
   fixed along the way.
+- `MedicationControllerIntegrationTest` (phase 35, new,
+  `frontDeskCanReadTheCatalogButNotWriteIt`) - front_desk reads both
+  the list and single-medication endpoints successfully, still 403s on
+  create - confirms the deliberate, narrow read-only widening (see
+  "Phase 35" above) without opening write access. Same Testcontainers
+  wall as every other integration test on this machine - `mvn test`
+  showed `Tests run: 431, Errors: 343` (up from 430/342 - exactly the
+  one new test method), 88 pure-unit tests unaffected. No new pure-unit
+  test class or `TenantIsolationIntegrationTest` case - this phase is
+  almost entirely frontend, driving already-tested backend endpoints;
+  the one real backend change got its own direct role-gate test above
+  instead. The Testcontainers-only assertion is confirmed correct by
+  the live verification in "Phase 35" above (a real `demo-front-desk`
+  login placing and receiving a genuine medication-owned purchase order
+  end to end, and a real `demo-provider` login confirmed still locked
+  out of the same endpoint), not by a local test run.
 
 ## Verified-session logs
 

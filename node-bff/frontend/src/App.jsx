@@ -45,6 +45,11 @@ import AccountantJournal from './pages/accountant/Journal.jsx';
 import AccountantEmployees from './pages/accountant/Employees.jsx';
 import AccountantPayroll from './pages/accountant/Payroll.jsx';
 import AccountantBudgets from './pages/accountant/Budgets.jsx';
+import InventoryDashboard from './pages/inventory/Dashboard.jsx';
+import InventoryItems from './pages/inventory/Items.jsx';
+import InventorySuppliers from './pages/inventory/Suppliers.jsx';
+import InventoryPurchaseOrders from './pages/inventory/PurchaseOrders.jsx';
+import InventoryAssets from './pages/inventory/Assets.jsx';
 
 /**
  * Logged-out landing at "/" - previously title+subtitle only, with every
@@ -444,6 +449,52 @@ export default function App() {
           element={
             <RequireRole roles={['accountant', 'clinic_admin']}>
               <AccountantBudgets />
+            </RequireRole>
+          }
+        />
+        {/* General inventory (phases 29/30/34) - a co-equal two-role gate,
+            not a primary-role-plus-clinic_admin-override the way
+            pharmacist/accountant work: the backend already grants
+            clinic_admin and front_desk full, symmetric access with no
+            ownership distinction, so there's no "curated subset" split
+            needed here. */}
+        <Route
+          path="/inventory"
+          element={
+            <RequireRole roles={['clinic_admin', 'front_desk']}>
+              <InventoryDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/inventory/items"
+          element={
+            <RequireRole roles={['clinic_admin', 'front_desk']}>
+              <InventoryItems />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/inventory/suppliers"
+          element={
+            <RequireRole roles={['clinic_admin', 'front_desk']}>
+              <InventorySuppliers />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/inventory/purchase-orders"
+          element={
+            <RequireRole roles={['clinic_admin', 'front_desk']}>
+              <InventoryPurchaseOrders />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/inventory/assets"
+          element={
+            <RequireRole roles={['clinic_admin', 'front_desk']}>
+              <InventoryAssets />
             </RequireRole>
           }
         />

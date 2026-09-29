@@ -169,6 +169,24 @@ export function BuildingIcon(props) {
   );
 }
 
+export function BoxIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M3.5 8 12 3.5 20.5 8 12 12.5 3.5 8Z" />
+      <path d="M3.5 8v9L12 21.5 20.5 17V8" />
+      <path d="M12 12.5V21.5" />
+    </svg>
+  );
+}
+
+export function WrenchIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M14.7 6.3a4 4 0 0 0-5.4 4.6L3.5 16.7a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 4.6-5.4l-2.6 2.6-2-2 2.6-2.6Z" />
+    </svg>
+  );
+}
+
 export function SettingsIcon(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
