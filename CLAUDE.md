@@ -1784,17 +1784,9 @@ full write-up.
 **32. Smarter dispensing workflow** - **built 2026-09-29**. See "Phase
 32: smarter dispensing workflow" below for the full write-up.
 
-**33. Patient-facing pharmacy features** - a new ownership-scoped
-`GET /api/my-prescriptions` (resolved via `customer_user_id`, same
-pattern as `my-appointments`/`my-lab-orders`), each prescription
-annotated with a derived dispensed-so-far status computed the same way
-`PrescriptionRepository.findPendingDispense` already does internally. A
-new lightweight `PrescriptionRefillRequest` (patientId/prescriptionId/
-status requested/approved/denied) reuses `LabOrder`'s own two-phase
-patient-request-then-staff-confirm shape (phase 7's precedent) rather
-than inventing a new workflow pattern. Approving a request can reuse the
-existing real-email notification outbox (phase 17's Mailpit infra) for a
-"your refill is ready" message - existing infrastructure, not new.
+**33. Patient-facing pharmacy features** - **built 2026-09-29**. See
+"Phase 33: patient-facing pharmacy features" below for the full
+write-up.
 
 **34. Unified reporting & analytics** (broadened from the original
 "pharmacy-only" sketch, built last since it aggregates everything above
@@ -2544,6 +2536,129 @@ this session to touch the frontend.
   pharmacy-expansion phase this session to touch the frontend, for the
   reason explained above. No new Keycloak role, no
   `node-bff`/`PUBLIC_ROUTES` change, no new migration.
+
+## Phase 33: patient-facing pharmacy features
+
+Seventh of the ten sequential phases sketched under "Pharmacy expansion +
+stock management module" above (built 2026-09-29, same session as
+27-32). Gives patients their own read access to prescriptions plus a
+lightweight refill-request workflow, reusing `LabOrder`'s own phase-7
+patient-request -> staff-confirm shape and the phase-17 real-email
+notification outbox rather than inventing new patterns for either. One
+direct scoping question was put to the user before designing this
+session - whether to include a new patient-facing frontend page this
+phase, since none exists yet - answered **backend/API only**, the
+recommended option, matching phases 27-31's own precedent (new UI
+surface is a bigger, separate scope decision better suited to its own
+dedicated frontend phase later). New migration
+`V28__patient_prescription_refills.sql`.
+
+- **`com.clinicops.pharmacy.PrescriptionRefillRequest`** (new entity) -
+  `prescriptionId`/`patientId`/`requestedBy` fixed at creation, `notes`
+  (the patient's own optional note), `status` (requested/approved/
+  denied), `reviewedBy`/`reviewedAt`/`reviewNotes` set once by staff.
+  **`PatientPrescriptionService`** (new bean, mirrors `LabOrderService`'s
+  own "one service for the whole domain" shape) - `myPrescriptions`
+  resolves the caller's own owned encounter ids
+  (`Appointment.findAllByCustomerUserId` -> `Encounter.findByAppointmentId`,
+  exactly `LabOrderService.myLabOrders`'s own chain, minus its
+  direct-`customerUserId`-on-the-resource union half, since `Prescription`
+  has no such column and never will - a patient can't create their own
+  prescription, only a provider can); `createRefillRequest` rejects a
+  non-`active` prescription (400) and a duplicate pending request for
+  the same prescription (409) - two implementation-level guards not
+  explicitly named in the sketch, same "obviously-nonsensical action
+  guard" convention `DispenseService`'s own prescribed-total check
+  already uses; `approve` writes a `refill_ready` `Notification` row if
+  the patient has an email on file, an exact copy of
+  `LabOrderStatusService.review`'s own pattern (new
+  `RefillReadyPayload(String medicationName)` record plus one new
+  `case "refill_ready"` arm in `SmtpEmailSender`'s existing `switch`);
+  `deny` **deliberately sends no notification** - the sketch only ever
+  names the "ready" message for approval, a documented scope boundary.
+  **`PatientPrescriptionController`** (new) mirrors
+  `PatientLabRequestController`'s own bundling of patient + staff
+  endpoints in one file: `GET /api/my-prescriptions`,
+  `POST /api/my-prescriptions/{id}/refill-requests`,
+  `GET /api/my-refill-requests` (all `hasRole('PATIENT')`), plus the
+  staff review queue `GET /api/pharmacy/refill-requests?status=` and
+  `POST /api/pharmacy/refill-requests/{id}/approve`/`.../deny`
+  (`hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')`, matching
+  `DispenseController`'s own gate, PHI-audited on the two write actions).
+- **A real bug found live, not caught by the (locally Windows-blocked)
+  integration suite**: `createRefillRequest` originally took `tenantId`
+  from `TenantContext.require()` at the controller layer, the same way
+  every staff-only endpoint in this app resolves it - but a `patient`
+  JWT carries no `organization` claim at all, so `TenantContext` is
+  always `null` for a patient token, and `.require()` throws. Every real
+  patient request to this endpoint 500'd. Fixed by resolving `tenantId`
+  from the prescription's own row instead (`prescription.getTenantId()`),
+  exactly matching `LabOrderService.createRequest`'s own precedent -
+  patient-facing endpoints in this app never touch `TenantContext`, they
+  resolve tenant from an already-owned resource. The (in-memory) fixture
+  -built JWTs in `PatientPrescriptionControllerIntegrationTest` would
+  have hit this exact bug too, once CI's Testcontainers run reached it -
+  this was caught first, live, before that happened.
+- **A second real, pre-existing bug found live**: `PhiAccessAuditService
+  .STAFF_ROLES` (`com.clinicops.phiaudit`) never had `pharmacist` added
+  when that role was introduced in phase 20 - every PHI-audited
+  pharmacist action (this phase's own approve/deny included) was logging
+  `actor_role = "unknown"` instead of `"pharmacist"`. Fixed by adding it
+  to the list; confirmed live via a fresh approve call that the audit row
+  now correctly reads `actor_role = "pharmacist"`.
+- **Tests**: `PatientPrescriptionControllerIntegrationTest` (new, 11
+  cases) - `myPrescriptions` scoped to the caller's own appointments
+  only; `quantityAlreadyDispensed` reflects a real prior dispense;
+  creating a refill request succeeds for an owned active prescription; a
+  non-owned prescription 404s; a non-active prescription 400s; a
+  duplicate pending request 409s; `myRefillRequests` lists only the
+  caller's own; approving flips status and writes a real notification
+  row (a second approve 409s); denying flips status with `reviewNotes`
+  and writes no notification; role gates hold on both sides; cross
+  -tenant refill actions 404. One new `TenantIsolationIntegrationTest`
+  case (`prescriptionRefillRequestsAreNotApprovableOrDeniableFromAnotherTenant`).
+  No new pure-unit test class - the ownership-chain/notification logic
+  is exercised directly in the Testcontainers integration tests, same
+  bar this session's other comparable service-level logic used.
+  Confirmed via a clean `mvn clean test-compile` and a full `mvn test`
+  run showing `Tests run: 420, Errors: 332` (up from 408/320 - exactly
+  the 12 new test methods: 11 + 1), 88 pure-unit tests unaffected, every
+  failure the identical pre-existing `Could not find a valid Docker
+  environment` wall - confirmed by grepping every surefire report: 49
+  files hit that exact wall, the other 16 clean-passed, none failed any
+  other way.
+- **Live-verified against the real running stack, building the full
+  ownership chain live** (a direct Postgres query first confirmed **zero**
+  existing patient-portal-owned prescriptions existed anywhere in this
+  dev environment, so this phase's own verification couldn't reuse old
+  seed data the way several earlier phases did) - `docker compose up -d
+  --build --force-recreate spring-boot-api`, `V28` confirmed applied via
+  `flyway_schema_history` (version 28, `success = t`). As a real
+  `demo-patient` login, booked a genuine new appointment through the
+  actual patient-portal booking endpoint; as `demo-front-desk`, walked it
+  through the real check-in state machine (`booked -> checked_in ->
+  roomed -> with_provider`); as `demo-provider`, documented a real
+  encounter and a real Penicillin V prescription against it. Back as
+  `demo-patient`: `GET /api/my-prescriptions` correctly surfaced the new
+  prescription with `quantityAlreadyDispensed: 0`; submitted a real
+  refill request (hit the `TenantContext` bug above, fixed it, redeployed,
+  and confirmed the same request now succeeds); an immediate second
+  request for the same prescription genuinely 409'd; `GET /api/my-refill-
+  requests` showed it. As `demo-pharmacist`: the real request appeared in
+  `GET /api/pharmacy/refill-requests`; approved it, and cross-checked
+  directly in Postgres that a real `notifications` row now exists with
+  `type = 'refill_ready'` - and confirmed a real email ("Your
+  prescription refill is ready - Penicillin V") actually landed in
+  Mailpit's own web UI (`:8025`), not just that the outbox row was
+  written. Created and denied a second request and confirmed no new
+  notification row was written for it, matching the passing local test's
+  own assertion, now live. Redeployed a second time for the PHI-audit
+  role fix and confirmed, via a third fresh request/approve cycle, that
+  the resulting `phi_access_log` row now reads `actor_role = "pharmacist"`.
+- **Backend only** - no frontend this phase, the direct scoping answer
+  above. No new Keycloak role - `patient`/`pharmacist`/`clinic_admin` all
+  already exist. No `node-bff`/`PUBLIC_ROUTES` change (patient
+  -authenticated, not public).
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3480,6 +3595,25 @@ attributed to the patient's own account for a self-service cancel).
   real rendered `<select>` in the actual browser - not just the API -
   showed the exact same FEFO order). Frontend `npm run build` clean,
   `npm test` (36/36) unaffected by the `DispensePanel` change.
+- `PatientPrescriptionControllerIntegrationTest` (phase 33, new, 11
+  cases) - ownership-scoped `myPrescriptions`/`myRefillRequests`,
+  `quantityAlreadyDispensed` against a real prior dispense, refill
+  -request create/duplicate-409/non-active-400, approve (writes a real
+  notification, idempotent-409 on re-approve)/deny (writes none, with
+  `reviewNotes`), role gates on both sides, cross-tenant 404. One new
+  `TenantIsolationIntegrationTest` case. No new pure-unit test class -
+  same bar this session's comparable service-level logic used. Same
+  Testcontainers wall as every other integration test on this machine -
+  `mvn test` showed `Tests run: 420, Errors: 332` (up from 408/320 -
+  exactly the 12 new test methods), 88 pure-unit tests unaffected;
+  confirmed via grepping every surefire report that all 332 failures hit
+  the identical pre-existing `Could not find a valid Docker environment`
+  wall, none any other way. The Testcontainers-only assertions are
+  confirmed correct by the live browser verification in "Phase 33" above
+  (a full patient-portal booking -> check-in -> encounter/prescription
+  -> refill-request -> approve/deny chain built and exercised live, a
+  real email landing in Mailpit, and two real bugs found and fixed along
+  the way - see that section), not by a local test run.
 
 ## Verified-session logs
 

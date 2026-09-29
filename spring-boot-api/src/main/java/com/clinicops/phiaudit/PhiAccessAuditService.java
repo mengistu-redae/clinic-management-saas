@@ -12,8 +12,8 @@ import java.util.UUID;
 
 /**
  * Closes the "PHI-access audit: deferred" gap pinned 2026-09-12 - scoped to
- * staff-initiated access only (front_desk/provider/clinic_admin), not a
- * patient viewing their own record: the compliance question this answers is
+ * staff-initiated access only (front_desk/provider/clinic_admin/pharmacist),
+ * not a patient viewing their own record: the compliance question this answers is
  * "who on staff looked at/changed this data", not "did the patient check
  * their own chart" (most audit regimes, HIPAA included, don't require
  * logging a person's own access to their own record the same way).
@@ -37,7 +37,7 @@ import java.util.UUID;
 public class PhiAccessAuditService {
 
     private static final Logger log = LoggerFactory.getLogger(PhiAccessAuditService.class);
-    private static final List<String> STAFF_ROLES = List.of("clinic_admin", "front_desk", "provider");
+    private static final List<String> STAFF_ROLES = List.of("clinic_admin", "front_desk", "provider", "pharmacist");
 
     private final PhiAccessLogRepository repository;
     private final CurrentUserService currentUserService;

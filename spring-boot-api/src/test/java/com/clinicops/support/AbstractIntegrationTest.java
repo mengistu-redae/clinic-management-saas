@@ -199,6 +199,9 @@ public abstract class AbstractIntegrationTest {
     protected AppUserRepository appUserRepository;
 
     @Autowired
+    protected com.clinicops.notification.NotificationRepository notificationRepository;
+
+    @Autowired
     protected RoomRepository roomRepository;
 
     @Autowired

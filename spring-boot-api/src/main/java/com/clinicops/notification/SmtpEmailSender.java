@@ -80,6 +80,12 @@ public class SmtpEmailSender implements NotificationSender {
                 body = "Your lab results for order " + payload.orderRef() + " have been reviewed and are ready. "
                         + "Please contact your clinic or check your patient portal for details.";
             }
+            case "refill_ready" -> {
+                var payload = objectMapper.readValue(notification.getPayload(), RefillReadyPayload.class);
+                subject = "Your prescription refill is ready - " + payload.medicationName();
+                body = "Your refill request for " + payload.medicationName() + " has been approved and is ready. "
+                        + "Please contact your clinic or check your patient portal for details.";
+            }
             default -> {
                 subject = "Notification from your clinic";
                 body = "You have a new notification.";

@@ -533,6 +533,37 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void prescriptionRefillRequestsAreNotApprovableOrDeniableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("refill");
+        com.clinicops.user.AppUser appUser = createAppUser("refill-tenant-patient");
+        com.clinicops.patient.Patient patient = createPatient(a.getId(), "Refill", "Patient", "+15550004444");
+        com.clinicops.provider.Provider provider = createProvider(a.getId(), "Dr. Refill");
+        com.clinicops.appointmenttype.AppointmentType type = createAppointmentType(a.getId(), "Visit", 30, "50.00");
+        com.clinicops.scheduling.Slot slot = createSlot(a.getId(), provider.getId(), type.getId(),
+                java.time.Instant.now().minusSeconds(3600), java.time.Instant.now().minusSeconds(1800));
+        com.clinicops.appointment.Appointment appointment = createBookedAppointment(a.getId(), slot.getId(), patient.getId(), provider.getId(), type.getId(), appUser.getId());
+        com.clinicops.encounter.Encounter encounter = createEncounter(a.getId(), appointment.getId(), provider.getId());
+        com.clinicops.encounter.Prescription prescription = createPrescription(a.getId(), encounter.getId(), "Amoxicillin", null);
+
+        String body = mockMvc.perform(post("/api/my-prescriptions/" + prescription.getId() + "/refill-requests").with(asPatient("refill-tenant-patient"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.CreateRefillRequestRequest(null))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID refillId = UUID.fromString(objectMapper.readTree(body).get("id").asText());
+
+        Clinic b = clinicB("refill");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(post("/api/pharmacy/refill-requests/" + refillId + "/approve").with(asPharmacist("pharm", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/pharmacy/refill-requests/" + refillId + "/deny").with(asPharmacist("pharm", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.DenyRefillRequestRequest(null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void accountsAreNotReadableOrWritableFromAnotherTenantAndJournalEntriesAreScopedPerTenant() throws Exception {
         Clinic a = clinicA("account");
         com.clinicops.accounting.Account account = createAccount(a.getId(), "1500", "Isolated Account", "asset");
