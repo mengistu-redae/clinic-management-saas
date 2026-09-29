@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -41,6 +42,17 @@ import java.util.UUID;
  * prescription (no {@code patientId} on its appointment) has no allergy
  * data and no other prescriptions to check, so both checks silently skip
  * - a deliberate limitation, not an oversight.
+ *
+ * Phase 28 - a {@link Medication} carrying a non-null
+ * {@code controlledSubstanceSchedule} can no longer be dispensed via the
+ * plain {@link #dispense} path at all; it goes through
+ * {@link #requestControlledSubstanceDispense}/{@link #coSignControlledSubstanceDispense}
+ * instead - a separate, mutable two-phase workflow ({@link PendingControlledSubstanceDispense})
+ * requiring a *different* pharmacist/clinic_admin to co-sign before the
+ * real stock decrement/{@link DispenseRecord} happens. {@link #requireValidBatch}/
+ * {@link #requireWithinPrescribedTotal}/{@link #finalizeDispense} are the
+ * shared tail end both paths call - re-run for real at cosign time since
+ * stock can move between the request and the cosign.
  */
 @Service
 public class DispenseService {
@@ -53,6 +65,7 @@ public class DispenseService {
     private final DrugInteractionPairRepository drugInteractionPairRepository;
     private final EncounterRepository encounterRepository;
     private final AppointmentRepository appointmentRepository;
+    private final PendingControlledSubstanceDispenseRepository pendingControlledSubstanceDispenseRepository;
 
     public DispenseService(
             PrescriptionRepository prescriptionRepository,
@@ -62,7 +75,8 @@ public class DispenseService {
             AllergyRepository allergyRepository,
             DrugInteractionPairRepository drugInteractionPairRepository,
             EncounterRepository encounterRepository,
-            AppointmentRepository appointmentRepository) {
+            AppointmentRepository appointmentRepository,
+            PendingControlledSubstanceDispenseRepository pendingControlledSubstanceDispenseRepository) {
         this.prescriptionRepository = prescriptionRepository;
         this.medicationRepository = medicationRepository;
         this.stockBatchRepository = stockBatchRepository;
@@ -71,6 +85,7 @@ public class DispenseService {
         this.drugInteractionPairRepository = drugInteractionPairRepository;
         this.encounterRepository = encounterRepository;
         this.appointmentRepository = appointmentRepository;
+        this.pendingControlledSubstanceDispenseRepository = pendingControlledSubstanceDispenseRepository;
     }
 
     @Transactional
@@ -81,29 +96,138 @@ public class DispenseService {
 
         Medication medication = medicationRepository.findByIdAndTenantId(request.medicationId(), tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Medication not found: " + request.medicationId()));
+        if (medication.getControlledSubstanceSchedule() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "This medication is a controlled substance - use the controlled-substance request flow instead");
+        }
 
         boolean conflictOverridden = checkClinicalSafety(tenantId, prescription, medication, request.acknowledgeConflict());
+        requireValidBatch(request.stockBatchId(), tenantId, request.medicationId(), request.quantity());
+        requireWithinPrescribedTotal(prescription, request.quantity());
 
-        StockBatch batch = stockBatchRepository.findByIdAndTenantId(request.stockBatchId(), tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Stock batch not found: " + request.stockBatchId()));
-        if (!batch.getMedicationId().equals(request.medicationId())) {
+        return finalizeDispense(tenantId, prescriptionId, request.stockBatchId(), request.quantity(),
+                request.notes(), conflictOverridden, dispensedBy, null);
+    }
+
+    /**
+     * Phase 28 - a pharmacist's initial request for a controlled
+     * -substance dispense. Captures intent only: the clinical safety
+     * check runs now (same as the plain path - this is where the real
+     * "does this look safe, and do I acknowledge it" judgment call
+     * belongs, not deferred to whoever co-signs later), and both
+     * validation helpers run read-only - no stock decrement yet.
+     */
+    @Transactional
+    public PendingControlledSubstanceDispense requestControlledSubstanceDispense(
+            UUID prescriptionId, UUID tenantId, RequestControlledSubstanceDispenseRequest request, UUID requestedBy) {
+        Prescription prescription = prescriptionRepository.findById(prescriptionId)
+                .filter(p -> p.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new NoSuchElementException("Prescription not found: " + prescriptionId));
+
+        Medication medication = medicationRepository.findByIdAndTenantId(request.medicationId(), tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Medication not found: " + request.medicationId()));
+        if (medication.getControlledSubstanceSchedule() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "This medication is not a controlled substance - use the plain dispense endpoint instead");
+        }
+
+        boolean conflictOverridden = checkClinicalSafety(tenantId, prescription, medication, request.acknowledgeConflict());
+        requireValidBatch(request.stockBatchId(), tenantId, request.medicationId(), request.quantity());
+        requireWithinPrescribedTotal(prescription, request.quantity());
+
+        PendingControlledSubstanceDispense pending = new PendingControlledSubstanceDispense();
+        pending.setTenantId(tenantId);
+        pending.setPrescriptionId(prescriptionId);
+        pending.setMedicationId(request.medicationId());
+        pending.setStockBatchId(request.stockBatchId());
+        pending.setQuantity(request.quantity());
+        pending.setNotes(request.notes());
+        pending.setSafetyOverrideAcknowledged(conflictOverridden);
+        pending.setRequestedBy(requestedBy);
+        return pendingControlledSubstanceDispenseRepository.save(pending);
+    }
+
+    /**
+     * A *different* pharmacist/clinic_admin than the requester co-signs -
+     * the one real gate this whole phase exists for. Both validation
+     * helpers re-run for real here (stock/prescribed-total may have
+     * moved since the request was made) before the actual stock
+     * decrement/DispenseRecord happens.
+     */
+    @Transactional
+    public PendingControlledSubstanceDispense coSignControlledSubstanceDispense(UUID pendingId, UUID tenantId, UUID coSignedBy) {
+        PendingControlledSubstanceDispense pending = pendingControlledSubstanceDispenseRepository.findByIdAndTenantId(pendingId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Controlled-substance request not found: " + pendingId));
+        if (!"pending".equals(pending.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This request has already been " + pending.getStatus());
+        }
+        if (coSignedBy.equals(pending.getRequestedBy())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A different pharmacist or clinic_admin must co-sign this request");
+        }
+
+        requireValidBatch(pending.getStockBatchId(), tenantId, pending.getMedicationId(), pending.getQuantity());
+        Prescription prescription = prescriptionRepository.findById(pending.getPrescriptionId())
+                .filter(p -> p.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new NoSuchElementException("Prescription not found: " + pending.getPrescriptionId()));
+        requireWithinPrescribedTotal(prescription, pending.getQuantity());
+
+        DispenseRecord record = finalizeDispense(tenantId, pending.getPrescriptionId(), pending.getStockBatchId(), pending.getQuantity(),
+                pending.getNotes(), pending.isSafetyOverrideAcknowledged(), pending.getRequestedBy(), coSignedBy);
+
+        pending.setStatus("cosigned");
+        pending.setCoSignedBy(coSignedBy);
+        pending.setCoSignedAt(Instant.now());
+        pending.setDispenseRecordId(record.getId());
+        return pendingControlledSubstanceDispenseRepository.save(pending);
+    }
+
+    /** No stock touched - it was never decremented at request time. */
+    @Transactional
+    public PendingControlledSubstanceDispense rejectControlledSubstanceDispense(UUID pendingId, UUID tenantId, UUID rejectedBy, String reason) {
+        PendingControlledSubstanceDispense pending = pendingControlledSubstanceDispenseRepository.findByIdAndTenantId(pendingId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Controlled-substance request not found: " + pendingId));
+        if (!"pending".equals(pending.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This request has already been " + pending.getStatus());
+        }
+        pending.setStatus("rejected");
+        pending.setRejectedBy(rejectedBy);
+        pending.setRejectedAt(Instant.now());
+        pending.setRejectionReason(reason);
+        return pendingControlledSubstanceDispenseRepository.save(pending);
+    }
+
+    /** The picked batch must belong to the picked medication (400) and have enough quantityOnHand (409). Read-only - no side effects. */
+    private void requireValidBatch(UUID stockBatchId, UUID tenantId, UUID medicationId, int quantity) {
+        StockBatch batch = stockBatchRepository.findByIdAndTenantId(stockBatchId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Stock batch not found: " + stockBatchId));
+        if (!batch.getMedicationId().equals(medicationId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This stock batch does not belong to the given medication");
         }
-        if (batch.getQuantityOnHand() < request.quantity()) {
+        if (batch.getQuantityOnHand() < quantity) {
             throw new InsufficientStockException(
-                    "Only " + batch.getQuantityOnHand() + " on hand in this batch, " + request.quantity() + " requested");
+                    "Only " + batch.getQuantityOnHand() + " on hand in this batch, " + quantity + " requested");
         }
+    }
 
-        if (prescription.getQuantityDispensed() != null) {
-            long alreadyDispensed = dispenseRecordRepository.sumQuantityByPrescriptionId(prescriptionId);
-            if (alreadyDispensed + request.quantity() > prescription.getQuantityDispensed()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "This would exceed the prescribed quantity (" + prescription.getQuantityDispensed()
-                                + ", " + alreadyDispensed + " already dispensed)");
-            }
+    /** Only checked when the prescription itself has a prescribed total set. Read-only - no side effects. */
+    private void requireWithinPrescribedTotal(Prescription prescription, int quantity) {
+        if (prescription.getQuantityDispensed() == null) {
+            return;
         }
+        long alreadyDispensed = dispenseRecordRepository.sumQuantityByPrescriptionId(prescription.getId());
+        if (alreadyDispensed + quantity > prescription.getQuantityDispensed()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "This would exceed the prescribed quantity (" + prescription.getQuantityDispensed()
+                            + ", " + alreadyDispensed + " already dispensed)");
+        }
+    }
 
-        batch.setQuantityOnHand(batch.getQuantityOnHand() - request.quantity());
+    /** The shared tail end both the plain and controlled-substance paths call: re-loads and decrements the batch, then builds and saves the real DispenseRecord. */
+    private DispenseRecord finalizeDispense(UUID tenantId, UUID prescriptionId, UUID stockBatchId, int quantity,
+            String notes, boolean safetyOverrideAcknowledged, UUID dispensedBy, UUID coSignedBy) {
+        StockBatch batch = stockBatchRepository.findByIdAndTenantId(stockBatchId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Stock batch not found: " + stockBatchId));
+        batch.setQuantityOnHand(batch.getQuantityOnHand() - quantity);
         if (batch.getQuantityOnHand() == 0) {
             batch.setStatus("depleted");
         }
@@ -112,12 +236,13 @@ public class DispenseService {
         DispenseRecord record = new DispenseRecord();
         record.setTenantId(tenantId);
         record.setPrescriptionId(prescriptionId);
-        record.setMedicationId(request.medicationId());
-        record.setStockBatchId(request.stockBatchId());
-        record.setQuantityDispensed(request.quantity());
+        record.setMedicationId(batch.getMedicationId());
+        record.setStockBatchId(stockBatchId);
+        record.setQuantityDispensed(quantity);
         record.setDispensedBy(dispensedBy);
-        record.setNotes(request.notes());
-        record.setSafetyOverrideAcknowledged(conflictOverridden);
+        record.setNotes(notes);
+        record.setSafetyOverrideAcknowledged(safetyOverrideAcknowledged);
+        record.setCoSignedBy(coSignedBy);
         return dispenseRecordRepository.save(record);
     }
 

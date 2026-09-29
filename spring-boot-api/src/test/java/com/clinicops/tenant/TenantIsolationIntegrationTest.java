@@ -378,6 +378,47 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void controlledSubstanceRequestsAreNotReadableOrCosignableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("controlled-substance");
+        com.clinicops.provider.Provider provider = createProvider(a.getId(), "Dr. Seed");
+        com.clinicops.appointmenttype.AppointmentType type = createAppointmentType(a.getId(), "Visit", 30, "50.00");
+        com.clinicops.scheduling.Slot slot = createSlot(a.getId(), provider.getId(), type.getId(),
+                java.time.Instant.now().minusSeconds(3600), java.time.Instant.now().minusSeconds(1800));
+        com.clinicops.appointment.Appointment appointment = createBookedAppointment(a.getId(), slot.getId(), null, provider.getId(), type.getId(), null);
+        com.clinicops.encounter.Encounter encounter = createEncounter(a.getId(), appointment.getId(), provider.getId());
+        com.clinicops.encounter.Prescription prescription = createPrescription(a.getId(), encounter.getId(), "Oxycodone", null);
+        com.clinicops.pharmacy.Medication medication = createMedication(a.getId(), "Oxycodone");
+        medication.setControlledSubstanceSchedule("schedule_ii");
+        medicationRepository.save(medication);
+        com.clinicops.pharmacy.StockBatch batch = createStockBatch(a.getId(), medication.getId(), 30);
+
+        Clinic b = clinicB("controlled-substance");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(post("/api/prescriptions/" + prescription.getId() + "/controlled-substance-requests").with(asPharmacist("pharm", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.RequestControlledSubstanceDispenseRequest(
+                                medication.getId(), batch.getId(), 5, null, false))))
+                .andExpect(status().isNotFound());
+
+        com.clinicops.pharmacy.PendingControlledSubstanceDispense pending = new com.clinicops.pharmacy.PendingControlledSubstanceDispense();
+        pending.setTenantId(a.getId());
+        pending.setPrescriptionId(prescription.getId());
+        pending.setMedicationId(medication.getId());
+        pending.setStockBatchId(batch.getId());
+        pending.setQuantity(5);
+        pending.setRequestedBy(java.util.UUID.randomUUID());
+        pending = pendingControlledSubstanceDispenseRepository.save(pending);
+
+        mockMvc.perform(post("/api/pharmacy/controlled-substance-requests/" + pending.getId() + "/cosign").with(asClinicAdmin("admin", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/pharmacy/controlled-substance-requests/" + pending.getId() + "/reject").with(asClinicAdmin("admin", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.pharmacy.RejectControlledSubstanceDispenseRequest(null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void accountsAreNotReadableOrWritableFromAnotherTenantAndJournalEntriesAreScopedPerTenant() throws Exception {
         Clinic a = clinicA("account");
         com.clinicops.accounting.Account account = createAccount(a.getId(), "1500", "Isolated Account", "asset");

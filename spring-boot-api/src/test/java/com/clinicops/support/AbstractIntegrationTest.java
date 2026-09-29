@@ -43,6 +43,7 @@ import com.clinicops.pharmacy.DispenseRecord;
 import com.clinicops.pharmacy.DispenseRecordRepository;
 import com.clinicops.pharmacy.DrugInteractionPair;
 import com.clinicops.pharmacy.DrugInteractionPairRepository;
+import com.clinicops.pharmacy.PendingControlledSubstanceDispenseRepository;
 import com.clinicops.pharmacy.Medication;
 import com.clinicops.pharmacy.MedicationRepository;
 import com.clinicops.pharmacy.StockBatch;
@@ -224,6 +225,9 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected DrugInteractionPairRepository drugInteractionPairRepository;
+
+    @Autowired
+    protected PendingControlledSubstanceDispenseRepository pendingControlledSubstanceDispenseRepository;
 
     @Autowired
     protected AccountRepository accountRepository;

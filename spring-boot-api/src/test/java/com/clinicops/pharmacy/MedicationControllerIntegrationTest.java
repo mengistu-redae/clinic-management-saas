@@ -110,4 +110,40 @@ class MedicationControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/clinic/medications/" + medication.getId()).with(asPharmacist("pharm", otherClinic.getKeycloakOrgId())))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void clinicAdminCanSetThenClearTheControlledSubstanceScheduleButPharmacistCannot() throws Exception {
+        Clinic clinic = createClinic("med-csched-" + UUID.randomUUID(), "Controlled Substance Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Medication medication = createMedication(clinic.getId(), "Oxycodone");
+
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/controlled-substance-schedule").with(asPharmacist("pharm", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateControlledSubstanceScheduleRequest("schedule_ii"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/controlled-substance-schedule").with(asClinicAdmin("admin", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateControlledSubstanceScheduleRequest("schedule_ii"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.controlledSubstanceSchedule").value("schedule_ii"));
+
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/controlled-substance-schedule").with(asClinicAdmin("admin", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateControlledSubstanceScheduleRequest(null))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.controlledSubstanceSchedule").doesNotExist());
+    }
+
+    @Test
+    void anInvalidControlledSubstanceScheduleIsRejected() throws Exception {
+        Clinic clinic = createClinic("med-csched-bad-" + UUID.randomUUID(), "Bad Schedule Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Medication medication = createMedication(clinic.getId(), "Oxycodone");
+
+        mockMvc.perform(post("/api/clinic/medications/" + medication.getId() + "/controlled-substance-schedule").with(asClinicAdmin("admin", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateControlledSubstanceScheduleRequest("schedule_ix"))))
+                .andExpect(status().isBadRequest());
+    }
 }

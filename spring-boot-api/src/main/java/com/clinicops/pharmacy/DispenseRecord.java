@@ -54,4 +54,13 @@ public class DispenseRecord extends BaseTenantEntity {
 
     @Column(name = "safety_override_acknowledged", nullable = false)
     private boolean safetyOverrideAcknowledged = false;
+
+    /**
+     * An AppUser.id (phase 28) - null for every ordinary dispense, set
+     * once at creation (never updated after, same append-only invariant
+     * as everything else on this entity) only when this record was
+     * produced by co-signing a {@link PendingControlledSubstanceDispense}.
+     */
+    @Column(name = "co_signed_by")
+    private UUID coSignedBy;
 }

@@ -47,4 +47,15 @@ public class Medication extends BaseTenantEntity {
     /** active, inactive. */
     @Column(nullable = false)
     private String status = "active";
+
+    /**
+     * schedule_i..schedule_v, nullable - most medications stay
+     * uncontrolled. Settable by clinic_admin only, via a dedicated
+     * MedicationController action endpoint (not the generic catalog
+     * update, which pharmacist can also call) - see phase 28. Non-null
+     * here routes dispensing through the separate dual-sign-off
+     * DispenseService workflow instead of the plain single-step one.
+     */
+    @Column(name = "controlled_substance_schedule")
+    private String controlledSubstanceSchedule;
 }

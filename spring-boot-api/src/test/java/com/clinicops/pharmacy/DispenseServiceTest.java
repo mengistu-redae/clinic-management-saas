@@ -33,9 +33,12 @@ class DispenseServiceTest {
     private final DrugInteractionPairRepository drugInteractionPairRepository = mock(DrugInteractionPairRepository.class);
     private final EncounterRepository encounterRepository = mock(EncounterRepository.class);
     private final AppointmentRepository appointmentRepository = mock(AppointmentRepository.class);
+    private final PendingControlledSubstanceDispenseRepository pendingControlledSubstanceDispenseRepository =
+            mock(PendingControlledSubstanceDispenseRepository.class);
     private final DispenseService service = new DispenseService(
             prescriptionRepository, medicationRepository, stockBatchRepository, dispenseRecordRepository,
-            allergyRepository, drugInteractionPairRepository, encounterRepository, appointmentRepository);
+            allergyRepository, drugInteractionPairRepository, encounterRepository, appointmentRepository,
+            pendingControlledSubstanceDispenseRepository);
 
     private Prescription prescription(UUID tenantId, UUID id, Integer quantityPrescribed) {
         Prescription p = new Prescription();
@@ -78,6 +81,24 @@ class DispenseServiceTest {
         Medication m = medication(tenantId, id);
         m.setName(name);
         return m;
+    }
+
+    private Medication controlledMedication(UUID tenantId, UUID id, String schedule) {
+        Medication m = medication(tenantId, id);
+        m.setControlledSubstanceSchedule(schedule);
+        return m;
+    }
+
+    private PendingControlledSubstanceDispense pending(UUID tenantId, UUID id, UUID prescriptionId, UUID medicationId, UUID batchId, int quantity, UUID requestedBy) {
+        PendingControlledSubstanceDispense p = new PendingControlledSubstanceDispense();
+        p.setId(id);
+        p.setTenantId(tenantId);
+        p.setPrescriptionId(prescriptionId);
+        p.setMedicationId(medicationId);
+        p.setStockBatchId(batchId);
+        p.setQuantity(quantity);
+        p.setRequestedBy(requestedBy);
+        return p;
     }
 
     private StockBatch batch(UUID tenantId, UUID id, UUID medicationId, int quantityOnHand) {
@@ -287,5 +308,159 @@ class DispenseServiceTest {
                 new DispenseRequest(medicationId, batchId, 10, null, true), UUID.randomUUID());
 
         assertThat(record.isSafetyOverrideAcknowledged()).isTrue();
+    }
+
+    @Test
+    void directDispenseOfAControlledSubstanceIsRejectedBeforeAnyWork() {
+        UUID tenantId = UUID.randomUUID();
+        UUID prescriptionId = UUID.randomUUID();
+        UUID medicationId = UUID.randomUUID();
+        UUID batchId = UUID.randomUUID();
+        when(prescriptionRepository.findById(prescriptionId)).thenReturn(Optional.of(prescription(tenantId, prescriptionId, null)));
+        when(medicationRepository.findByIdAndTenantId(medicationId, tenantId))
+                .thenReturn(Optional.of(controlledMedication(tenantId, medicationId, "schedule_ii")));
+
+        assertThatThrownBy(() -> service.dispense(prescriptionId, tenantId,
+                new DispenseRequest(medicationId, batchId, 10, null, false), UUID.randomUUID()))
+                .isInstanceOf(ResponseStatusException.class);
+
+        verify(stockBatchRepository, never()).findByIdAndTenantId(any(), any());
+        verify(dispenseRecordRepository, never()).save(any());
+    }
+
+    @Test
+    void requestingAControlledSubstanceDispenseCreatesAPendingRowWithNoStockDecrement() {
+        UUID tenantId = UUID.randomUUID();
+        UUID prescriptionId = UUID.randomUUID();
+        UUID medicationId = UUID.randomUUID();
+        UUID batchId = UUID.randomUUID();
+        UUID requestedBy = UUID.randomUUID();
+        when(prescriptionRepository.findById(prescriptionId)).thenReturn(Optional.of(prescription(tenantId, prescriptionId, null)));
+        when(medicationRepository.findByIdAndTenantId(medicationId, tenantId))
+                .thenReturn(Optional.of(controlledMedication(tenantId, medicationId, "schedule_ii")));
+        StockBatch stockBatch = batch(tenantId, batchId, medicationId, 30);
+        when(stockBatchRepository.findByIdAndTenantId(batchId, tenantId)).thenReturn(Optional.of(stockBatch));
+        when(pendingControlledSubstanceDispenseRepository.save(any(PendingControlledSubstanceDispense.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        PendingControlledSubstanceDispense result = service.requestControlledSubstanceDispense(prescriptionId, tenantId,
+                new RequestControlledSubstanceDispenseRequest(medicationId, batchId, 10, "for pain", false), requestedBy);
+
+        assertThat(result.getStatus()).isEqualTo("pending");
+        assertThat(result.getRequestedBy()).isEqualTo(requestedBy);
+        assertThat(stockBatch.getQuantityOnHand()).isEqualTo(30);
+        verify(stockBatchRepository, never()).save(any());
+    }
+
+    @Test
+    void requestingADispenseForANonControlledMedicationIsRejected() {
+        UUID tenantId = UUID.randomUUID();
+        UUID prescriptionId = UUID.randomUUID();
+        UUID medicationId = UUID.randomUUID();
+        when(prescriptionRepository.findById(prescriptionId)).thenReturn(Optional.of(prescription(tenantId, prescriptionId, null)));
+        when(medicationRepository.findByIdAndTenantId(medicationId, tenantId)).thenReturn(Optional.of(medication(tenantId, medicationId)));
+
+        assertThatThrownBy(() -> service.requestControlledSubstanceDispense(prescriptionId, tenantId,
+                new RequestControlledSubstanceDispenseRequest(medicationId, UUID.randomUUID(), 10, null, false), UUID.randomUUID()))
+                .isInstanceOf(ResponseStatusException.class);
+
+        verify(pendingControlledSubstanceDispenseRepository, never()).save(any());
+    }
+
+    @Test
+    void coSigningByADifferentUserDecrementsStockAndProducesARecordWithBothSigners() {
+        UUID tenantId = UUID.randomUUID();
+        UUID pendingId = UUID.randomUUID();
+        UUID prescriptionId = UUID.randomUUID();
+        UUID medicationId = UUID.randomUUID();
+        UUID batchId = UUID.randomUUID();
+        UUID requestedBy = UUID.randomUUID();
+        UUID coSignedBy = UUID.randomUUID();
+        PendingControlledSubstanceDispense pending = pending(tenantId, pendingId, prescriptionId, medicationId, batchId, 10, requestedBy);
+        when(pendingControlledSubstanceDispenseRepository.findByIdAndTenantId(pendingId, tenantId)).thenReturn(Optional.of(pending));
+        StockBatch stockBatch = batch(tenantId, batchId, medicationId, 30);
+        when(stockBatchRepository.findByIdAndTenantId(batchId, tenantId)).thenReturn(Optional.of(stockBatch));
+        when(prescriptionRepository.findById(prescriptionId)).thenReturn(Optional.of(prescription(tenantId, prescriptionId, null)));
+        when(stockBatchRepository.save(any(StockBatch.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(dispenseRecordRepository.save(any(DispenseRecord.class))).thenAnswer(inv -> {
+            DispenseRecord r = inv.getArgument(0);
+            r.setId(UUID.randomUUID());
+            return r;
+        });
+        when(pendingControlledSubstanceDispenseRepository.save(any(PendingControlledSubstanceDispense.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        PendingControlledSubstanceDispense result = service.coSignControlledSubstanceDispense(pendingId, tenantId, coSignedBy);
+
+        assertThat(result.getStatus()).isEqualTo("cosigned");
+        assertThat(result.getCoSignedBy()).isEqualTo(coSignedBy);
+        assertThat(result.getDispenseRecordId()).isNotNull();
+        assertThat(stockBatch.getQuantityOnHand()).isEqualTo(20);
+    }
+
+    @Test
+    void coSigningByTheSameUserAsTheRequesterIsRejected() {
+        UUID tenantId = UUID.randomUUID();
+        UUID pendingId = UUID.randomUUID();
+        UUID requestedBy = UUID.randomUUID();
+        PendingControlledSubstanceDispense pending = pending(tenantId, pendingId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 10, requestedBy);
+        when(pendingControlledSubstanceDispenseRepository.findByIdAndTenantId(pendingId, tenantId)).thenReturn(Optional.of(pending));
+
+        assertThatThrownBy(() -> service.coSignControlledSubstanceDispense(pendingId, tenantId, requestedBy))
+                .isInstanceOf(ResponseStatusException.class);
+
+        verify(stockBatchRepository, never()).save(any());
+        verify(dispenseRecordRepository, never()).save(any());
+    }
+
+    @Test
+    void coSigningAnAlreadyResolvedRequestIsRejected() {
+        UUID tenantId = UUID.randomUUID();
+        UUID pendingId = UUID.randomUUID();
+        PendingControlledSubstanceDispense pending = pending(tenantId, pendingId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 10, UUID.randomUUID());
+        pending.setStatus("rejected");
+        when(pendingControlledSubstanceDispenseRepository.findByIdAndTenantId(pendingId, tenantId)).thenReturn(Optional.of(pending));
+
+        assertThatThrownBy(() -> service.coSignControlledSubstanceDispense(pendingId, tenantId, UUID.randomUUID()))
+                .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void insufficientStockDiscoveredOnlyAtCosignTimeIsRejectedThere() {
+        UUID tenantId = UUID.randomUUID();
+        UUID pendingId = UUID.randomUUID();
+        UUID prescriptionId = UUID.randomUUID();
+        UUID medicationId = UUID.randomUUID();
+        UUID batchId = UUID.randomUUID();
+        UUID requestedBy = UUID.randomUUID();
+        PendingControlledSubstanceDispense pending = pending(tenantId, pendingId, prescriptionId, medicationId, batchId, 10, requestedBy);
+        when(pendingControlledSubstanceDispenseRepository.findByIdAndTenantId(pendingId, tenantId)).thenReturn(Optional.of(pending));
+        // Stock has dropped to 5 since the original request was made.
+        when(stockBatchRepository.findByIdAndTenantId(batchId, tenantId)).thenReturn(Optional.of(batch(tenantId, batchId, medicationId, 5)));
+
+        assertThatThrownBy(() -> service.coSignControlledSubstanceDispense(pendingId, tenantId, UUID.randomUUID()))
+                .isInstanceOf(InsufficientStockException.class);
+
+        verify(dispenseRecordRepository, never()).save(any());
+        verify(pendingControlledSubstanceDispenseRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectingAPendingRequestLeavesStockUntouched() {
+        UUID tenantId = UUID.randomUUID();
+        UUID pendingId = UUID.randomUUID();
+        UUID rejectedBy = UUID.randomUUID();
+        PendingControlledSubstanceDispense pending = pending(tenantId, pendingId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 10, UUID.randomUUID());
+        when(pendingControlledSubstanceDispenseRepository.findByIdAndTenantId(pendingId, tenantId)).thenReturn(Optional.of(pending));
+        when(pendingControlledSubstanceDispenseRepository.save(any(PendingControlledSubstanceDispense.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        PendingControlledSubstanceDispense result = service.rejectControlledSubstanceDispense(pendingId, tenantId, rejectedBy, "changed my mind");
+
+        assertThat(result.getStatus()).isEqualTo("rejected");
+        assertThat(result.getRejectedBy()).isEqualTo(rejectedBy);
+        assertThat(result.getRejectionReason()).isEqualTo("changed my mind");
+        verify(stockBatchRepository, never()).save(any());
+        verify(dispenseRecordRepository, never()).save(any());
     }
 }

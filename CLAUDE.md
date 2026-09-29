@@ -1766,18 +1766,9 @@ precedent).
 **27. Clinical safety checks** (pharmacy) - **built 2026-09-29**. See
 "Phase 27: pharmacy clinical safety checks" below for the full write-up.
 
-**28. Controlled substance tracking** (pharmacy) - `Medication` gains a
-nullable `controlledSubstanceSchedule` (allow-listed `schedule_i`..
-`schedule_v`), settable by `clinic_admin` only (tighter than the general
-catalog gate). Dispensing one goes through a **new, separate, mutable**
-workflow entity (`PendingControlledSubstanceDispense` - requestedBy/
-medicationId/stockBatchId/prescriptionId/quantity/status/coSignedBy)
-rather than touching `DispenseRecord` itself mid-flight, since that
-entity's own javadoc commits it to being genuinely append-only. Only
-once a *different* pharmacist/clinic_admin co-signs does `DispenseService`
-create the real, permanent `DispenseRecord` - which gains its own
-nullable `coSignedBy` column, populated once at creation (never updated
-after), so the append-only invariant holds exactly as already documented.
+**28. Controlled substance tracking** (pharmacy) - **built 2026-09-29**.
+See "Phase 28: controlled substance tracking" below for the full
+write-up.
 
 **29. Stock/inventory foundation** (new `com.clinicops.inventory`
 package - general, not pharmacy-scoped; supersedes the original
@@ -2023,6 +2014,146 @@ precedent, which discards the flag after use - the override outcome is
   "backend first" convention; a conflict-warning dialog on the
   pharmacist dispense form is a natural later frontend item, not scoped
   here. No new Keycloak role, no `node-bff`/`PUBLIC_ROUTES` change.
+
+## Phase 28: controlled substance tracking
+
+Second of the ten sequential phases sketched under "Pharmacy expansion +
+stock management module" above (built 2026-09-29, same session as phase
+27). `Medication` gains an optional controlled-substance schedule;
+dispensing one no longer goes through the existing single-step
+`DispenseService.dispense(...)` path at all - it goes through a
+**new, separate, mutable** two-phase workflow instead (a pharmacist
+requests it, a *different* pharmacist or clinic_admin co-signs before
+the real stock decrement/`DispenseRecord` happens), exactly as pinned in
+the original sketch. `DispenseRecord` itself stays genuinely
+append-only - the mutable, in-progress state lives entirely in the new
+workflow entity, never on the permanent record. New migration
+`V24__pharmacy_controlled_substances.sql`.
+
+- **`Medication.controlledSubstanceSchedule`** (nullable, allow-listed
+  `schedule_i`..`schedule_v`) - set via a **new dedicated action
+  endpoint**, `POST /api/clinic/medications/{id}/controlled-substance-
+  schedule`, deliberately not folded into the existing
+  `POST /{id}/update` - **`hasRole('CLINIC_ADMIN')` only**, tighter than
+  the catalog's own pharmacist+clinic_admin gate, matching this app's
+  existing convention for a consequential/tighter-gated state change
+  (deactivate/reactivate, stock-batch write-off) rather than an
+  in-controller role check bolted onto the generic update path. `null`
+  clears it - correcting a data-entry mistake.
+- **`DispenseService` refactored, not rewritten** - the existing stock
+  /quantity validation was extracted into two private helpers
+  (`requireValidBatch`, `requireWithinPrescribedTotal`) and a shared
+  tail end (`finalizeDispense` - decrement the batch, build and save the
+  real `DispenseRecord`), so both the plain and the new controlled
+  -substance paths share the exact same checks. The controlled path runs
+  them **twice**: once read-only at request time (an early,
+  non-authoritative check), and again for real at cosign time, since
+  stock can move between the two steps - confirmed live below
+  (insufficient-stock-at-cosign was also exercised via the pure-unit
+  test, not just designed).
+  - **`dispense(...)`** (existing, unchanged signature) - a new guard
+    right after resolving the medication: a non-null
+    `controlledSubstanceSchedule` now 400s with "...use the
+    controlled-substance request flow instead," a plain
+    `ResponseStatusException` thrown directly, same precedent this
+    method's own pre-existing batch-mismatch check already used - not a
+    new dedicated exception class.
+  - **`requestControlledSubstanceDispense(...)`** (new) - guards the
+    *opposite* direction (a non-controlled medication 400s, "use the
+    plain dispense endpoint instead"); runs the existing phase-27
+    `checkClinicalSafety` for `conflictOverridden` **at request time**
+    - this is deliberately where the real "does this look safe, and do
+    I acknowledge it" judgment call belongs, not deferred to whoever
+    cosigns later; saves a new `PendingControlledSubstanceDispense`
+    (`status = "pending"`) with no stock decrement yet - the workflow
+    entity captures intent only.
+  - **`coSignControlledSubstanceDispense(...)`** (new) - the one real
+    gate this whole phase exists for: `coSignedBy.equals(requestedBy)`
+    409s ("A different pharmacist or clinic_admin must co-sign this
+    request"), and an already-resolved (non-`"pending"`) request also
+    409s. Re-runs both validation helpers for real, calls
+    `finalizeDispense(..., dispensedBy = requestedBy, coSignedBy =
+    coSignedBy)`, then updates the pending row in place (`status =
+    "cosigned"`, `coSignedBy`, `coSignedAt`, `dispenseRecordId` = the
+    new record's id - direct traceability from the workflow row to the
+    permanent record it produced).
+  - **`rejectControlledSubstanceDispense(...)`** (new) - same
+    already-resolved 409 guard; no stock touched, since it was never
+    decremented at request time. No role restriction beyond the
+    controller's own pharmacist+clinic_admin gate - the requester's own
+    login can reject their own request (a withdrawal, not a
+    co-sign-shaped action), confirmed live below.
+- **`DispenseRecord.coSignedBy`** (new nullable column, FK to
+  `app_users`) - set once at creation, never updated after, same
+  append-only invariant every other field on this entity already
+  documents; stays `null` for every ordinary (non-controlled) dispense.
+- **`ControlledSubstanceDispenseController`** (new) - same
+  `hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')` gate as `DispenseController`
+  throughout (the *different-person* restriction lives in the service,
+  not the role gate, since both signers hold the same role). No response
+  DTO, same precedent `MedicationController` itself uses.
+  `GET /api/pharmacy/controlled-substance-requests?status=` (blank-means
+  -all, same shape as `MedicationController.medications(status)`),
+  `POST /api/prescriptions/{id}/controlled-substance-requests`,
+  `POST /api/pharmacy/controlled-substance-requests/{id}/cosign`,
+  `POST /api/pharmacy/controlled-substance-requests/{id}/reject`.
+- **Tests**: `DispenseServiceTest` (pure Mockito, existing file
+  extended, **17/17 passing locally**, up from 9/9) - 8 new cases:
+  direct dispense of a controlled substance rejected before any stock
+  work (`verify(stockBatchRepository, never()).findByIdAndTenantId(...)`);
+  requesting one creates a pending row with no stock decrement;
+  requesting against a non-controlled medication rejected; co-signing by
+  a different user decrements stock and produces a `DispenseRecord` with
+  both `dispensedBy`/`coSignedBy` set correctly; co-signing by the same
+  user as the requester rejected; co-signing an already-resolved request
+  rejected; insufficient stock discovered only at cosign time (not
+  request time) rejected there; rejecting leaves stock untouched.
+  `MedicationControllerIntegrationTest` gained 2 cases (clinic_admin
+  sets then clears the schedule while pharmacist gets 403; an invalid
+  schedule value 400). `ControlledSubstanceDispenseControllerIntegrationTest`
+  (new, 7 cases) - the full request/list/cosign happy path, same-user
+  -cosign 409, reject leaves stock untouched, direct dispense of a
+  controlled medication 400, requesting against a non-controlled
+  medication 400, role gate, cross-tenant 404 on cosign. One new
+  `TenantIsolationIntegrationTest` case
+  (`controlledSubstanceRequestsAreNotReadableOrCosignableFromAnotherTenant`).
+  Confirmed via a clean `mvn clean test-compile` and a full `mvn test`
+  run showing `Tests run: 362, Errors: 278` (up from 344/268 - exactly
+  the 18 new test methods: 8 pure-unit + 10 Testcontainers-blocked),
+  every failure the identical pre-existing `Could not find a valid
+  Docker environment` wall - not a regression, not a new failure mode.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V24` confirmed applied via `flyway_schema_history`
+  (version 24, description "pharmacy controlled substances",
+  `success = t`). As a real `demo-clinic-admin` login: created a real
+  controlled medication ("Fentanyl"), marked it `schedule_ii` via the
+  new dedicated endpoint, received a real 30-unit stock batch;
+  confirmed a direct `/dispense` attempt against a real existing
+  prescription now genuinely 400s with the exact designed message;
+  created a real controlled-substance request (`status: "pending"`,
+  `requestedBy` = the clinic_admin's own AppUser id); attempted to
+  co-sign it as that **same** login and got a genuine `409` ("A
+  different pharmacist or clinic_admin must co-sign this request").
+  Logged out via the app's own `/auth/logout` form submission (not a
+  bare fetch - confirmed a fresh username/password prompt on the next
+  login, proving the SSO session actually ended) and logged back in as
+  a real, different `demo-pharmacist` login; co-signed the same request
+  successfully - the response carried a real `dispenseRecordId`.
+  Cross-checked directly in Postgres: the stock batch dropped from 30
+  to exactly 25 (a single decrement, not double-applied), and the
+  resulting `dispense_records` row carries `dispensed_by` = the
+  clinic_admin's id and `co_signed_by` = the pharmacist's id - two
+  genuinely different AppUser ids, not the same person recorded twice.
+  Created a second request and rejected it (as the same `demo-pharmacist`
+  login, withdrawing their own request) with a real reason string;
+  confirmed the stock batch stayed at exactly 25 afterward - a rejected
+  request never touches stock, live-verified, not just asserted by the
+  unit test.
+- **Backend only** - no frontend this phase, same convention as phase
+  27 and every other phase in this module set so far. No new Keycloak
+  role - `pharmacist`/`clinic_admin` cover both signers. No
+  `node-bff`/`PUBLIC_ROUTES` change.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -2841,6 +2972,34 @@ attributed to the patient's own account for a self-service cancel).
   conflict, a real consolidated allergy+interaction conflict message, and
   both overridden dispenses cross-checked in Postgres), not by a local
   test run.
+- `DispenseServiceTest` (phase 28, pure Mockito, existing file extended -
+  genuinely runs locally, **17/17 passing**, up from 9/9) - 8 new cases:
+  direct dispense of a controlled substance rejected before any stock
+  work; requesting one creates a pending row with no stock decrement;
+  requesting against a non-controlled medication rejected; co-signing by
+  a different user decrements stock and produces a `DispenseRecord` with
+  both signers set; co-signing by the same user as the requester
+  rejected; co-signing/rejecting an already-resolved request rejected;
+  insufficient stock discovered only at cosign time (not request time)
+  rejected there; rejecting leaves stock untouched.
+  `MedicationControllerIntegrationTest` gained 2 cases (clinic_admin
+  sets/clears the schedule, pharmacist 403s, invalid value 400).
+  `ControlledSubstanceDispenseControllerIntegrationTest` (new, 7 cases) -
+  full request->list->cosign happy path, same-user-cosign 409, reject
+  leaves stock untouched, direct dispense of a controlled medication
+  400, requesting against a non-controlled medication 400, role gate,
+  cross-tenant 404 on cosign. One new `TenantIsolationIntegrationTest`
+  case. Same Testcontainers wall as every other integration test on this
+  machine - `mvn test` showed `Tests run: 362, Errors: 278` (up from
+  344/268 - exactly the 18 new test methods: 8 pure-unit + 10
+  Testcontainers-blocked), 84 pure-unit tests passing (up from 76,
+  exactly the 8 new `DispenseServiceTest` cases). The
+  Testcontainers-only assertions are confirmed correct by the live
+  browser verification in "Phase 28" above (a real same-user-cosign 409,
+  a real cosign by a genuinely different login producing a
+  `dispenseRecordId`, stock decremented exactly once and cross-checked
+  in Postgres, and a real reject leaving stock untouched), not by a
+  local test run.
 
 ## Verified-session logs
 

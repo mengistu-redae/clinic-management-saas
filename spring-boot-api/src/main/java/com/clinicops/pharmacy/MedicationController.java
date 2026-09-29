@@ -34,6 +34,8 @@ public class MedicationController {
     private static final Set<String> VALID_FORMS = Set.of("tablet", "capsule", "syrup", "injection", "other");
     private static final Set<String> VALID_STATUSES = Set.of("active", "inactive");
     private static final Set<String> VALID_WRITE_OFF_STATUSES = Set.of("expired", "recalled");
+    private static final Set<String> VALID_SCHEDULES =
+            Set.of("schedule_i", "schedule_ii", "schedule_iii", "schedule_iv", "schedule_v");
 
     private final MedicationRepository medicationRepository;
     private final StockBatchRepository stockBatchRepository;
@@ -108,6 +110,24 @@ public class MedicationController {
             }
             medication.setStatus(request.status());
         }
+        return medicationRepository.save(medication);
+    }
+
+    /**
+     * A dedicated action endpoint, not folded into the generic
+     * POST /{id}/update - clinic_admin only (tighter than the catalog's
+     * own pharmacist+clinic_admin gate), matching this app's existing
+     * convention for a consequential/tighter-gated state change
+     * (deactivate/reactivate, stock-batch write-off). See phase 28.
+     */
+    @PostMapping("/api/clinic/medications/{id}/controlled-substance-schedule")
+    @PreAuthorize("hasRole('CLINIC_ADMIN')")
+    public Medication updateControlledSubstanceSchedule(@PathVariable UUID id, @RequestBody UpdateControlledSubstanceScheduleRequest request) {
+        if (request.schedule() != null && !VALID_SCHEDULES.contains(request.schedule())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "schedule must be one of " + VALID_SCHEDULES);
+        }
+        Medication medication = requireOwnedMedication(id, TenantContext.require());
+        medication.setControlledSubstanceSchedule(request.schedule());
         return medicationRepository.save(medication);
     }
 
