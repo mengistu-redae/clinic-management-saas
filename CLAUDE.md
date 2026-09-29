@@ -1774,19 +1774,9 @@ write-up.
 package) - **built 2026-09-29**. See "Phase 29: stock/inventory
 foundation" below for the full write-up.
 
-**30. Equipment & asset tracking** (`com.clinicops.inventory`, same
-package - deliberately its own phase, not folded into phase 29, since
-the data shape is genuinely different) -
-
-- **`Asset`** - one row per physical item, not quantity-based: `name`,
-  `serialNumber`, `purchaseDate`, `purchasePrice`, `warrantyExpiry`,
-  status (`in_service`/`under_maintenance`/`retired`/`disposed`),
-  `assignedRoomId` (nullable FK to the existing `Room` entity), `notes`.
-- **`AssetMaintenanceRecord`** - a simple append-only log (`assetId`,
-  `performedAt`, `description`, `performedBy`, `notes`) - no `nextDueAt`/
-  reminder field and no notification-outbox wiring, per the user's own
-  answer: a history to look back on, not a second scheduling system
-  alongside appointments.
+**30. Equipment & asset tracking** (`com.clinicops.inventory`) - **built
+2026-09-29**. See "Phase 30: equipment & asset tracking" below for the
+full write-up.
 
 **31. Pharmacy billing integration** - `payments` (and `invoices`) gain a
 nullable `dispense_record_id`, extending the existing exactly-one-owner
@@ -2252,6 +2242,92 @@ logistics. Pharmacy/medication stock keeps its existing
   No new Keycloak role - `clinic_admin`+`front_desk` cover general
   inventory, `pharmacist`+`clinic_admin` still cover pharmacy stock,
   unchanged. No `node-bff`/`PUBLIC_ROUTES` change.
+
+## Phase 30: equipment & asset tracking
+
+Fourth of the ten sequential phases sketched under "Pharmacy expansion +
+stock management module" above (built 2026-09-29, same session as
+27-29). Adds `Asset` + `AssetMaintenanceRecord` to the existing
+`com.clinicops.inventory` package - deliberately its own phase, not
+folded into phase 29, since equipment is one row per physical item (not
+quantity-based stock) and needs its own shape. Much smaller than phase
+29 - no relocation/refactor, just two new entities on an already
+-established package/role/convention set. No new scoping question
+needed - the sketch already pinned the maintenance-log shape (a simple
+append-only log, explicitly no `nextDueAt`/reminder field and no
+notification-outbox wiring - a history to look back on, not a second
+scheduling system alongside appointments), and general-inventory role
+gating was already pinned in phase 29 (`clinic_admin`+`front_desk`) -
+`Asset` is the same general operational-logistics concern, so it reuses
+that gate directly rather than re-asking. New migration
+`V26__equipment_asset_tracking.sql`.
+
+- **`Asset`** + **`AssetController`** - `GET`/`GET {id}`/`POST`/
+  `POST {id}/update` (partial - `name`/`serialNumber`/`purchaseDate`/
+  `purchasePrice`/`warrantyExpiry`/`status`/`notes`; `status` allow
+  -listed `in_service`/`under_maintenance`/`retired`/`disposed`, no
+  delete endpoint - status transitions only, same "real inventory/audit
+  weight" precedent every stock-adjacent entity this session used).
+  `assignedRoomId` is deliberately **not** part of the generic partial
+  update - it needs real null-clear semantics (unassigning an asset from
+  a room), so it gets its own dedicated action endpoint instead, the
+  same precedent `MedicationController.updateControlledSubstanceSchedule`
+  (phase 28) already established:
+  **`POST /api/inventory/assets/{id}/assign-room`**, body `{roomId}`
+  (`null` clears it), validated against `RoomRepository
+  .findByIdAndTenantId` when non-null (404 if the room isn't this
+  tenant's - a real cross-package reference, `com.clinicops.room` read
+  from `com.clinicops.inventory`).
+- **Nested maintenance log**, same convention as `MedicationController`'s/
+  `InventoryItemController`'s own nested stock-batch endpoints:
+  `GET/POST /api/inventory/assets/{id}/maintenance-records`.
+  `performedAt` is always set server-side to `Instant.now()` (no
+  backdating field in v1 - staff records what they just did, matching
+  how `DispenseRecord`/`StockAdjustment` never take a client-supplied
+  timestamp either); `performedBy` resolved from the JWT via
+  `CurrentUserService`, same pattern `StockAdjustmentController` already
+  uses. No update/delete - genuinely append-only, confirmed live below
+  that two records for the same asset accumulate rather than replace.
+- **Tests**: no new pure-unit test class - same bar phase 29 used (plain
+  CRUD + one allow-list check, no derived-value computation worth
+  isolating). `AssetControllerIntegrationTest` (new, 6 cases: CRUD +
+  status transitions `in_service` -> `under_maintenance` -> `retired`,
+  invalid status 400, assign-room to a real same-tenant room then clear
+  it back to `null`, assign-room to another tenant's room 404,
+  maintenance records accumulating rather than replacing with
+  `performedBy` correctly resolved, role gate, cross-tenant 404). One
+  new `TenantIsolationIntegrationTest` case
+  (`assetsAndTheirMaintenanceRecordsAreNotReadableOrWritableFromAnotherTenant`).
+  Confirmed via a clean `mvn clean test-compile` and a full `mvn test`
+  run showing `Tests run: 390, Errors: 306` (up from 383/299 - exactly
+  the 7 new test methods: 6+1), every failure the identical pre-existing
+  `Could not find a valid Docker environment` wall - not a regression,
+  not a new failure mode.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V26` confirmed applied via `flyway_schema_history`
+  (version 26, description "equipment asset tracking", `success = t`).
+  As a real `demo-front-desk` login: created a real `Asset` (an
+  autoclave, with a real serial number/purchase price/warranty date),
+  assigned it to a real existing room (`GET /api/rooms`'s own "Room 1"),
+  recorded two real maintenance entries ("Annual inspection", "Replaced
+  door seal") and confirmed both `performedBy` values resolved to the
+  real logged-in user's `AppUser` id; transitioned status
+  `in_service -> under_maintenance -> in_service`; confirmed
+  `GET .../maintenance-records` returned both records (accumulated, not
+  replaced); cleared the room assignment back to `null`. Cross-checked
+  the final state directly in Postgres - `status = 'in_service'`,
+  `assigned_room_id` genuinely `NULL`, exactly 2 rows in
+  `asset_maintenance_records` for this asset. Logged out via the app's
+  own `/auth/logout` form and back in as `demo-pharmacist`: confirmed
+  `GET /api/inventory/assets` still correctly 403s - the phase-29 role
+  boundary holding live for this new resource too, not just the ones
+  built last time.
+- **Backend only** - no frontend this phase, same convention as every
+  phase in this module set. No new Keycloak role - reuses phase 29's
+  `clinic_admin`+`front_desk` gate. No `node-bff`/`PUBLIC_ROUTES`
+  change. No maintenance-due reminders/scheduling of any kind - the
+  pinned "simple log" scope boundary from when this was first sketched.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -3128,6 +3204,21 @@ attributed to the patient's own account for a self-service cancel).
   `demo-pharmacist` cannot reach the new inventory endpoints while the
   existing pharmacy stock-batch flow renders unchanged), not by a local
   test run.
+- `AssetControllerIntegrationTest` (phase 30, new, 6 cases) - CRUD +
+  status transitions (`in_service` -> `under_maintenance` -> `retired`),
+  invalid status 400, assign-room to a real same-tenant room then clear
+  it back to `null`, assign-room to another tenant's room 404,
+  maintenance records accumulating rather than replacing with
+  `performedBy` correctly resolved, role gate, cross-tenant 404. One new
+  `TenantIsolationIntegrationTest` case. Same Testcontainers wall as
+  every other integration test on this machine - `mvn test` showed
+  `Tests run: 390, Errors: 306` (up from 383/299 - exactly the 7 new
+  test methods: 6+1), no pure-unit tests added or affected. The
+  Testcontainers-only assertions are confirmed correct by the live
+  browser verification in "Phase 30" above (a real asset assigned to a
+  real room then cleared, two maintenance records confirmed accumulated
+  in Postgres, and a real 403 confirming `demo-pharmacist` cannot reach
+  the new asset endpoints), not by a local test run.
 
 ## Verified-session logs
 

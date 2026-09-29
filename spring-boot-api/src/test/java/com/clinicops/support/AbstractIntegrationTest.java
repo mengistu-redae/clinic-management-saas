@@ -46,6 +46,10 @@ import com.clinicops.pharmacy.DrugInteractionPairRepository;
 import com.clinicops.pharmacy.PendingControlledSubstanceDispenseRepository;
 import com.clinicops.pharmacy.Medication;
 import com.clinicops.pharmacy.MedicationRepository;
+import com.clinicops.inventory.Asset;
+import com.clinicops.inventory.AssetRepository;
+import com.clinicops.inventory.AssetMaintenanceRecord;
+import com.clinicops.inventory.AssetMaintenanceRecordRepository;
 import com.clinicops.inventory.InventoryItem;
 import com.clinicops.inventory.InventoryItemRepository;
 import com.clinicops.inventory.Supplier;
@@ -253,6 +257,12 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected StockAdjustmentRepository stockAdjustmentRepository;
+
+    @Autowired
+    protected AssetRepository assetRepository;
+
+    @Autowired
+    protected AssetMaintenanceRecordRepository assetMaintenanceRecordRepository;
 
     @Autowired
     protected AccountRepository accountRepository;
@@ -523,6 +533,21 @@ public abstract class AbstractIntegrationTest {
         adjustment.setQuantityDelta(quantityDelta);
         adjustment.setReason("correction");
         return stockAdjustmentRepository.save(adjustment);
+    }
+
+    protected Asset createAsset(UUID tenantId, String name) {
+        Asset asset = new Asset();
+        asset.setTenantId(tenantId);
+        asset.setName(name);
+        return assetRepository.save(asset);
+    }
+
+    protected AssetMaintenanceRecord createAssetMaintenanceRecord(UUID tenantId, UUID assetId, String description) {
+        AssetMaintenanceRecord record = new AssetMaintenanceRecord();
+        record.setTenantId(tenantId);
+        record.setAssetId(assetId);
+        record.setDescription(description);
+        return assetMaintenanceRecordRepository.save(record);
     }
 
     protected DrugInteractionPair createDrugInteractionPair(UUID tenantId, UUID medicationAId, UUID medicationBId) {

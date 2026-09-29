@@ -469,6 +469,33 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void assetsAndTheirMaintenanceRecordsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("asset");
+        com.clinicops.inventory.Asset asset = createAsset(a.getId(), "Autoclave");
+
+        Clinic b = clinicB("asset");
+        String bAlias = b.getKeycloakOrgId();
+
+        mockMvc.perform(get("/api/inventory/assets/" + asset.getId()).with(asClinicAdmin("admin", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/inventory/assets/" + asset.getId() + "/update").with(asClinicAdmin("admin", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.inventory.UpdateAssetRequest(
+                                null, null, null, null, null, "retired", null))))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/inventory/assets/" + asset.getId() + "/assign-room").with(asClinicAdmin("admin", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.inventory.AssignRoomRequest(null))))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/inventory/assets/" + asset.getId() + "/maintenance-records").with(asClinicAdmin("admin", bAlias)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/inventory/assets/" + asset.getId() + "/maintenance-records").with(asClinicAdmin("admin", bAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.inventory.CreateAssetMaintenanceRecordRequest("probe", null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void accountsAreNotReadableOrWritableFromAnotherTenantAndJournalEntriesAreScopedPerTenant() throws Exception {
         Clinic a = clinicA("account");
         com.clinicops.accounting.Account account = createAccount(a.getId(), "1500", "Isolated Account", "asset");
