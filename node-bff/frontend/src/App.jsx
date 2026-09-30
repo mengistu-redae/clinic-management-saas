@@ -39,6 +39,7 @@ import TrackLabOrder from './pages/TrackLabOrder.jsx';
 import PlatformAdminClinics from './pages/platform-admin/Clinics.jsx';
 import PharmacistDashboard from './pages/pharmacist/Dashboard.jsx';
 import PharmacistMedications from './pages/pharmacist/Medications.jsx';
+import PharmacistDrugInteractions from './pages/pharmacist/DrugInteractions.jsx';
 import AccountantDashboard from './pages/accountant/Dashboard.jsx';
 import AccountantAccounts from './pages/accountant/Accounts.jsx';
 import AccountantJournal from './pages/accountant/Journal.jsx';
@@ -394,6 +395,14 @@ export default function App() {
           element={
             <RequireRole roles={['pharmacist', 'clinic_admin']}>
               <PharmacistMedications />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/pharmacist/drug-interactions"
+          element={
+            <RequireRole roles={['pharmacist', 'clinic_admin']}>
+              <PharmacistDrugInteractions />
             </RequireRole>
           }
         />

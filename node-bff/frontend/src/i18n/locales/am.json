@@ -30,7 +30,8 @@
       "clinics": "ክሊኒኮች"
     },
     "pharmacist": {
-      "medications": "መድሃኒቶች"
+      "medications": "መድሃኒቶች",
+      "drugInteractions": "የመድሃኒት ግንኙነቶች"
     },
     "accountant": {
       "accounts": "ሂሳቦች",
@@ -960,6 +961,23 @@
     "addMaintenanceRecord": "መዝገብ ጨምር",
     "errorDescriptionRequired": "መግለጫ ያስፈልጋል።",
     "errorAddMaintenanceRecord": "ይህን የጥገና መዝገብ መጨመር አልተቻለም።"
+  },
+  "drugInteractionsPage": {
+    "intro": "ማከፋፈል ከመጠናቀቁ በፊት የሚጣሩ ጥንዶች - በፋርማሲስት ወረፋ ላይ ያለውን የግጭት ማስጠንቀቂያ ይመልከቱ።",
+    "medicationA": "መድሃኒት ሀ",
+    "medicationB": "መድሃኒት ለ",
+    "severity": "ክብደት",
+    "severityUnset": "አልተቀመጠም",
+    "severity_mild": "ቀላል",
+    "severity_moderate": "መካከለኛ",
+    "severity_severe": "ከባድ",
+    "description": "መግለጫ",
+    "addPair": "ጥንድ ጨምር",
+    "errorMedicationsRequired": "ሁለቱም መድሃኒቶች ያስፈልጋሉ።",
+    "errorCreate": "ይህን ጥንድ መፍጠር አልተቻለም - ቀድሞ ሊኖር ይችላል፣ ወይም ሁለቱ መድሃኒቶች የተለያዩ መሆን አለባቸው።",
+    "errorDelete": "ይህን ጥንድ መሰረዝ አልተቻለም።",
+    "emptyTitle": "እስካሁን ምንም የግንኙነት ጥንድ የለም",
+    "emptyDescription": "የመጀመሪያውን የመድሃኒት ግንኙነት ጥንድ ከላይ ይጨምሩ።"
   },
   "accountType": {
     "asset": "ንብረት",

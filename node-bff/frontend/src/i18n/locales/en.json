@@ -30,7 +30,8 @@
       "clinics": "Clinics"
     },
     "pharmacist": {
-      "medications": "Medications"
+      "medications": "Medications",
+      "drugInteractions": "Drug Interactions"
     },
     "accountant": {
       "accounts": "Accounts",
@@ -962,6 +963,23 @@
     "addMaintenanceRecord": "Add record",
     "errorDescriptionRequired": "A description is required.",
     "errorAddMaintenanceRecord": "Could not add this maintenance record."
+  },
+  "drugInteractionsPage": {
+    "intro": "Pairs checked before a dispense completes - see the conflict warning on the pharmacist queue.",
+    "medicationA": "Medication A",
+    "medicationB": "Medication B",
+    "severity": "Severity",
+    "severityUnset": "Not set",
+    "severity_mild": "Mild",
+    "severity_moderate": "Moderate",
+    "severity_severe": "Severe",
+    "description": "Description",
+    "addPair": "Add pair",
+    "errorMedicationsRequired": "Both medications are required.",
+    "errorCreate": "Could not create this pair - it may already exist, or the two medications must be different.",
+    "errorDelete": "Could not delete this pair.",
+    "emptyTitle": "No interaction pairs yet",
+    "emptyDescription": "Add your first drug-interaction pair above."
   },
   "accountType": {
     "asset": "Asset",

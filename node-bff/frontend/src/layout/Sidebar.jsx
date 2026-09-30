@@ -71,6 +71,7 @@ function navGroups(t, hasRole) {
         { to: '/lab-orders', label: t('nav.clinicAdmin.labOrders'), icon: FlaskIcon },
         { to: '/referrals', label: t('nav.clinicAdmin.referrals'), icon: ClipboardIcon },
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
+        { to: '/pharmacist/drug-interactions', label: t('nav.pharmacist.drugInteractions'), icon: ClipboardIcon },
         { to: '/accountant/accounts', label: t('nav.accountant.accounts'), icon: WalletIcon },
         { to: '/accountant/payroll', label: t('nav.accountant.payroll'), icon: ReceiptIcon },
         { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: BoxIcon },
@@ -87,6 +88,7 @@ function navGroups(t, hasRole) {
       items: [
         { to: '/pharmacist', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
+        { to: '/pharmacist/drug-interactions', label: t('nav.pharmacist.drugInteractions'), icon: ClipboardIcon },
       ],
     });
   }

@@ -1038,6 +1038,44 @@ export function usePharmacyAnalytics(enabled, days) {
   });
 }
 
+// ---- drug interaction pairs (phase 27 backend, phase 36 frontend - DrugInteractionPairController) ----
+
+export function useDrugInteractionPairs(enabled) {
+  return useQuery({
+    queryKey: ['pharmacy', 'drug-interaction-pairs'],
+    queryFn: () => apiGet('/api/pharmacy/drug-interaction-pairs'),
+    enabled,
+  });
+}
+
+function invalidateDrugInteractionPairs(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['pharmacy', 'drug-interaction-pairs'] });
+}
+
+export function useCreateDrugInteractionPair() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/pharmacy/drug-interaction-pairs', body),
+    onSuccess: () => invalidateDrugInteractionPairs(queryClient),
+  });
+}
+
+export function useUpdateDrugInteractionPair(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/pharmacy/drug-interaction-pairs/${id}/update`, body),
+    onSuccess: () => invalidateDrugInteractionPairs(queryClient),
+  });
+}
+
+export function useDeleteDrugInteractionPair(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/pharmacy/drug-interaction-pairs/${id}/delete`),
+    onSuccess: () => invalidateDrugInteractionPairs(queryClient),
+  });
+}
+
 // ---- accounting (phase 21 - AccountController/JournalController) ----
 
 export function useAccounts(enabled, status) {

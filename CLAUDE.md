@@ -2977,6 +2977,115 @@ own pinned decision).
   through). Owed: a real check through `http://localhost/` once this
   clears or a deliberate Docker Desktop restart is authorized.
 
+## Phase 36: drug-interaction pairs UI
+
+Second of the six frontend gap-closing phases above - the smallest one.
+Closes the last gap `com.clinicops.pharmacy.DrugInteractionPairController`
+(phase 27) left open: a fully-built, fully-tested hard-delete CRUD
+backend with zero frontend, even though `DispenseService`'s own
+clinical-safety check has been reading from it since phase 27. Zero
+backend changes.
+
+- **`pages/pharmacist/DrugInteractions.jsx`** (new) - mirrors
+  `clinic-admin/LabRates.jsx`'s own true-hard-delete CRUD shape
+  (create-form-above-`DataTable`, `renderExpanded` opens a per-row edit
+  panel, delete is a plain unconfirmed button click - no confirm dialog
+  anywhere in this app's existing hard-delete flows, not a new pattern
+  here either). Two medication `<select>`s on the create form
+  (`useMedications(true, 'active')` - only active medications are
+  sensible to newly pair); the edit panel only ever touches
+  severity/description, since `medicationAId`/`medicationBId` are
+  immutable once created on the backend (correcting which two
+  medications a pair covers means delete+recreate). `severity` has no
+  server-side allow-list but gets a client-side
+  unset/mild/moderate/severe `<select>` (matching the entity's own
+  javadoc convention) as a UI-only convenience, not a new constraint.
+- **Applied the phase-35 "never resolve a display name against an
+  active-only list" lesson proactively, not reactively** - the table's
+  own `medicationById` map is built from `useMedications(true)` (all
+  statuses), kept deliberately separate from the create-form's
+  active-only picker list, so a since-deactivated medication already
+  paired stays displayable by name instead of falling back to a raw
+  UUID. Designed in from the start this time, since phase 35 had
+  already surfaced the exact failure mode live for Purchase
+  Orders/Assets - it never had to be re-triggered as a live bug here.
+- **`api/queries.js`** - a small new
+  `// ---- drug interaction pairs (phase 27 backend, phase 36 frontend) ----`
+  section: `useDrugInteractionPairs`/`useCreateDrugInteractionPair`/
+  `useUpdateDrugInteractionPair`/`useDeleteDrugInteractionPair`, the
+  exact same shape `useLabRates`/`useCreateLabRate`/etc. already
+  establish (a shared `invalidateDrugInteractionPairs` helper, list
+  keyed `['pharmacy', 'drug-interaction-pairs']`).
+- **Routing/nav**: one new route, `/pharmacist/drug-interactions`,
+  `RequireRole roles={['pharmacist', 'clinic_admin']}` - the same gate
+  every other pharmacist route already uses. `layout/Sidebar.jsx`
+  gained one link in the `pharmacist` group and a second curated link
+  in `clinic_admin`'s own group (right after its existing
+  `/pharmacist/medications` link - `clinic_admin` already gets exactly
+  one curated link into that module, this is the second, matching the
+  established "clinic_admin gets a UI path into a module it overrides,
+  not the module's own full nav" precedent).
+- **i18n**: new `drugInteractionsPage.*` namespace (form labels/table
+  headers/severity options/empty state/errors) plus one
+  `nav.pharmacist.drugInteractions` key, added to `en.json`/`am.json`
+  together - confirmed exact key-parity via the same flatten-and-diff
+  Node script every prior phase this session used (916 keys each side,
+  the same two pre-existing intentional English-only pluralization keys
+  as always, no new gap).
+- **No new backend tests** - the endpoint set was already fully covered
+  by phase 27's own `DrugInteractionPairControllerIntegrationTest` (CRUD
+  round trip, duplicate-pair-either-order 409, self-pair 400,
+  unknown-medication 404, cross-tenant 404, role gate); this phase adds
+  no new backend surface at all. Frontend: `npm run build` clean,
+  `npm test` (36/36) unaffected - a page-level change only, same bar
+  every prior frontend-only phase this session used (no new
+  shared-component test surface per frontend phase S's own scope
+  boundary).
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`)** - `docker compose up -d --build --force-recreate
+  spring-boot-api node-bff` (both healthy). As a real `demo-pharmacist`
+  login: confirmed the real pre-existing Penicillin V/Amoxicillin pair
+  (from phase 27's own verification) displays correctly with resolved
+  names; created a real new pair (Amoxicillin 500mg / Fentanyl, severe,
+  "Phase 36 verification - sedation risk") and confirmed it via a direct
+  fetch (2 pairs total); submitted a self-pair (same medication for both
+  fields) and got the real backend 400 - "medicationAId and
+  medicationBId must be different medications" - rendered through the
+  UI's own `ErrorBanner`; submitted the existing pair's two medications
+  in reverse order and got the real backend 409 - "An interaction pair
+  for these two medications already exists" - rendered the same way;
+  expanded the new pair's row, edited its severity from severe to
+  moderate, saved, and confirmed via a direct fetch the update persisted
+  with the description left untouched; deleted it and confirmed via a
+  direct fetch only the original phase-27 pair remained (a true hard
+  delete, not a soft-deactivate) - also confirmed visually in the
+  re-rendered table. Confirmed `demo-front-desk` and `demo-provider` are
+  both genuinely locked out - a direct `fetch('/api/pharmacy/
+  drug-interaction-pairs')` 403s for both, and navigating either login
+  to `/pharmacist/drug-interactions` client-side-redirects back to `/`
+  via `RequireRole`. `demo-clinic-admin` reaching the page via the new
+  curated sidebar link was confirmed earlier in this same session (the
+  page loads correctly inside clinic_admin's own full sidebar, with the
+  nav item correctly highlighted active). Exercised the whole page once
+  in Dark theme + Amharic together, using the exact same create/self-pair/
+  duplicate-pair/edit/delete sequence above, not just a visual check -
+  every step (the form, both real backend error messages, the edit
+  panel, and the final delete) worked identically and rendered correctly
+  translated/themed, confirmed via real screenshots.
+- **Same JS-driven form-interaction techniques from phase 35 reused,
+  not rediscovered** - native-setter + `dispatchEvent` for the
+  `<select>`/`<input>` elements, and `document.querySelectorAll('tbody
+  tr')`/`querySelectorAll('button')` plus a direct `.click()` call to
+  reliably toggle the row-expand and hit the Save/Delete buttons,
+  instead of trusting coordinate-based `computer` tool clicks - the same
+  DataTable-row-is-the-click-target and Save-button-position issues
+  phase 35's own write-up already flagged reproduced identically here
+  and were worked around the same way.
+- **Standing note, unchanged from phases 34/35**: `nginx` (`:80`) - not
+  re-attempted this phase, verification stayed on `node-bff` directly
+  throughout, consistent with the prior two phases' own documented
+  Docker Desktop port-allocation desync.
+
 ## Phase 19: clinic-admin analytics dashboard
 
 Built 2026-09-24 at the user's direct request ("modify the dashboard
