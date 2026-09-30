@@ -34,6 +34,7 @@ function navGroups(t, hasRole) {
         { to: '/book', label: t('nav.patient.bookAppointment'), icon: CalendarIcon },
         { to: '/my-appointments', label: t('nav.patient.myAppointments'), icon: ClipboardIcon },
         { to: '/my-lab-orders', label: t('nav.patient.myLabOrders'), icon: FlaskIcon },
+        { to: '/my-prescriptions', label: t('nav.patient.myPrescriptions'), icon: ClipboardIcon },
       ],
     });
   }
@@ -73,6 +74,7 @@ function navGroups(t, hasRole) {
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
         { to: '/pharmacist/drug-interactions', label: t('nav.pharmacist.drugInteractions'), icon: ClipboardIcon },
         { to: '/pharmacist/controlled-substances', label: t('nav.pharmacist.controlledSubstances'), icon: ClipboardIcon },
+        { to: '/pharmacist/refill-requests', label: t('nav.pharmacist.refillRequests'), icon: ClipboardIcon },
         { to: '/accountant/accounts', label: t('nav.accountant.accounts'), icon: WalletIcon },
         { to: '/accountant/payroll', label: t('nav.accountant.payroll'), icon: ReceiptIcon },
         { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: BoxIcon },
@@ -91,6 +93,7 @@ function navGroups(t, hasRole) {
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
         { to: '/pharmacist/drug-interactions', label: t('nav.pharmacist.drugInteractions'), icon: ClipboardIcon },
         { to: '/pharmacist/controlled-substances', label: t('nav.pharmacist.controlledSubstances'), icon: ClipboardIcon },
+        { to: '/pharmacist/refill-requests', label: t('nav.pharmacist.refillRequests'), icon: ClipboardIcon },
       ],
     });
   }

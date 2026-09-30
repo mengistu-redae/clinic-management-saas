@@ -7,7 +7,8 @@
     "patient": {
       "bookAppointment": "ቀጠሮ ይያዙ",
       "myAppointments": "የእኔ ቀጠሮዎች",
-      "myLabOrders": "የእኔ የላብራቶሪ ትዕዛዞች"
+      "myLabOrders": "የእኔ የላብራቶሪ ትዕዛዞች",
+      "myPrescriptions": "የእኔ የመድሃኒት ማዘዣዎች"
     },
     "frontDesk": {
       "bookWalkIn": "ለመጣ ታካሚ ቀጠሮ ያስይዙ",
@@ -32,7 +33,8 @@
     "pharmacist": {
       "medications": "መድሃኒቶች",
       "drugInteractions": "የመድሃኒት ግንኙነቶች",
-      "controlledSubstances": "ቁጥጥር የሚደረግባቸው መድሃኒቶች"
+      "controlledSubstances": "ቁጥጥር የሚደረግባቸው መድሃኒቶች",
+      "refillRequests": "የመሙላት ጥያቄዎች"
     },
     "accountant": {
       "accounts": "ሂሳቦች",
@@ -1012,6 +1014,36 @@
     "errorReject": "ይህን ጥያቄ ውድቅ ማድረግ አልተቻለም።",
     "emptyTitle": "ምንም ጥያቄዎች የሉም",
     "emptyDescription": "ቁጥጥር የሚደረግባቸው መድሃኒቶች የማከፋፈል ጥያቄዎች እዚህ ይታያሉ።"
+  },
+  "myPrescriptionsPage": {
+    "title": "የእኔ የመድሃኒት ማዘዣዎች",
+    "requestRefill": "መሙላት ጠይቅ",
+    "requesting": "በመጠየቅ ላይ…",
+    "errorRequest": "ይህን የመሙላት ጥያቄ ማስገባት አልተቻለም።",
+    "refillAlreadyPending": "ለዚህ ማዘዣ የመሙላት ጥያቄ አስቀድሞ በመጠባበቅ ላይ ነው።",
+    "latestRefillStatus": "የመሙላት ጥያቄ: {{status}}",
+    "refillStatus_requested": "በግምገማ ላይ",
+    "refillStatus_approved": "ጸድቋል",
+    "refillStatus_denied": "ውድቅ ተደርጓል",
+    "emptyTitle": "እስካሁን ምንም ማዘዣ የለም",
+    "emptyDescription": "ከጉብኝቶችዎ የተገኙ ማዘዣዎች እዚህ ይታያሉ።"
+  },
+  "refillRequestsPage": {
+    "intro": "ነባር ማዘዣ እንደገና ለመሙላት በታካሚ የቀረቡ ጥያቄዎች።",
+    "status_requested": "በግምገማ ላይ",
+    "status_approved": "ጸድቋል",
+    "status_denied": "ውድቅ ተደርጓል",
+    "statusAll": "ሁሉም",
+    "approve": "አጽድቅ",
+    "approving": "በማጽደቅ ላይ…",
+    "deny": "ውድቅ አድርግ",
+    "confirmDeny": "ውድቅ ማድረግን አረጋግጥ",
+    "reviewNotes": "የግምገማ ማስታወሻ",
+    "reviewedAt": "የተገመገመበት ጊዜ",
+    "errorApprove": "ይህን ጥያቄ ማጽደቅ አልተቻለም።",
+    "errorDeny": "ይህን ጥያቄ ውድቅ ማድረግ አልተቻለም።",
+    "emptyTitle": "ምንም የመሙላት ጥያቄዎች የሉም",
+    "emptyDescription": "የታካሚ የመሙላት ጥያቄዎች እዚህ ይታያሉ።"
   },
   "accountType": {
     "asset": "ንብረት",

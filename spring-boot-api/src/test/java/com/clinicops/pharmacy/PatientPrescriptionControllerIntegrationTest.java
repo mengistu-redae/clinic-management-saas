@@ -195,6 +195,24 @@ class PatientPrescriptionControllerIntegrationTest extends AbstractIntegrationTe
     }
 
     @Test
+    void staffQueueEmbedsTheResolvedPatientAndMedicationNames() throws Exception {
+        Clinic clinic = createClinic("refill-queue-names-" + UUID.randomUUID(), "Queue Names Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+        Prescription prescription = seedOwnedPrescription(clinic.getId(), "patient-queue-names", "Amoxicillin", null);
+
+        mockMvc.perform(post("/api/my-prescriptions/" + prescription.getId() + "/refill-requests").with(asPatient("patient-queue-names"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateRefillRequestRequest(null))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/pharmacy/refill-requests?status=requested").with(asPharmacist("pharm", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].patientName").value("Portal Patient"))
+                .andExpect(jsonPath("$[0].medicationName").value("Amoxicillin"));
+    }
+
+    @Test
     void roleGatesHoldOnBothSides() throws Exception {
         Clinic clinic = createClinic("refill-role-" + UUID.randomUUID(), "Role Clinic");
         String orgAlias = clinic.getKeycloakOrgId();

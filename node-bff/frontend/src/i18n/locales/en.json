@@ -7,7 +7,8 @@
     "patient": {
       "bookAppointment": "Book an appointment",
       "myAppointments": "My Appointments",
-      "myLabOrders": "My Lab Orders"
+      "myLabOrders": "My Lab Orders",
+      "myPrescriptions": "My Prescriptions"
     },
     "frontDesk": {
       "bookWalkIn": "Book for a walk-in",
@@ -32,7 +33,8 @@
     "pharmacist": {
       "medications": "Medications",
       "drugInteractions": "Drug Interactions",
-      "controlledSubstances": "Controlled Substances"
+      "controlledSubstances": "Controlled Substances",
+      "refillRequests": "Refill Requests"
     },
     "accountant": {
       "accounts": "Accounts",
@@ -1014,6 +1016,36 @@
     "errorReject": "Could not reject this request.",
     "emptyTitle": "No requests",
     "emptyDescription": "Controlled-substance dispense requests will show up here."
+  },
+  "myPrescriptionsPage": {
+    "title": "My Prescriptions",
+    "requestRefill": "Request refill",
+    "requesting": "Requesting…",
+    "errorRequest": "Could not submit this refill request.",
+    "refillAlreadyPending": "A refill request is already pending for this prescription.",
+    "latestRefillStatus": "Refill request: {{status}}",
+    "refillStatus_requested": "Pending review",
+    "refillStatus_approved": "Approved",
+    "refillStatus_denied": "Denied",
+    "emptyTitle": "No prescriptions yet",
+    "emptyDescription": "Prescriptions from your visits will show up here."
+  },
+  "refillRequestsPage": {
+    "intro": "Patient-submitted requests to refill an existing prescription.",
+    "status_requested": "Pending review",
+    "status_approved": "Approved",
+    "status_denied": "Denied",
+    "statusAll": "All",
+    "approve": "Approve",
+    "approving": "Approving…",
+    "deny": "Deny",
+    "confirmDeny": "Confirm deny",
+    "reviewNotes": "Review notes",
+    "reviewedAt": "Reviewed at",
+    "errorApprove": "Could not approve this request.",
+    "errorDeny": "Could not deny this request.",
+    "emptyTitle": "No refill requests",
+    "emptyDescription": "Patient refill requests will show up here."
   },
   "accountType": {
     "asset": "Asset",

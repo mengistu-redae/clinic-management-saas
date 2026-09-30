@@ -35,12 +35,14 @@ import Referrals from './pages/referrals/Referrals.jsx';
 import RequestLabTest from './pages/patient/RequestLabTest.jsx';
 import MyLabOrders from './pages/patient/MyLabOrders.jsx';
 import MyLabOrderDetail from './pages/patient/MyLabOrderDetail.jsx';
+import MyPrescriptions from './pages/patient/MyPrescriptions.jsx';
 import TrackLabOrder from './pages/TrackLabOrder.jsx';
 import PlatformAdminClinics from './pages/platform-admin/Clinics.jsx';
 import PharmacistDashboard from './pages/pharmacist/Dashboard.jsx';
 import PharmacistMedications from './pages/pharmacist/Medications.jsx';
 import PharmacistDrugInteractions from './pages/pharmacist/DrugInteractions.jsx';
 import PharmacistControlledSubstances from './pages/pharmacist/ControlledSubstanceQueue.jsx';
+import PharmacistRefillRequests from './pages/pharmacist/RefillRequests.jsx';
 import AccountantDashboard from './pages/accountant/Dashboard.jsx';
 import AccountantAccounts from './pages/accountant/Accounts.jsx';
 import AccountantJournal from './pages/accountant/Journal.jsx';
@@ -263,6 +265,14 @@ export default function App() {
             </RequireRole>
           }
         />
+        <Route
+          path="/my-prescriptions"
+          element={
+            <RequireRole role="patient">
+              <MyPrescriptions />
+            </RequireRole>
+          }
+        />
         {/* Front-desk workflow - staff-only, no guest/public angle. Patient
             search/registration and booking stay front_desk-only (matches
             PatientController's own write role); the appointments list/
@@ -412,6 +422,14 @@ export default function App() {
           element={
             <RequireRole roles={['pharmacist', 'clinic_admin']}>
               <PharmacistControlledSubstances />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/pharmacist/refill-requests"
+          element={
+            <RequireRole roles={['pharmacist', 'clinic_admin']}>
+              <PharmacistRefillRequests />
             </RequireRole>
           }
         />

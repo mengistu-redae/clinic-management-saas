@@ -2845,6 +2845,10 @@ review queue). The user asked to close all six, as sequential phases -
 phase 35 (below) is the first, the biggest by far since it's a whole
 unbuilt module; the remaining five are smaller, later phases.
 
+**All six closed as of phase 39 (2026-09-30)** - see "Phase 39: patient
+prescriptions/refills UI" below for the closing write-up; every role
+and backend API in this project now has a real frontend.
+
 ## Phase 35: general inventory UI
 
 First of the six frontend gap-closing phases above. A new
@@ -3317,6 +3321,144 @@ changes.
 - **Standing note, unchanged from phase 37**: `nginx` (`:80`) - not
   re-attempted this phase, verification stayed on `node-bff` directly
   throughout.
+
+## Phase 39: patient prescriptions/refills UI
+
+Sixth and last of the six frontend gap-closing phases above - closes
+this whole set. Closes `com.clinicops.pharmacy.PatientPrescriptionController`
+(phase 33), both sides: the patient-facing `GET /api/my-prescriptions`/
+refill-request flow, and the staff review queue
+(`GET/POST /api/pharmacy/refill-requests`).
+
+- **A real, structural display gap found while researching this
+  phase, the only one of the six that genuinely needed a backend
+  change** - `PrescriptionRefillRequest` carries only raw
+  `prescriptionId`/`patientId` UUIDs, and unlike every other gap in
+  this set, no existing endpoint let `pharmacist` resolve either to a
+  name (`PatientController` excludes `pharmacist` from its read gate,
+  no `GET /api/prescriptions/{id}` exists anywhere, and
+  `GET /api/pharmacy/queue` only covers prescriptions not yet fully
+  dispensed - typically not the case for a refill request, since
+  requesting one usually means the original supply just ran out).
+  Closed with a new `RefillRequestQueueEntry` record (`com.clinicops.pharmacy`)
+  embedding a resolved `patientName`/`medicationName` directly in
+  `PatientPrescriptionController.refillRequests()`'s own response -
+  same "embed what the caller needs, don't force a second lookup"
+  convention this codebase already applies repeatedly, resolved inline
+  in the controller (`patientRepository.findById`/
+  `prescriptionRepository.findById`), same "controller composes
+  repositories directly for simple read-only aggregation" precedent
+  `DispenseController.queue()` already sets - no new service bean, no
+  migration. `approve`/`deny` keep returning the plain
+  `PrescriptionRefillRequest` unchanged.
+- **`pages/patient/MyPrescriptions.jsx`** (new) - no separate detail
+  page/route, mirroring the `DataTable`+`renderExpanded` shape this
+  session already used twice for a single simple action
+  (`DrugInteractions.jsx`, `ControlledSubstanceQueue.jsx`'s reject
+  form) rather than `MyLabOrders.jsx`'s heavier list+dedicated
+  -detail-page shape - a prescription has exactly one patient-facing
+  action (request a refill), no staff-driven status machine to walk
+  through on its own page. `renderExpanded` shows instructions, a
+  refill-status badge sourced from the most recent
+  `useMyRefillRequests()` entry for that prescription (the backend's
+  own duplicate-pending guard means at most one can ever be
+  `"requested"` at a time), and the request form itself - hidden while
+  a request is genuinely pending, surfacing the real backend 400/409
+  messages verbatim through `ErrorBanner` when they occur.
+- **`pages/pharmacist/RefillRequests.jsx`** (new) - the same status
+  -filter-tabs + `DataTable` + `renderExpanded` shape
+  `ControlledSubstanceQueue.jsx` just established, directly reused.
+  Approve is a single click (no confirm, matching this app's existing
+  convention); Deny expands a reason `<input>` + confirm button, same
+  shape `ControlledSubstanceQueue.jsx`'s own reject form and
+  `Medications.jsx`'s write-off form already use. Deliberately doesn't
+  try to resolve `reviewedBy` to a name, matching phase 38's own
+  precedent for the same class of field.
+- **`api/queries.js`** - `useMyPrescriptions`, `useMyRefillRequests`,
+  `useCreateRefillRequest` (invalidates both patient-side lists),
+  `useRefillRequests(enabled, status)` (mirrors
+  `useControlledSubstanceRequests`'s exact shape),
+  `useApproveRefillRequest`/`useDenyRefillRequest`.
+- **Routing/nav**: `/my-prescriptions`,
+  `<RequireRole role="patient">` (the same singular-`role` wrapper
+  shape `/my-lab-orders` already uses, not the staff routes' `roles`
+  array); `/pharmacist/refill-requests`,
+  `<RequireRole roles={['pharmacist', 'clinic_admin']}>`. New links in
+  the `patient` sidebar group and both the `pharmacist` group and its
+  `clinic_admin` curated-links counterpart, matching every prior
+  phase's own precedent.
+- **Scope boundary, deliberate**: `patient/Dashboard.jsx` is **not**
+  touched - no new stat card or "top 5" preview panel there, unlike
+  `MyLabOrders`' own dashboard integration. A later call if the user
+  wants full parity with the lab-orders dashboard treatment, not
+  assumed here.
+- **Tests**: one new `PatientPrescriptionControllerIntegrationTest`
+  case (`staffQueueEmbedsTheResolvedPatientAndMedicationNames`)
+  confirming the embedded fields resolve correctly for a real seeded
+  request. Confirmed via a clean `mvn -q clean compile` and
+  `mvn clean test-compile`, and a full `mvn test` run showing
+  `Tests run: 432, Errors: 344` (up from 431/343 - exactly the one new
+  test method), 88 pure-unit tests unaffected; confirmed via grepping
+  every surefire report that all 344 failures hit the identical
+  pre-existing `Could not find a valid Docker environment` wall (51 of
+  67 report files), the other 16 all clean-passed. Frontend:
+  `npm run build` clean, `npm test` (36/36) unaffected.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api
+  node-bff` (this phase touches the backend, unlike 35-38), both
+  confirmed healthy, no migration needed (no schema change), Hibernate
+  `ddl-auto: validate` and Flyway both confirmed unaffected
+  (`flyway_schema_history` still at version 28, "up to date, no
+  migration necessary"). As a real `demo-patient` login: confirmed
+  `/my-prescriptions` lists a real "Penicillin V" prescription with
+  correct dispensed-so-far progress ("1 of 20 dispensed"); submitted a
+  real refill request, confirmed the real 409 on an immediate second
+  attempt ("A refill request for this prescription is already
+  pending") rendering through the UI, and confirmed the pending badge
+  correctly hides the request form while pending. As a real
+  `demo-pharmacist` login: confirmed the request appears in
+  `/pharmacist/refill-requests` with the correctly resolved real
+  "Demo Patient"/"Penicillin V" names - the exact gap this phase's own
+  backend change closes, not a raw UUID; approved it, confirmed a real
+  email landed in Mailpit's own web UI (`:8025`) - "Your prescription
+  refill is ready - Penicillin V" - matching phase 33's own original
+  verification approach. Created and denied a second request with a
+  real reason ("Provider wants to see patient first - phase 39"),
+  confirmed via Mailpit that no new notification was written for the
+  deny (still "1-2 of 2" messages), and confirmed the real denial
+  reason rendered back correctly on the patient side
+  ("Refill request: Denied - Provider wants to see patient first -
+  phase 39"). Confirmed `demo-front-desk` and `demo-provider` both
+  correctly 403 on both new endpoints (`/api/pharmacy/refill-requests`,
+  `/api/my-prescriptions`) and are client-side redirected away from
+  both new routes. Exercised both pages once in Dark theme + Amharic
+  together, including the interpolated real denial-reason text
+  rendering correctly translated (confirmed via real screenshots, not
+  just code review).
+- **A real browser-automation session-stability issue hit repeatedly
+  this phase, not a product bug** - beyond the already-documented
+  screenshot/`javascript_tool` timeout flakiness, several `POST`
+  mutations this phase appeared to fail from the tool's own
+  perspective (a reported timeout, or a subsequent read returning a
+  `{"error":"Session expired"}`/401 body) while the mutation had
+  actually already succeeded server-side by the time it was
+  independently re-checked via a fresh authenticated `fetch` - worked
+  around throughout by never trusting a reported tool failure at face
+  value and instead re-querying the real backend state before
+  concluding an action needed to be retried, the same "verify via a
+  direct authenticated fetch, not the visual/tool result" discipline
+  phases 35 onward already established for the unrelated screenshot
+  -timeout flakiness.
+- **Standing note, unchanged from phase 38**: `nginx` (`:80`) - not
+  attempted this phase, verification stayed on `node-bff` directly
+  throughout.
+
+This closes the entire "Frontend gap-closing" set sketched
+2026-09-29 - all six gaps (general inventory, drug-interaction pairs,
+dispense billing, controlled substance tracking, and now patient
+prescriptions/refills) are built and live-verified. Every role and
+every backend API built across this whole project now has a real
+frontend.
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -4311,6 +4453,26 @@ attributed to the patient's own account for a self-service cancel).
   login placing and receiving a genuine medication-owned purchase order
   end to end, and a real `demo-provider` login confirmed still locked
   out of the same endpoint), not by a local test run.
+- `PatientPrescriptionControllerIntegrationTest` (phase 39, new,
+  `staffQueueEmbedsTheResolvedPatientAndMedicationNames`) - confirms
+  the new `RefillRequestQueueEntry` response embeds a real, correctly
+  -resolved `patientName`/`medicationName` for a genuinely seeded
+  refill request - the one real gap this phase's own backend change
+  closes (see "Phase 39" above). Same Testcontainers wall as every
+  other integration test on this machine - `mvn test` showed
+  `Tests run: 432, Errors: 344` (up from 431/343 - exactly the one new
+  test method), 88 pure-unit tests unaffected; confirmed via grepping
+  every surefire report that all 344 failures hit the identical
+  pre-existing `Could not find a valid Docker environment` wall (51 of
+  67 report files - the other 16 all clean-passed with zero failures),
+  not a new failure mode. No new pure-unit test class or
+  `TenantIsolationIntegrationTest` case - both sides of this phase's
+  own endpoint set were already covered by phase 33's own suite; this
+  one new case targets specifically the new embedded-name response
+  shape. The Testcontainers-only assertion is confirmed correct by the
+  live verification in "Phase 39" above (a real `demo-pharmacist`
+  login seeing the actual resolved "Demo Patient"/"Penicillin V" names
+  in the queue, not a raw UUID), not by a local test run.
 
 ## Verified-session logs
 
@@ -4344,7 +4506,12 @@ append new ones there too, not here.
   and `provider/Encounter.jsx` respectively), and the visit-summary PDF
   has a real download link on all three host pages, including this app's
   first ever patient-facing document download. See "Frontend phase T: UI
-  for phases 24-26" above.
+  for phases 24-26" above. **The "Frontend gap-closing" set (phases 35-39,
+  2026-09-29/30) closed the last six gaps** - general inventory,
+  drug-interaction pairs, dispense billing, controlled substance
+  tracking, and patient prescriptions/refills all now have real UI.
+  Every role and every backend API in this project has a real frontend
+  as of phase 39 - see "Frontend gap-closing, sketched 2026-09-29" above.
 - ~~`clinic_admin` has no UI path to encounter documentation~~ **closed
   2026-09-15** - see "clinic_admin encounter-access fix" above.
   `front-desk/AppointmentDetail.jsx` is now shared with `clinic_admin` (a

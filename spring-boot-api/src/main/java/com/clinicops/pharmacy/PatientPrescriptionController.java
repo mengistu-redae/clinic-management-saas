@@ -1,5 +1,9 @@
 package com.clinicops.pharmacy;
 
+import com.clinicops.encounter.Prescription;
+import com.clinicops.encounter.PrescriptionRepository;
+import com.clinicops.patient.Patient;
+import com.clinicops.patient.PatientRepository;
 import com.clinicops.phiaudit.PhiAccessAuditService;
 import com.clinicops.tenant.TenantContext;
 import com.clinicops.user.CurrentUserService;
@@ -30,16 +34,22 @@ public class PatientPrescriptionController {
 
     private final PatientPrescriptionService patientPrescriptionService;
     private final PrescriptionRefillRequestRepository refillRequestRepository;
+    private final PatientRepository patientRepository;
+    private final PrescriptionRepository prescriptionRepository;
     private final CurrentUserService currentUserService;
     private final PhiAccessAuditService phiAccessAuditService;
 
     public PatientPrescriptionController(
             PatientPrescriptionService patientPrescriptionService,
             PrescriptionRefillRequestRepository refillRequestRepository,
+            PatientRepository patientRepository,
+            PrescriptionRepository prescriptionRepository,
             CurrentUserService currentUserService,
             PhiAccessAuditService phiAccessAuditService) {
         this.patientPrescriptionService = patientPrescriptionService;
         this.refillRequestRepository = refillRequestRepository;
+        this.patientRepository = patientRepository;
+        this.prescriptionRepository = prescriptionRepository;
         this.currentUserService = currentUserService;
         this.phiAccessAuditService = phiAccessAuditService;
     }
@@ -65,14 +75,37 @@ public class PatientPrescriptionController {
         return patientPrescriptionService.myRefillRequests(jwt);
     }
 
-    /** Staff review queue - matches DispenseController's own gate. */
+    /**
+     * Staff review queue - matches DispenseController's own gate.
+     * Embeds patientName/medicationName directly (same "controller
+     * composes repositories directly for simple read-only aggregation"
+     * precedent DispenseController.queue() already sets) - closes a
+     * real gap: pharmacist has no other path to resolve either id
+     * (PatientController excludes it, and GET /api/pharmacy/queue only
+     * covers prescriptions not yet fully dispensed - typically not the
+     * case for a refill request).
+     */
     @GetMapping("/api/pharmacy/refill-requests")
     @PreAuthorize("hasAnyRole('PHARMACIST', 'CLINIC_ADMIN')")
-    public List<PrescriptionRefillRequest> refillRequests(@RequestParam(required = false) String status) {
+    public List<RefillRequestQueueEntry> refillRequests(@RequestParam(required = false) String status) {
         UUID tenantId = TenantContext.require();
-        return status == null || status.isBlank()
+        List<PrescriptionRefillRequest> refills = status == null || status.isBlank()
                 ? refillRequestRepository.findAllByTenantId(tenantId)
                 : refillRequestRepository.findAllByTenantIdAndStatus(tenantId, status);
+        return refills.stream().map(this::toQueueEntry).toList();
+    }
+
+    private RefillRequestQueueEntry toQueueEntry(PrescriptionRefillRequest refill) {
+        String patientName = patientRepository.findById(refill.getPatientId())
+                .map(p -> p.getFirstName() + " " + p.getLastName())
+                .orElse(null);
+        String medicationName = prescriptionRepository.findById(refill.getPrescriptionId())
+                .map(Prescription::getMedicationName)
+                .orElse(null);
+        return new RefillRequestQueueEntry(
+                refill.getId(), refill.getPrescriptionId(), refill.getPatientId(), patientName, medicationName,
+                refill.getRequestedBy(), refill.getCreatedAt(), refill.getNotes(), refill.getStatus(),
+                refill.getReviewedBy(), refill.getReviewedAt(), refill.getReviewNotes());
     }
 
     @PostMapping("/api/pharmacy/refill-requests/{id}/approve")

@@ -1126,6 +1126,64 @@ export function useRejectControlledSubstanceDispense(id) {
   });
 }
 
+// ---- patient prescriptions & refill requests (phase 33 backend, phase 39 frontend - PatientPrescriptionController) ----
+
+export function useMyPrescriptions(enabled) {
+  return useQuery({
+    queryKey: ['my-prescriptions'],
+    queryFn: () => apiGet('/api/my-prescriptions'),
+    enabled,
+  });
+}
+
+export function useMyRefillRequests(enabled) {
+  return useQuery({
+    queryKey: ['my-refill-requests'],
+    queryFn: () => apiGet('/api/my-refill-requests'),
+    enabled,
+  });
+}
+
+export function useCreateRefillRequest(prescriptionId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/my-prescriptions/${prescriptionId}/refill-requests`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['my-refill-requests'] });
+    },
+  });
+}
+
+/** Staff review queue - GET /api/pharmacy/refill-requests, own entries embed a resolved patientName/medicationName (a real gap this phase's own backend change closed). */
+export function useRefillRequests(enabled, status) {
+  return useQuery({
+    queryKey: ['refill-requests', status ?? 'all'],
+    queryFn: () => apiGet(`/api/pharmacy/refill-requests${status ? `?status=${status}` : ''}`),
+    enabled,
+  });
+}
+
+function invalidateRefillRequests(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['refill-requests'] });
+}
+
+export function useApproveRefillRequest(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/pharmacy/refill-requests/${id}/approve`),
+    onSuccess: () => invalidateRefillRequests(queryClient),
+  });
+}
+
+export function useDenyRefillRequest(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/pharmacy/refill-requests/${id}/deny`, body),
+    onSuccess: () => invalidateRefillRequests(queryClient),
+  });
+}
+
 /** Pharmacist dashboard analytics (phase 34) - see PharmacyAnalyticsController. Same shape as useClinicAnalytics; `days` defaults server-side to 30 when omitted. */
 export function usePharmacyAnalytics(enabled, days) {
   return useQuery({
