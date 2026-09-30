@@ -3189,6 +3189,137 @@ frontend phase P) already do almost everything this needed.
   has cleared on its own; worth a real `http://localhost/` check next
   time this comes up rather than assuming it's still broken.
 
+## Phase 38: controlled substance tracking UI
+
+Fifth of the six frontend gap-closing phases above. Closes
+`com.clinicops.pharmacy.ControlledSubstanceDispenseController` (phase
+28) - the dual-sign-off workflow for a controlled-substance dispense -
+which had a fully-built, fully-tested backend but zero frontend, plus
+`MedicationController.updateControlledSubstanceSchedule` (also phase
+28, the prerequisite step that had no UI path at all - no medication
+could be marked controlled without a direct `curl`). Zero backend
+changes.
+
+- **`pages/pharmacist/Medications.jsx`** gained a `clinic_admin`-only
+  schedule control (`hasRole('clinic_admin')`, a new `useAuth` import
+  this file didn't previously need) - a plain `<select>` next to the
+  existing Edit/Deactivate links, calling the new schedule-update hook
+  directly on change (no separate save button, matching this app's
+  "dedicated action endpoint, not a form field" precedent
+  `Asset.assignedRoomId`/phase 30 already set). The table's own `name`
+  column gained a small warning-colored badge ("Schedule II" etc.)
+  next to any medication with a schedule set, visible to every role
+  that can already see the catalog - a pharmacist can see at a glance
+  which rows require the dual-sign-off flow even without the
+  clinic_admin-only control to change it.
+- **`pages/pharmacist/ControlledSubstanceQueue.jsx`** (new) - mirrors
+  `Dashboard.jsx`'s own `DispensePanel` request-form shape (medication
+  → stock-batch cascading selects, quantity, notes) for the request
+  side, plus status-filter tabs (pending/co-signed/rejected/all) and a
+  `DataTable` with `renderExpanded` showing co-sign/reject actions -
+  the same create-form-above-table shape phase 36's `DrugInteractions.jsx`
+  already established.
+  - **The request form needs a prescription picker no existing
+    endpoint gives directly** - reuses `usePharmacyQueue(true)` (the
+    same active-prescriptions list `Dashboard.jsx`'s own queue already
+    fetches) purely for display context (patient + the prescription's
+    own free-text `medicationName`); the actual `medicationId`
+    submitted comes from a separate, controlled-substances-only
+    medication `<select>` (`useMedications(true, 'active')` filtered
+    client-side to `m.controlledSubstanceSchedule != null` - no
+    server-side filter param exists for this and adding one was out of
+    scope), identical to how `DispensePanel`'s own form already splits
+    free-text prescription vs. picked catalog medication (phase 20's
+    own pinned "no drug-name matching" design).
+  - **An `acknowledgeConflict` checkbox was added to this new form,
+    something the older `DispensePanel` never got** - a deliberate,
+    narrow addition: the field already exists on this exact request's
+    own DTO and the form was being built from scratch anyway, so
+    wiring it through was low-cost; retrofitting the plain dispense
+    form to add the same affordance was out of scope for this pass.
+  - **The same-person 409 is not pre-empted client-side** - no
+    reliable "is this me" comparison exists without an extra lookup,
+    and the backend's own message already explains it clearly - the
+    UI just surfaces it verbatim through `ErrorBanner`, same
+    "don't paraphrase a backend conflict message" precedent every
+    prior phase's error handling already uses.
+- **`api/queries.js`** - `useUpdateControlledSubstanceSchedule`,
+  `useControlledSubstanceRequests(enabled, status)`,
+  `useRequestControlledSubstanceDispense`,
+  `useCosignControlledSubstanceDispense`,
+  `useRejectControlledSubstanceDispense` - a cosign additionally
+  invalidates `['stock-batches']` (prefix match, same reasoning
+  `useDispensePrescription`'s own invalidate already documents - a
+  cosign decrements real stock) and `['dispense-records']` (a cosign
+  produces a real `DispenseRecord`, so the phase-37 dispense-history/
+  billing panel for that prescription should pick it up too -
+  confirmed live below).
+- **Routing/nav**: `/pharmacist/controlled-substances`,
+  `RequireRole roles={['pharmacist', 'clinic_admin']}` - identical
+  gate to every other pharmacist route. `layout/Sidebar.jsx` gained a
+  link in both the `pharmacist` group and the `clinic_admin` group's
+  own curated pharmacist links (alongside medications/drug
+  -interactions), matching the existing "clinic_admin gets a UI path
+  into every pharmacist-owned workflow" precedent.
+- **A real, self-caught bug in this phase's own live-verification
+  script, not the app** - an early reject-reason test used an
+  unscoped `input` selector that matched the create-form's own Notes
+  field instead of the reject mini-form's reason field, so the first
+  reject attempt silently persisted `rejectionReason: null`. Caught by
+  checking the actual persisted value rather than trusting the click
+  succeeded; fixed by scoping the selector to `confirmBtn.closest('form')`
+  and re-verified correctly with a fresh request.
+- **A real, separate bug caught and fixed in this file (`CLAUDE.md`)
+  itself while writing this phase's own write-up**: phase 37's prior
+  edit had accidentally deleted the `## Phase 19: clinic-admin
+  analytics dashboard` heading line (confirmed via `git diff` against
+  the phase-36/phase-37 commits) - the section's own body text
+  survived, just orphaned under phase 37's own heading. Restored here.
+- **No new backend tests** - the endpoint set was already fully
+  covered by phase 28's own `DispenseServiceTest`/
+  `ControlledSubstanceDispenseControllerIntegrationTest`; this phase
+  adds no new backend surface at all. Frontend: `npm run build` clean,
+  `npm test` (36/36) unaffected.
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`)** - `docker compose up -d --build --force-recreate
+  node-bff` (no `spring-boot-api` rebuild needed). As a real
+  `demo-clinic-admin` login: confirmed the pre-existing "Fentanyl
+  (Phase 28 verification)" medication's own `schedule_ii` (set in an
+  earlier session) renders as a "Schedule II" badge in the catalog
+  table; used the new UI-driven `<select>` to mark a second medication
+  ("Penicillin V") `schedule_iv` and confirmed the change persisted via
+  a direct fetch. Confirmed `demo-pharmacist` sees the read-only badge
+  but genuinely has no schedule-editing control at all (no matching
+  `<select>` in the DOM). As `demo-pharmacist`: submitted a real
+  controlled-substance dispense request (Fentanyl × 1 against a real
+  "Demo Patient - Penicillin V" prescription, cascading medication
+  →batch selects both confirmed working); attempted to co-sign it as
+  the same login and got the real 409 - "A different pharmacist or
+  clinic_admin must co-sign this request" - rendered through
+  `ErrorBanner`. Logged out via the app's own `/auth/logout` form (a
+  fresh Keycloak login form on the next attempt confirmed the SSO
+  session genuinely ended) and back in as a genuinely different
+  `demo-clinic-admin` login: successfully co-signed the same request -
+  the response carried a real `dispenseRecordId`, cross-checked
+  directly that `requestedBy` and `coSignedBy` were two different
+  AppUser ids, and confirmed the stock batch dropped from 25 to
+  exactly 24 (a single decrement). Confirmed the resulting
+  `DispenseRecord` immediately appears in phase 37's own
+  dispense-history panel on `pharmacist/Dashboard.jsx` for that same
+  prescription, with `coSignedBy` correctly set. Created and rejected
+  a second request with a real reason string ("Duplicate request -
+  wrong prescription") - confirmed via a direct fetch the rejection
+  reason persisted correctly and the stock batch stayed at exactly 24
+  (a rejected request never touches stock). Exercised the whole page
+  once in Dark theme + Amharic together (the request form, status
+  tabs, and empty state all confirmed correctly translated/themed via
+  a real screenshot).
+- **Standing note, unchanged from phase 37**: `nginx` (`:80`) - not
+  re-attempted this phase, verification stayed on `node-bff` directly
+  throughout.
+
+## Phase 19: clinic-admin analytics dashboard
+
 Built 2026-09-24 at the user's direct request ("modify the dashboard
 to have analytical graphs and stat cards"), out of numeric order - phases
 16-18 were still only sketched at the time. New `com.clinicops.analytics`

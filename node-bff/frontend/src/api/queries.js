@@ -984,6 +984,15 @@ export function useUpdateMedication(id) {
   });
 }
 
+/** POST /api/clinic/medications/{id}/controlled-substance-schedule (phase 28) - a dedicated action endpoint, clinic_admin only; `schedule: null` clears it. */
+export function useUpdateControlledSubstanceSchedule(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/clinic/medications/${id}/controlled-substance-schedule`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['medications'] }),
+  });
+}
+
 export function useStockBatches(medicationId) {
   return useQuery({
     queryKey: ['stock-batches', medicationId],
@@ -1071,6 +1080,49 @@ export function useGenerateDispenseInvoice(dispenseRecordId) {
   return useMutation({
     mutationFn: () => apiPost(`/api/dispense-records/${dispenseRecordId}/invoice`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dispense-invoice', dispenseRecordId] }),
+  });
+}
+
+// ---- controlled substance dispense workflow (phase 28 backend, phase 38 frontend - ControlledSubstanceDispenseController) ----
+
+export function useControlledSubstanceRequests(enabled, status) {
+  return useQuery({
+    queryKey: ['controlled-substance-requests', status ?? 'all'],
+    queryFn: () => apiGet(`/api/pharmacy/controlled-substance-requests${status ? `?status=${status}` : ''}`),
+    enabled,
+  });
+}
+
+function invalidateControlledSubstanceRequests(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['controlled-substance-requests'] });
+}
+
+export function useRequestControlledSubstanceDispense(prescriptionId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/prescriptions/${prescriptionId}/controlled-substance-requests`, body),
+    onSuccess: () => invalidateControlledSubstanceRequests(queryClient),
+  });
+}
+
+export function useCosignControlledSubstanceDispense(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/pharmacy/controlled-substance-requests/${id}/cosign`),
+    onSuccess: () => {
+      invalidateControlledSubstanceRequests(queryClient);
+      // A cosign decrements real stock and produces a real DispenseRecord - same prefix-match reasoning useDispensePrescription's own invalidates already document.
+      queryClient.invalidateQueries({ queryKey: ['stock-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['dispense-records'] });
+    },
+  });
+}
+
+export function useRejectControlledSubstanceDispense(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/pharmacy/controlled-substance-requests/${id}/reject`, body),
+    onSuccess: () => invalidateControlledSubstanceRequests(queryClient),
   });
 }
 

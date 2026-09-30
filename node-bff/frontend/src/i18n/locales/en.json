@@ -31,7 +31,8 @@
     },
     "pharmacist": {
       "medications": "Medications",
-      "drugInteractions": "Drug Interactions"
+      "drugInteractions": "Drug Interactions",
+      "controlledSubstances": "Controlled Substances"
     },
     "accountant": {
       "accounts": "Accounts",
@@ -983,6 +984,36 @@
     "errorDelete": "Could not delete this pair.",
     "emptyTitle": "No interaction pairs yet",
     "emptyDescription": "Add your first drug-interaction pair above."
+  },
+  "controlledSubstancesPage": {
+    "intro": "Controlled-substance dispenses require a second pharmacist or clinic admin to co-sign before stock is decremented.",
+    "prescription": "Prescription",
+    "schedule": "Schedule",
+    "scheduleUnset": "Not controlled",
+    "scheduleLabel_schedule_i": "Schedule I",
+    "scheduleLabel_schedule_ii": "Schedule II",
+    "scheduleLabel_schedule_iii": "Schedule III",
+    "scheduleLabel_schedule_iv": "Schedule IV",
+    "scheduleLabel_schedule_v": "Schedule V",
+    "status_pending": "Pending",
+    "status_cosigned": "Co-signed",
+    "status_rejected": "Rejected",
+    "statusAll": "All",
+    "acknowledgeConflict": "Acknowledge safety conflicts and proceed anyway",
+    "requestDispense": "Request dispense",
+    "requesting": "Requesting…",
+    "errorRequest": "Could not submit this request.",
+    "coSignedAt": "Co-signed at",
+    "rejectedAt": "Rejected at",
+    "rejectionReason": "Rejection reason",
+    "cosign": "Co-sign",
+    "cosigning": "Co-signing…",
+    "reject": "Reject",
+    "confirmReject": "Confirm reject",
+    "errorCosign": "Could not co-sign this request.",
+    "errorReject": "Could not reject this request.",
+    "emptyTitle": "No requests",
+    "emptyDescription": "Controlled-substance dispense requests will show up here."
   },
   "accountType": {
     "asset": "Asset",

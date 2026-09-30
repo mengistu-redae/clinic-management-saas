@@ -31,7 +31,8 @@
     },
     "pharmacist": {
       "medications": "መድሃኒቶች",
-      "drugInteractions": "የመድሃኒት ግንኙነቶች"
+      "drugInteractions": "የመድሃኒት ግንኙነቶች",
+      "controlledSubstances": "ቁጥጥር የሚደረግባቸው መድሃኒቶች"
     },
     "accountant": {
       "accounts": "ሂሳቦች",
@@ -981,6 +982,36 @@
     "errorDelete": "ይህን ጥንድ መሰረዝ አልተቻለም።",
     "emptyTitle": "እስካሁን ምንም የግንኙነት ጥንድ የለም",
     "emptyDescription": "የመጀመሪያውን የመድሃኒት ግንኙነት ጥንድ ከላይ ይጨምሩ።"
+  },
+  "controlledSubstancesPage": {
+    "intro": "ቁጥጥር የሚደረግባቸው መድሃኒቶች ክምችት ከመቀነሱ በፊት ሁለተኛ ፋርማሲስት ወይም የክሊኒክ አስተዳዳሪ ማረጋገጫ ይፈልጋሉ።",
+    "prescription": "ማዘዣ",
+    "schedule": "ደረጃ",
+    "scheduleUnset": "ቁጥጥር የማይደረግበት",
+    "scheduleLabel_schedule_i": "ደረጃ I",
+    "scheduleLabel_schedule_ii": "ደረጃ II",
+    "scheduleLabel_schedule_iii": "ደረጃ III",
+    "scheduleLabel_schedule_iv": "ደረጃ IV",
+    "scheduleLabel_schedule_v": "ደረጃ V",
+    "status_pending": "በመጠባበቅ ላይ",
+    "status_cosigned": "ተረጋግጧል",
+    "status_rejected": "ውድቅ ተደርጓል",
+    "statusAll": "ሁሉም",
+    "acknowledgeConflict": "የደህንነት ግጭቶችን አምኜ ለመቀጠል",
+    "requestDispense": "ማከፋፈል ጠይቅ",
+    "requesting": "በመጠየቅ ላይ…",
+    "errorRequest": "ይህን ጥያቄ ማስገባት አልተቻለም።",
+    "coSignedAt": "የተረጋገጠበት ጊዜ",
+    "rejectedAt": "ውድቅ የተደረገበት ጊዜ",
+    "rejectionReason": "የውድቅ ምክንያት",
+    "cosign": "አረጋግጥ",
+    "cosigning": "በማረጋገጥ ላይ…",
+    "reject": "ውድቅ አድርግ",
+    "confirmReject": "ውድቅ ማድረግን አረጋግጥ",
+    "errorCosign": "ይህን ጥያቄ ማረጋገጥ አልተቻለም።",
+    "errorReject": "ይህን ጥያቄ ውድቅ ማድረግ አልተቻለም።",
+    "emptyTitle": "ምንም ጥያቄዎች የሉም",
+    "emptyDescription": "ቁጥጥር የሚደረግባቸው መድሃኒቶች የማከፋፈል ጥያቄዎች እዚህ ይታያሉ።"
   },
   "accountType": {
     "asset": "ንብረት",

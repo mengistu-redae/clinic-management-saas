@@ -4,10 +4,12 @@ import {
   useMedications,
   useCreateMedication,
   useUpdateMedication,
+  useUpdateControlledSubstanceSchedule,
   useStockBatches,
   useReceiveStockBatch,
   useWriteOffStockBatch,
 } from '../../api/queries.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
@@ -21,6 +23,7 @@ const inputClass =
 
 const FORMS = ['tablet', 'capsule', 'syrup', 'injection', 'other'];
 const WRITE_OFF_STATUSES = ['expired', 'recalled'];
+const SCHEDULES = ['schedule_i', 'schedule_ii', 'schedule_iii', 'schedule_iv', 'schedule_v'];
 
 /**
  * The pharmacy catalog - GET/POST/POST .../update MedicationController,
@@ -60,7 +63,23 @@ export default function Medications() {
   }
 
   const columns = [
-    { key: 'name', header: t('common.name'), accessor: (m) => m.name, sortable: true, className: 'font-semibold' },
+    {
+      key: 'name',
+      header: t('common.name'),
+      accessor: (m) => m.name,
+      sortable: true,
+      className: 'font-semibold',
+      render: (m) => (
+        <span>
+          {m.name}
+          {m.controlledSubstanceSchedule && (
+            <span className="ml-2 inline-flex items-center rounded-full bg-warning-light px-2 py-0.5 text-xs font-semibold text-warning">
+              {t(`controlledSubstancesPage.scheduleLabel_${m.controlledSubstanceSchedule}`, { defaultValue: m.controlledSubstanceSchedule })}
+            </span>
+          )}
+        </span>
+      ),
+    },
     { key: 'form', header: t('pharmacistPage.form'), accessor: (m) => t(`medicationForm.${m.form}`, { defaultValue: m.form }), sortable: true },
     { key: 'unitPrice', header: t('appointmentTypesPage.price'), accessor: (m) => m.unitPrice, sortable: true, render: (m) => formatCurrency(m.unitPrice) },
     { key: 'reorderThreshold', header: t('pharmacistPage.reorderThreshold'), accessor: (m) => m.reorderThreshold, sortable: true },
@@ -120,7 +139,9 @@ export default function Medications() {
 
 function StockBatchesPanel({ medication }) {
   const { t } = useTranslation();
+  const { hasRole } = useAuth();
   const updateMedication = useUpdateMedication(medication.id);
+  const updateSchedule = useUpdateControlledSubstanceSchedule(medication.id);
   const { data: batches, isLoading, isError, error, refetch } = useStockBatches(medication.id);
   const receiveBatch = useReceiveStockBatch(medication.id);
   const writeOffBatch = useWriteOffStockBatch(medication.id);
@@ -169,6 +190,15 @@ function StockBatchesPanel({ medication }) {
     setRowError(null);
     try {
       await updateMedication.mutateAsync({ status: medication.status === 'active' ? 'inactive' : 'active' });
+    } catch (err) {
+      setRowError(err.message || t('common.errorSaveChanges'));
+    }
+  }
+
+  async function handleScheduleChange(event) {
+    setRowError(null);
+    try {
+      await updateSchedule.mutateAsync({ schedule: event.target.value || null });
     } catch (err) {
       setRowError(err.message || t('common.errorSaveChanges'));
     }
@@ -249,6 +279,20 @@ function StockBatchesPanel({ medication }) {
             )}
           </div>
           <div className="flex items-center gap-3 text-sm">
+            {hasRole('clinic_admin') && (
+              <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+                {t('controlledSubstancesPage.schedule')}
+                <select
+                  value={medication.controlledSubstanceSchedule || ''}
+                  onChange={handleScheduleChange}
+                  disabled={updateSchedule.isPending}
+                  className={`${inputClass} w-32 py-1`}
+                >
+                  <option value="">{t('controlledSubstancesPage.scheduleUnset')}</option>
+                  {SCHEDULES.map((s) => <option key={s} value={s}>{t(`controlledSubstancesPage.scheduleLabel_${s}`)}</option>)}
+                </select>
+              </label>
+            )}
             <button type="button" onClick={startEdit} className="text-brand-text hover:underline">{t('common.edit')}</button>
             <button type="button" onClick={toggleActive} className="text-ink-muted hover:underline">
               {medication.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
