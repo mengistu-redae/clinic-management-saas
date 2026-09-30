@@ -25,11 +25,15 @@ import ErrorBanner from './ErrorBanner.jsx';
  * generate endpoint is `front_desk`/`clinic_admin`-only - a `provider`
  * viewing a shared lab order would see a working-looking button that
  * 403s on click. Gated the same way, on the same two roles.
+ *
+ * `extraRoles` (phase 37/dispense billing) - same opt-in extra-role list
+ * `PaymentsPanel`'s own `extraRoles` prop documents; defaults to `[]` so
+ * neither existing caller's behavior changes.
  */
-export default function InvoicePanel({ invoiceQuery, generateInvoice, pdfUrl }) {
+export default function InvoicePanel({ invoiceQuery, generateInvoice, pdfUrl, extraRoles = [] }) {
   const { t } = useTranslation();
   const { hasRole } = useAuth();
-  const canGenerate = hasRole('front_desk') || hasRole('clinic_admin');
+  const canGenerate = hasRole('front_desk') || hasRole('clinic_admin') || extraRoles.some((r) => hasRole(r));
   const notGenerated = invoiceQuery.isError && invoiceQuery.error instanceof ApiError && invoiceQuery.error.status === 404;
 
   if (invoiceQuery.isLoading) {

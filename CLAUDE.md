@@ -3086,7 +3086,108 @@ backend changes.
   throughout, consistent with the prior two phases' own documented
   Docker Desktop port-allocation desync.
 
-## Phase 19: clinic-admin analytics dashboard
+## Phase 37: dispense billing UI
+
+Fourth of the six frontend gap-closing phases above. Closes
+`com.clinicops.pharmacy.DispensePaymentController`/`DispenseInvoiceController`
+(phase 31) - a dispense can be paid for and invoiced through the exact
+same `Payment`/`Invoice` machinery appointments and lab orders already
+use, but had zero frontend until now, plus `GET /api/prescriptions/{id}
+/dispense-records` (also phase 31, never wired to a UI). Zero backend
+changes. Smallest and most reuse-heavy of the three remaining gaps -
+picked next in the established smallest-first sequencing, since the
+two existing shared components (`PaymentsPanel.jsx`/`InvoicePanel.jsx`,
+frontend phase P) already do almost everything this needed.
+
+- **`components/PaymentsPanel.jsx`/`InvoicePanel.jsx` gained one new
+  optional `extraRoles` prop each** (default `[]`, purely additive - no
+  behavior change for either existing caller,
+  `front-desk/AppointmentDetail.jsx`/`lab-orders/LabOrderDetail.jsx`) -
+  OR'd into each component's own internal write-gate, since phase 31's
+  backend deliberately widens dispense billing to `pharmacist` (full
+  read+write, the real counter-staff role for a pharmacy sale) where
+  appointments/lab-orders only ever gave `provider` read-only access.
+- **A real gap caught live while verifying this phase, fixed before
+  calling it done**: the first version fed one combined
+  `canRecordOrRefund` flag, so `extraRoles={['pharmacist']}` also
+  exposed a working-looking "Refund" link to `demo-pharmacist` - but
+  phase 31's own write-up explicitly kept `PaymentController.refund`
+  (owner-agnostic by design) `front_desk`/`clinic_admin`-only, since
+  widening it would also let a pharmacist refund an appointment or
+  lab-order payment. The same class of bug frontend phase P already
+  fixed once for `provider` on this exact component. Fixed by splitting
+  the flag into `canRecord` (extended by `extraRoles`) and `canRefund`
+  (unchanged, still exactly `front_desk`/`clinic_admin`) - confirmed
+  live post-fix: `demo-pharmacist` can record a payment and generate/
+  download an invoice but no longer sees a "Refund" link on the same
+  payment row, while `demo-clinic-admin` viewing the identical panel
+  still does.
+- **`api/queries.js`** - new `useDispenseRecords(prescriptionId)`/
+  `useDispensePayments`/`useCreateDispensePayment`/`useDispenseInvoice`/
+  `useGenerateDispenseInvoice`, mirroring `useLabOrderPayments`/etc.'s
+  exact shape, just repointed at `/api/dispense-records/{id}/...`.
+  `useDispensePrescription`'s own `onSuccess` gained one more
+  invalidate (`['dispense-records', prescriptionId]`) so a fresh
+  dispense shows up in the new history list without a manual refresh.
+- **`pages/pharmacist/Dashboard.jsx`'s `DispensePanel`** gained a new
+  `DispenseHistory` sub-component below the existing dispense form - a
+  plain shallow list (same nesting precedent `Items.jsx`'s stock
+  -batches/`Assets.jsx`'s maintenance log already established, not a
+  further `DataTable`, for what's typically 1-3 records per
+  prescription), each record expandable into a `DispenseBillingPanel`
+  wiring the new hooks into `<PaymentsPanel extraRoles={['pharmacist']}
+  />`/`<InvoicePanel extraRoles={['pharmacist']} pdfUrl={...} />` - the
+  identical wiring `LabOrderDetail.jsx` already uses.
+- **Applied the phase-35/36 "never resolve a display name against an
+  active-only list" lesson proactively** - `DispenseHistory` fetches a
+  second, unfiltered `useMedications(true)` purely for its own name
+  -resolution map, kept separate from the dispense form's own
+  active-only picker list, since a historical `DispenseRecord` could
+  reference a since-deactivated medication.
+- **A real, documented reachability limitation, not fixed here**: a
+  prescription drops off `GET /api/pharmacy/queue` once fully
+  dispensed (`findPendingDispense`'s own phase-20 behavior), so its
+  dispense-history/billing panel becomes unreachable through this UI
+  at that point - no existing "all dispense records for this tenant"
+  endpoint exists to build a standalone page against instead, and
+  adding one is out of scope for a gap-closing pass over an
+  already-built backend.
+- **No new backend tests** - zero backend changes; every endpoint this
+  drives was already covered by phase 31's own integration tests.
+  Frontend: `npm run build` clean, `npm test` (36/36) unaffected - the
+  `extraRoles` prop addition is backward-compatible and neither
+  `PaymentsPanel`/`InvoicePanel` has existing Vitest coverage to
+  regress (confirmed against frontend phase S's own tested-file list).
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`)** - `docker compose up -d --build --force-recreate
+  node-bff` (no `spring-boot-api` rebuild needed - frontend-only
+  change), twice (once for the initial build, once again after the
+  refund-gate fix above), both confirmed healthy; session state
+  survived both recreates unaffected since Redis itself was never
+  recreated. As a real `demo-pharmacist` login: expanded a real, pre
+  -existing queue row's dispense history and confirmed two real
+  records rendered with correctly resolved medication names
+  ("Amoxicillin 500mg", "Amoxicillin"); recorded a genuine $15.00 cash
+  payment against one, confirmed gateway-routed
+  (`gatewayStatus: "succeeded"`) via a direct fetch; generated a real
+  invoice and downloaded the real PDF, confirming the `%PDF` header
+  (subtotal/tax/total all correctly $0.00, matching this particular
+  test medication's own unset `unitPrice` - real data, not a UI bug).
+  Confirmed `demo-clinic-admin` reaches the identical flow via its own
+  pharmacist-dashboard override access, including the "Refund" link
+  the pharmacist correctly doesn't see. Exercised the whole flow once
+  in Dark theme + Amharic together (the queue row, dispense-history
+  toggle, and both billing panels - "ክፍያዎች"/"ደረሰኝ"/"ገ.ዲ.ኤፍ
+  አውርድ"/"ንኡስ ድምር"/"ግብር"/"ጠቅላላ ድምር" - all confirmed correctly
+  translated and themed via a real screenshot).
+- **`nginx` (`:80`) started cleanly on the first retry this phase** -
+  unlike phases 34-36's own repeated Docker Desktop port-allocation
+  desync, `docker compose up -d nginx` this time reported the
+  container genuinely `Up` with no immediate exit. Not chased further
+  (verification still ran through `node-bff` directly, per this
+  phase's own plan) - noted here since it may mean the standing issue
+  has cleared on its own; worth a real `http://localhost/` check next
+  time this comes up rather than assuming it's still broken.
 
 Built 2026-09-24 at the user's direct request ("modify the dashboard
 to have analytical graphs and stat cards"), out of numeric order - phases

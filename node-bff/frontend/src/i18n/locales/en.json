@@ -879,7 +879,10 @@
     "onHandTotal": "{{count}} on hand",
     "lowStock": "Low stock",
     "expiringSoonCount": "{{count}} expired/expiring",
-    "dispenseConfirmed": "Dispensed {{quantity}} of {{medication}}."
+    "dispenseConfirmed": "Dispensed {{quantity}} of {{medication}}.",
+    "dispenseHistory": "Dispense history",
+    "billing": "Billing",
+    "hideBilling": "Hide billing"
   },
   "pharmacistAnalytics": {
     "totalDispensedWindow": "Dispensed, last {{days}} days",

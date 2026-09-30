@@ -1025,7 +1025,52 @@ export function useDispensePrescription(prescriptionId) {
       queryClient.invalidateQueries({ queryKey: ['pharmacy', 'queue'] });
       // Prefix match - invalidates every medication's own stock-batches query, not just one, since a dispense's quantityOnHand change is only known after the fact.
       queryClient.invalidateQueries({ queryKey: ['stock-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['dispense-records', prescriptionId] });
     },
+  });
+}
+
+// ---- dispense billing (phase 31 backend, phase 37 frontend - DispensePaymentController/DispenseInvoiceController) ----
+
+/** GET /api/prescriptions/{id}/dispense-records - every DispenseRecord for one prescription (phase 31's own gap-closing endpoint, never wired to a UI until now). */
+export function useDispenseRecords(prescriptionId) {
+  return useQuery({
+    queryKey: ['dispense-records', prescriptionId],
+    queryFn: () => apiGet(`/api/prescriptions/${prescriptionId}/dispense-records`),
+    enabled: Boolean(prescriptionId),
+  });
+}
+
+export function useDispensePayments(dispenseRecordId) {
+  return useQuery({
+    queryKey: ['dispense-payments', dispenseRecordId],
+    queryFn: () => apiGet(`/api/dispense-records/${dispenseRecordId}/payments`),
+    enabled: Boolean(dispenseRecordId),
+  });
+}
+
+export function useCreateDispensePayment(dispenseRecordId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/dispense-records/${dispenseRecordId}/payments`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dispense-payments', dispenseRecordId] }),
+  });
+}
+
+export function useDispenseInvoice(dispenseRecordId) {
+  return useQuery({
+    queryKey: ['dispense-invoice', dispenseRecordId],
+    queryFn: () => apiGet(`/api/dispense-records/${dispenseRecordId}/invoice`),
+    enabled: Boolean(dispenseRecordId),
+    retry: false,
+  });
+}
+
+export function useGenerateDispenseInvoice(dispenseRecordId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/dispense-records/${dispenseRecordId}/invoice`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dispense-invoice', dispenseRecordId] }),
   });
 }
 

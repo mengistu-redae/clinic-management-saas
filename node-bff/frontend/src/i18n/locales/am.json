@@ -877,7 +877,10 @@
     "onHandTotal": "{{count}} በክምችት ውስጥ",
     "lowStock": "ዝቅተኛ ክምችት",
     "expiringSoonCount": "{{count}} ጊዜው ያለፈ/እያለቀ",
-    "dispenseConfirmed": "{{quantity}} የ{{medication}} ተሰጥቷል።"
+    "dispenseConfirmed": "{{quantity}} የ{{medication}} ተሰጥቷል።",
+    "dispenseHistory": "የተሰጡ መድሃኒቶች ታሪክ",
+    "billing": "ክፍያ",
+    "hideBilling": "ክፍያ ደብቅ"
   },
   "pharmacistAnalytics": {
     "totalDispensedWindow": "የተሰጠ፣ የመጨረሻዎቹ {{days}} ቀናት",

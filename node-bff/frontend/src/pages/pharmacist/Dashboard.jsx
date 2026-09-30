@@ -1,6 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { usePharmacyQueue, useMedications, useStockBatches, useDispensePrescription, usePharmacyAnalytics } from '../../api/queries.js';
+import {
+  usePharmacyQueue,
+  useMedications,
+  useStockBatches,
+  useDispensePrescription,
+  usePharmacyAnalytics,
+  useDispenseRecords,
+  useDispensePayments,
+  useCreateDispensePayment,
+  useDispenseInvoice,
+  useGenerateDispenseInvoice,
+} from '../../api/queries.js';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
@@ -11,6 +22,8 @@ import Skeleton from '../../components/Skeleton.jsx';
 import ChartCard from '../../components/analytics/ChartCard.jsx';
 import DispenseVolumeChart from '../../components/analytics/DispenseVolumeChart.jsx';
 import MedicationDispenseCountChart from '../../components/analytics/MedicationDispenseCountChart.jsx';
+import PaymentsPanel from '../../components/PaymentsPanel.jsx';
+import InvoicePanel from '../../components/InvoicePanel.jsx';
 
 const inputClass =
   'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -221,6 +234,80 @@ function DispensePanel({ prescription, onDispensed }) {
         {dispensed && <span className="text-sm text-success">{t('settingsPage.saved')}</span>}
       </form>
       {formError && <div className="mt-3"><ErrorBanner message={formError} /></div>}
+      <DispenseHistory prescriptionId={prescription.id} />
+    </div>
+  );
+}
+
+/**
+ * Dispense billing (phase 31 backend, phase 37 frontend) - GET
+ * /api/prescriptions/{id}/dispense-records had no UI consumer at all
+ * until now. A plain shallow list, not a further DataTable - same
+ * "shallow-list nesting" precedent Items.jsx's stock-batches and
+ * Assets.jsx's maintenance log already established for what's typically
+ * 1-3 records per prescription. `allMedications` (all statuses, not
+ * just active) is fetched separately from the dispense form's own
+ * active-only picker purely for name resolution, applying the phase-35/36
+ * "never resolve a display name against an active-only list" lesson
+ * proactively - a historical record can reference a since-deactivated
+ * medication.
+ */
+function DispenseHistory({ prescriptionId }) {
+  const { t } = useTranslation();
+  const records = useDispenseRecords(prescriptionId);
+  const { data: allMedications } = useMedications(true);
+  const [expandedId, setExpandedId] = useState(null);
+
+  function medicationName(medicationId) {
+    return (allMedications || []).find((m) => m.id === medicationId)?.name || medicationId;
+  }
+
+  if (records.isLoading || !records.data || records.data.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('pharmacistPage.dispenseHistory')}</h3>
+      <ul className="flex flex-col gap-2">
+        {records.data.map((record) => (
+          <li key={record.id} className="rounded-lg border border-slate-200 p-3">
+            <button
+              type="button"
+              onClick={() => setExpandedId((id) => (id === record.id ? null : record.id))}
+              className="flex w-full items-center justify-between text-left text-sm"
+            >
+              <span className="text-ink">
+                {medicationName(record.medicationId)} &times; {record.quantityDispensed}
+                {record.notes && <span className="text-ink-muted"> - {record.notes}</span>}
+              </span>
+              <span className="text-xs font-semibold text-brand-text">
+                {expandedId === record.id ? t('pharmacistPage.hideBilling') : t('pharmacistPage.billing')}
+              </span>
+            </button>
+            {expandedId === record.id && <DispenseBillingPanel dispenseRecordId={record.id} />}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function DispenseBillingPanel({ dispenseRecordId }) {
+  const paymentsQuery = useDispensePayments(dispenseRecordId);
+  const createPayment = useCreateDispensePayment(dispenseRecordId);
+  const invoiceQuery = useDispenseInvoice(dispenseRecordId);
+  const generateInvoice = useGenerateDispenseInvoice(dispenseRecordId);
+
+  return (
+    <div className="mt-3">
+      <PaymentsPanel paymentsQuery={paymentsQuery} createPayment={createPayment} extraRoles={['pharmacist']} />
+      <InvoicePanel
+        invoiceQuery={invoiceQuery}
+        generateInvoice={generateInvoice}
+        pdfUrl={`/api/dispense-records/${dispenseRecordId}/invoice/pdf`}
+        extraRoles={['pharmacist']}
+      />
     </div>
   );
 }

@@ -127,11 +127,29 @@ function PaymentRow({ payment, canRefund }) {
  * `hasRole('front_desk') || hasRole('clinic_admin')`, matching the
  * backend exactly; `front-desk/AppointmentDetail.jsx` is already
  * route-gated to those same two roles, so this is a no-op there.
+ *
+ * `extraRoles` (phase 37/dispense billing) - an optional extra list of
+ * roles OR'd into the **record-payment** gate only, for a caller whose
+ * own backend grants a third role write access this component's default
+ * two-role check doesn't cover (e.g. `pharmacist` on dispense-record
+ * billing, per `DispensePaymentController`'s own wider 3-role gate).
+ * Deliberately does **not** extend the refund gate - `PaymentController
+ * .refund` is owner-agnostic and stays `front_desk`/`clinic_admin`-only
+ * even for a dispense payment (phase 31's own explicit scope decision:
+ * widening the refund role there would also let that role refund an
+ * appointment/lab-order payment). Defaults to `[]`, so neither existing
+ * caller's behavior changes. A real gap caught live while building the
+ * dispense-billing UI: an earlier version of this prop fed one combined
+ * `canRecordOrRefund` flag, which would have shown a pharmacist a
+ * working-looking "Refund" link that 403s on click - the same class of
+ * bug frontend phase P already fixed once for `provider` on this exact
+ * component.
  */
-export default function PaymentsPanel({ paymentsQuery, createPayment, totalOwed }) {
+export default function PaymentsPanel({ paymentsQuery, createPayment, totalOwed, extraRoles = [] }) {
   const { t } = useTranslation();
   const { hasRole } = useAuth();
-  const canRecordOrRefund = hasRole('front_desk') || hasRole('clinic_admin');
+  const canRefund = hasRole('front_desk') || hasRole('clinic_admin');
+  const canRecord = canRefund || extraRoles.some((r) => hasRole(r));
 
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
@@ -171,11 +189,11 @@ export default function PaymentsPanel({ paymentsQuery, createPayment, totalOwed 
       {payments.length > 0 && (
         <ul className="mb-4 flex flex-col gap-2">
           {payments.map((p) => (
-            <PaymentRow key={p.id} payment={p} canRefund={canRecordOrRefund} />
+            <PaymentRow key={p.id} payment={p} canRefund={canRefund} />
           ))}
         </ul>
       )}
-      {canRecordOrRefund && (
+      {canRecord && (
         <form onSubmit={handleRecordPayment} className="flex flex-wrap items-end gap-3">
           <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('fdAppointmentDetail.method')}</span>
