@@ -66,8 +66,12 @@ export default function PatientSearch() {
       <p className="mb-6 text-sm text-ink-muted">{t('patientSearch.subtitle')}</p>
 
       <div className="relative mb-4 max-w-sm">
+        <label htmlFor="patient-search-query" className="sr-only">
+          {t('patientSearch.searchPlaceholder')}
+        </label>
         <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
         <input
+          id="patient-search-query"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('patientSearch.searchPlaceholder')}

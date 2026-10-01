@@ -11,11 +11,11 @@ import {
 } from '../../api/queries.js';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+import TabGroup from '../../components/TabGroup.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 
 const STATUS_TABS = ['pending', 'cosigned', 'rejected', ''];
 
@@ -76,25 +76,20 @@ export default function ControlledSubstanceQueue() {
 
   return (
     <PageContainer width="lg">
-      <h1 className="mb-2 text-2xl font-bold text-ink">{t('nav.pharmacist.controlledSubstances')}</h1>
-      <p className="mb-6 text-sm text-ink-muted">{t('controlledSubstancesPage.intro')}</p>
+      <PageHeader title={t('nav.pharmacist.controlledSubstances')} description={t('controlledSubstancesPage.intro')} />
 
       <RequestForm />
 
-      <div className="mb-4 mt-6 inline-flex rounded-lg border border-slate-200 p-0.5 text-xs font-medium" role="group">
-        {STATUS_TABS.map((s) => (
-          <button
-            key={s || 'all'}
-            type="button"
-            onClick={() => setStatusFilter(s)}
-            aria-pressed={statusFilter === s}
-            className={`rounded-md px-3 py-1.5 transition-colors ${
-              statusFilter === s ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
-            }`}
-          >
-            {t(s ? `controlledSubstancesPage.status_${s}` : 'controlledSubstancesPage.statusAll')}
-          </button>
-        ))}
+      <div className="mb-4 mt-6">
+        <TabGroup
+          ariaLabel={t('common.filterByStatus')}
+          options={STATUS_TABS.map((s) => ({
+            value: s,
+            label: t(s ? `controlledSubstancesPage.status_${s}` : 'controlledSubstancesPage.statusAll'),
+          }))}
+          value={statusFilter}
+          onChange={setStatusFilter}
+        />
       </div>
 
       <DataTable
@@ -285,7 +280,7 @@ function RequestDetail({ request, medicationName, prescriptionLabel }) {
             </button>
           ) : (
             <form onSubmit={handleReject} className="flex flex-wrap items-end gap-3 rounded-lg bg-slate-50 p-3">
-              <Field label={t('pharmacistPage.writeOffReasonLabel')}>
+              <Field label={t('controlledSubstancesPage.rejectionReason')}>
                 <input autoFocus value={reason} onChange={(e) => setReason(e.target.value)} className={`${inputClass} w-64`} />
               </Field>
               <Button type="submit" variant="danger" size="sm" disabled={reject.isPending}>
@@ -300,14 +295,5 @@ function RequestDetail({ request, medicationName, prescriptionLabel }) {
       )}
       {error && <div className="mt-3"><ErrorBanner message={error} /></div>}
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

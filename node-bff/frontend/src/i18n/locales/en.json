@@ -115,7 +115,11 @@
     "delete": "Delete",
     "search": "Search…",
     "noResults": "No results",
-    "noResultsHint": "Try a different search or filter."
+    "noResultsHint": "Try a different search or filter.",
+    "dismiss": "Dismiss",
+    "filterByStatus": "Filter by status",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "appointmentDetail": {
     "title": "Appointment",
@@ -134,6 +138,7 @@
     "errorCancel": "Could not cancel this appointment. Please try again.",
     "notAvailableGuest": "This appointment isn't available here anymore. Look it up with your appointment reference and phone number instead at",
     "notFound": "Appointment not found.",
+    "typeWithProvider": "{{type}} with {{provider}}",
     "bookedWithoutAccountPrefix": "Booked without an account - save your reference",
     "bookedWithoutAccountSuffix": "and phone number. Look this appointment up again anytime at"
   },
@@ -695,7 +700,10 @@
     "legendLost": "No-show / cancelled",
     "unknownProvider": "Unassigned",
     "noDataYet": "Not enough data yet.",
-    "errorLoad": "Could not load analytics."
+    "errorLoad": "Could not load analytics.",
+    "srSummaryTimeSeries": "Chart: {{count}} days, total {{total}}.",
+    "srSummaryCategories": "Chart: {{count}} categories, highest is {{topLabel}} at {{top}}.",
+    "srSummaryStatusBreakdown": "Appointment counts by status: {{list}}."
   },
   "frontDeskDashboard": {
     "title": "Front Desk",
@@ -739,7 +747,10 @@
     "myAppointmentsPanel": "My appointments",
     "myLabOrdersPanel": "My lab orders",
     "emptyAppointmentsDescription": "Appointments you book will show up here.",
-    "emptyLabOrdersDescription": "Lab orders and requests you've made will show up here."
+    "emptyLabOrdersDescription": "Lab orders and requests you've made will show up here.",
+    "totalHint": "{{count}} total",
+    "viewAll": "View all",
+    "emptyTitle": "No appointments yet"
   },
   "rooms": {
     "roomName": "Room name",
@@ -798,6 +809,7 @@
     "loading": "Loading…",
     "selectClinic": "Select a clinic…",
     "tests": "Tests",
+    "testNamePlaceholder": "e.g. Cholesterol panel",
     "addAnotherTest": "+ Add another test",
     "notes": "Notes (optional)",
     "submitting": "Submitting…",
@@ -818,6 +830,7 @@
   "trackLabOrder": {
     "subtitle": "Enter the order reference and the phone number on file with the clinic.",
     "reference": "Reference",
+    "referencePlaceholder": "e.g. A1B2C3",
     "phoneNumber": "Phone number",
     "track": "Track",
     "notFound": "No lab order found for that reference and phone number. Double-check both and try again.",
@@ -855,6 +868,7 @@
     "notesOptional": "Notes (optional)",
     "dispense": "Dispense",
     "dispensing": "Dispensing…",
+    "dispensed": "Dispensed.",
     "errorFields": "A medication, a stock batch, and a positive quantity are required.",
     "errorDispense": "Could not dispense this - check the batch still has enough on hand.",
     "unlabeledBatch": "Unlabeled batch",
@@ -906,6 +920,7 @@
     "assetStatusChartTitle": "Assets by status",
     "assetStatusChartSubtitle": "Current snapshot, all assets",
     "category": "Category",
+    "itemNamePlaceholder": "Nitrile Gloves (Box)",
     "addItem": "Add item",
     "errorCreateItem": "Could not create this item.",
     "emptyItemsTitle": "No items yet",
@@ -957,6 +972,7 @@
     "purchaseDateOptional": "Purchase date (optional)",
     "purchasePriceOptional": "Purchase price (optional)",
     "warrantyExpiryOptional": "Warranty expiry (optional)",
+    "assetNamePlaceholder": "Autoclave",
     "addAsset": "Add asset",
     "errorCreateAsset": "Could not create this asset.",
     "emptyAssetsTitle": "No assets yet",
@@ -1031,7 +1047,8 @@
     "refillStatus_approved": "Approved",
     "refillStatus_denied": "Denied",
     "emptyTitle": "No prescriptions yet",
-    "emptyDescription": "Prescriptions from your visits will show up here."
+    "emptyDescription": "Prescriptions from your visits will show up here.",
+    "refillRequested": "Refill request submitted."
   },
   "refillRequestsPage": {
     "intro": "Patient-submitted requests to refill an existing prescription.",
@@ -1076,6 +1093,7 @@
     "netIncomeThisMonth": "Net income this month",
     "employeesOnPayroll": "{{count}} on payroll",
     "code": "Code",
+    "accountNamePlaceholder": "Accounts Payable",
     "accountType": "Type",
     "accountsDescription": "The chart of accounts backing the ledger - a starter set (Cash, Service Revenue, Refunds & Allowances, Salary Expense) is seeded automatically the first time this list loads.",
     "errorAccountFieldsRequired": "A code and a name are required.",

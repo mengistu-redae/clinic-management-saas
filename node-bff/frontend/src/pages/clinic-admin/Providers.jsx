@@ -20,9 +20,7 @@ import PageContainer from '../../components/PageContainer.jsx';
 import Button from '../../components/Button.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+import Field, { inputClass } from '../../components/Field.jsx';
 
 // 0=Sunday..6=Saturday - matches CreateWorkingHoursRequest's own convention (see SlotGenerator), NOT java.time.DayOfWeek's ISO numbering.
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -464,17 +462,5 @@ function WorkingHoursPanel({ providerId }) {
       </form>
       {formError && <div className="mt-3"><ErrorBanner message={formError} /></div>}
     </div>
-  );
-}
-
-function Field({ label, hint, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 flex items-baseline gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-        {hint && <span className="text-xs font-normal normal-case text-ink-muted">({hint})</span>}
-      </span>
-      {children}
-    </label>
   );
 }

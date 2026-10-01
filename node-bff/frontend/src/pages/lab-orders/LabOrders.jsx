@@ -13,12 +13,11 @@ import StatusPill from '../../components/StatusPill.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
 import Button from '../../components/Button.jsx';
 import LabOrderTestsEditor, { emptyTestLine } from '../../components/labOrder/LabOrderTestsEditor.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 const emptyForm = { patientId: '', orderingProviderId: '', priority: 'routine', notes: '', consentAcknowledged: false };
 
@@ -107,18 +106,20 @@ export default function LabOrders() {
 
   return (
     <PageContainer width="lg">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-ink">{t('nav.provider.labOrders')}</h1>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={t('labOrdersPage.filterByStatus')} className={`${inputClass} w-44`}>
-          <option value="">{t('labOrdersPage.allStatuses')}</option>
-          <option value="ordered">{t('status.ordered')}</option>
-          <option value="specimen_collected">{t('status.specimen_collected')}</option>
-          <option value="in_transit">{t('status.in_transit')}</option>
-          <option value="resulted">{t('status.resulted')}</option>
-          <option value="reviewed">{t('status.reviewed')}</option>
-          <option value="cancelled">{t('status.cancelled')}</option>
-        </select>
-      </div>
+      <PageHeader
+        title={t('nav.provider.labOrders')}
+        actions={
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={t('labOrdersPage.filterByStatus')} className={`${inputClass} w-44`}>
+            <option value="">{t('labOrdersPage.allStatuses')}</option>
+            <option value="ordered">{t('status.ordered')}</option>
+            <option value="specimen_collected">{t('status.specimen_collected')}</option>
+            <option value="in_transit">{t('status.in_transit')}</option>
+            <option value="resulted">{t('status.resulted')}</option>
+            <option value="reviewed">{t('status.reviewed')}</option>
+            <option value="cancelled">{t('status.cancelled')}</option>
+          </select>
+        }
+      />
 
       {requests && requests.length > 0 && (
         <div className="mb-6 rounded-xl border border-warning/40 bg-warning-light p-4">
@@ -221,14 +222,5 @@ export default function LabOrders() {
         emptyDescription={t('labOrdersPage.emptyDescription')}
       />
     </PageContainer>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

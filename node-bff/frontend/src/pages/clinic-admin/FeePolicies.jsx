@@ -6,9 +6,7 @@ import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import DataTable from '../../components/DataTable.jsx';
 import Button from '../../components/Button.jsx';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+import Field, { inputClass } from '../../components/Field.jsx';
 
 /**
  * "Fee Policies" tab of the clinic-admin settings hub - GET/POST/POST
@@ -100,9 +98,9 @@ export default function ClinicAdminFeePolicies() {
         <div className="flex flex-col gap-4">
           {orderedKeys.map((key) => (
             <div key={key} className="rounded-xl border border-slate-200 bg-surface p-4">
-              <p className="mb-3 text-sm font-semibold text-ink">
+              <h3 className="mb-3 text-sm font-semibold text-ink">
                 {key === 'default' ? t('feePoliciesPage.clinicWideDefault') : providerById[key]?.fullName || t('feePoliciesPage.unknownProvider')}
-              </p>
+              </h3>
               <DataTable
                 columns={columns}
                 rows={groups.get(key)}
@@ -158,20 +156,15 @@ function TierEditPanel({ tier }) {
         <Button type="button" variant="accent" onClick={saveEdit} disabled={updatePolicy.isPending}>
           {t('common.save')}
         </Button>
-        <button type="button" onClick={handleDelete} className="text-sm text-danger hover:underline">
+        {/* A true hard delete (no soft-deactivate fallback, unlike every
+            other entity in this role) - a plain text link gave it no more
+            visual weight than a reversible action. Still no confirm
+            dialog, matching this app's own convention; just heavier. */}
+        <Button type="button" variant="danger" size="sm" onClick={handleDelete}>
           {t('common.delete')}
-        </button>
+        </Button>
       </div>
       {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useClinicSettings, useUpdateClinicSettings } from '../../api/queries.js';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import Button from '../../components/Button.jsx';
 
 const inputClass =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
@@ -126,10 +127,12 @@ export default function ClinicAdminSettings() {
         {formError && <ErrorBanner message={formError} />}
 
         <div className="flex items-center gap-3">
-          <button type="submit" disabled={updateSettings.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
+          <Button type="submit" variant="accent" disabled={updateSettings.isPending}>
             {updateSettings.isPending ? t('settingsPage.saving') : t('settingsPage.saveSettings')}
-          </button>
-          {saved && <span className="text-sm text-success">{t('settingsPage.saved')}</span>}
+          </Button>
+          <span aria-live="polite">
+            {saved && <span className="text-sm text-success">{t('settingsPage.saved')}</span>}
+          </span>
         </div>
       </form>
     </div>

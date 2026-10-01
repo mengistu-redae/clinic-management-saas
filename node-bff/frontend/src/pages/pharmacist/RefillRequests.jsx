@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { useRefillRequests, useApproveRefillRequest, useDenyRefillRequest } from '../../api/queries.js';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+import TabGroup from '../../components/TabGroup.jsx';
+import { inputClass } from '../../components/Field.jsx';
 
 const STATUS_TABS = ['requested', 'approved', 'denied', ''];
 
@@ -27,8 +27,8 @@ export default function RefillRequests() {
   const requests = useRefillRequests(true, statusFilter);
 
   const columns = [
-    { key: 'patient', header: t('common.name'), accessor: (r) => r.patientName || r.patientId, sortable: true, className: 'font-semibold' },
-    { key: 'medication', header: t('pharmacistPage.medication'), accessor: (r) => r.medicationName || r.prescriptionId, sortable: true },
+    { key: 'patient', header: t('common.name'), accessor: (r) => r.patientName || '', sortable: true, className: 'font-semibold', render: (r) => r.patientName || '—' },
+    { key: 'medication', header: t('pharmacistPage.medication'), accessor: (r) => r.medicationName || '', sortable: true, render: (r) => r.medicationName || '—' },
     { key: 'notes', header: t('pharmacistPage.notesOptional'), accessor: (r) => r.notes || '', render: (r) => r.notes || '—' },
     {
       key: 'status',
@@ -41,23 +41,18 @@ export default function RefillRequests() {
 
   return (
     <PageContainer width="lg">
-      <h1 className="mb-2 text-2xl font-bold text-ink">{t('nav.pharmacist.refillRequests')}</h1>
-      <p className="mb-6 text-sm text-ink-muted">{t('refillRequestsPage.intro')}</p>
+      <PageHeader title={t('nav.pharmacist.refillRequests')} description={t('refillRequestsPage.intro')} />
 
-      <div className="mb-4 inline-flex rounded-lg border border-slate-200 p-0.5 text-xs font-medium" role="group">
-        {STATUS_TABS.map((s) => (
-          <button
-            key={s || 'all'}
-            type="button"
-            onClick={() => setStatusFilter(s)}
-            aria-pressed={statusFilter === s}
-            className={`rounded-md px-3 py-1.5 transition-colors ${
-              statusFilter === s ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
-            }`}
-          >
-            {t(s ? `refillRequestsPage.status_${s}` : 'refillRequestsPage.statusAll')}
-          </button>
-        ))}
+      <div className="mb-4">
+        <TabGroup
+          ariaLabel={t('common.filterByStatus')}
+          options={STATUS_TABS.map((s) => ({
+            value: s,
+            label: t(s ? `refillRequestsPage.status_${s}` : 'refillRequestsPage.statusAll'),
+          }))}
+          value={statusFilter}
+          onChange={setStatusFilter}
+        />
       </div>
 
       <DataTable
@@ -110,11 +105,11 @@ function RequestDetail({ request }) {
       <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
         <div>
           <dt className="text-ink-muted">{t('common.name')}</dt>
-          <dd className="text-ink">{request.patientName || request.patientId}</dd>
+          <dd className="text-ink">{request.patientName || '—'}</dd>
         </div>
         <div>
           <dt className="text-ink-muted">{t('pharmacistPage.medication')}</dt>
-          <dd className="text-ink">{request.medicationName || request.prescriptionId}</dd>
+          <dd className="text-ink">{request.medicationName || '—'}</dd>
         </div>
         {request.notes && (
           <div>

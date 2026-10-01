@@ -16,10 +16,8 @@ import Card from '../../components/Card.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import Button from '../../components/Button.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import { formatCurrency } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 const now = new Date();
 
@@ -84,16 +82,16 @@ export default function AccountantBudgets() {
     <PageContainer width="lg">
       <PageHeader title={t('nav.accountant.budgets')} description={t('accountantPage.budgetsDescription')} />
 
-      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
+      <Card className="mb-6 flex flex-wrap items-end gap-3">
         <Field label={t('accountantPage.year')}>
-          <input type="number" min="2000" value={period.year} onChange={(e) => setPeriod({ ...period, year: Number(e.target.value) })} className={`${inputClass} w-24`} />
+          <input type="number" min="2000" max={now.getFullYear() + 1} value={period.year} onChange={(e) => setPeriod({ ...period, year: Number(e.target.value) })} className={`${inputClass} w-24`} />
         </Field>
         <Field label={t('accountantPage.month')}>
           <select value={period.month} onChange={(e) => setPeriod({ ...period, month: Number(e.target.value) })} className={`${inputClass} w-24`}>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{String(m).padStart(2, '0')}</option>)}
           </select>
         </Field>
-      </div>
+      </Card>
 
       <Card className="mb-8">
         <h2 className="mb-4 text-lg font-bold text-ink">{t('accountantPage.budgetsForPeriod')}</h2>
@@ -213,14 +211,5 @@ function SummaryStat({ label, value }) {
       <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
       <p className="mt-1 text-xl font-bold tabular-nums text-ink">{value}</p>
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

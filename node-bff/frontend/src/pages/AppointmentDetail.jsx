@@ -8,6 +8,8 @@ import StatusPill from '../components/StatusPill.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
 import PageContainer from '../components/PageContainer.jsx';
+import Card from '../components/Card.jsx';
+import Button from '../components/Button.jsx';
 import VisitSummaryLink from '../components/VisitSummaryLink.jsx';
 import { formatDateTime } from '../lib/format.js';
 import { useActiveClinicZone } from '../theme/TimezoneProvider.jsx';
@@ -91,10 +93,13 @@ export default function AppointmentDetail() {
         <StatusPill status={status} />
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-surface p-5">
+      <Card>
         <p className="text-lg font-semibold text-ink">{clinicName || t('appointmentDetail.clinicFallback')}</p>
         <p className="text-sm text-ink-muted">
-          {typeName || t('appointmentDetail.appointmentFallback')} with {providerName || t('appointmentDetail.providerFallback')}
+          {t('appointmentDetail.typeWithProvider', {
+            type: typeName || t('appointmentDetail.appointmentFallback'),
+            provider: providerName || t('appointmentDetail.providerFallback'),
+          })}
         </p>
 
         <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-sm">
@@ -107,7 +112,7 @@ export default function AppointmentDetail() {
             <dd className="text-ink">{startTime ? formatDateTime(startTime) : '—'}</dd>
           </div>
         </dl>
-      </div>
+      </Card>
 
       {/* This app's first patient-facing document download - no status gate, matches the backend's own "generatable anytime" design. */}
       {authenticated && hasRole('patient') && (
@@ -136,38 +141,31 @@ export default function AppointmentDetail() {
       {/* No guest self-service endpoint exists server-side - cancel/reschedule are patient-only, ownership-scoped actions. */}
       {authenticated && hasRole('patient') && status !== 'cancelled' && (
         <div className="mt-5 flex items-center gap-3">
-          <Link
-            to={`/appointments/${id}/reschedule`}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-ink hover:bg-slate-50"
-          >
+          <Button as={Link} to={`/appointments/${id}/reschedule`} variant="secondary">
             {t('appointmentDetail.reschedule')}
-          </Link>
+          </Button>
           {!confirmingCancel ? (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => setConfirmingCancel(true)}
-              className="rounded-lg border border-danger/40 px-4 py-2 text-sm font-medium text-danger hover:bg-danger-light"
+              className="border-danger/40 text-danger hover:bg-danger-light"
             >
               {t('appointmentDetail.cancelAppointment')}
-            </button>
+            </Button>
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
               <p className="text-sm text-danger">{t('appointmentDetail.cancelConfirm')}</p>
-              <button
-                type="button"
+              <Button
+                variant="danger"
+                size="sm"
                 disabled={cancelAppointment.isPending}
                 onClick={handleCancel}
-                className="shrink-0 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger/90 disabled:opacity-50"
               >
                 {cancelAppointment.isPending ? t('appointmentDetail.cancelling') : t('appointmentDetail.yesCancel')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmingCancel(false)}
-                className="shrink-0 text-sm text-ink-muted hover:underline"
-              >
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmingCancel(false)}>
                 {t('appointmentDetail.neverMind')}
-              </button>
+              </Button>
             </div>
           )}
         </div>

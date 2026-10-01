@@ -9,11 +9,10 @@ import {
 } from '../../api/queries.js';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+import Field, { inputClass } from '../../components/Field.jsx';
 
 const SEVERITIES = ['mild', 'moderate', 'severe'];
 
@@ -86,8 +85,7 @@ export default function DrugInteractions() {
 
   return (
     <PageContainer width="lg">
-      <h1 className="mb-2 text-2xl font-bold text-ink">{t('nav.pharmacist.drugInteractions')}</h1>
-      <p className="mb-6 text-sm text-ink-muted">{t('drugInteractionsPage.intro')}</p>
+      <PageHeader title={t('nav.pharmacist.drugInteractions')} description={t('drugInteractionsPage.intro')} />
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('drugInteractionsPage.medicationA')}>
@@ -175,20 +173,11 @@ function PairEditPanel({ pair }) {
         <Button type="button" variant="accent" onClick={saveEdit} disabled={updatePair.isPending}>
           {t('common.save')}
         </Button>
-        <button type="button" onClick={handleDelete} className="text-sm text-danger hover:underline">
+        <Button type="button" variant="danger" size="sm" onClick={handleDelete} disabled={deletePair.isPending}>
           {t('common.delete')}
-        </button>
+        </Button>
       </div>
       {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

@@ -14,9 +14,12 @@ export default function RevenueChart({ data }) {
   }
 
   const tickInterval = Math.max(0, Math.ceil(data.length / 7) - 1);
+  const total = data.reduce((sum, d) => sum + Number(d.total || 0), 0);
 
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <>
+      <p className="sr-only">{t('clinicAnalytics.srSummaryTimeSeries', { count: data.length, total: formatCurrency(total) })}</p>
+      <ResponsiveContainer width="100%" height={220}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={palette.grid} vertical={false} />
         <XAxis
@@ -40,6 +43,7 @@ export default function RevenueChart({ data }) {
           activeDot={{ r: 5, strokeWidth: 2, stroke: palette.surface }}
         />
       </AreaChart>
-    </ResponsiveContainer>
+      </ResponsiveContainer>
+    </>
   );
 }

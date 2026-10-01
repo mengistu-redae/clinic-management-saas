@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMyAppointment, useClinicProviders, useClinicsDirectory, useRescheduleMyAppointment } from '../api/queries.js';
 import { ApiError } from '../api/client.js';
@@ -8,9 +8,9 @@ import Skeleton from '../components/Skeleton.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
 import { useActiveClinicZone } from '../theme/TimezoneProvider.jsx';
 import PageContainer from '../components/PageContainer.jsx';
-
-const selectClass =
-  'w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+import PageHeader from '../components/PageHeader.jsx';
+import Button from '../components/Button.jsx';
+import Field, { inputClass } from '../components/Field.jsx';
 
 /**
  * Patient self-reschedule - RescheduleService only allows moving to a new
@@ -59,20 +59,23 @@ export default function Reschedule() {
 
   return (
     <PageContainer width="xl">
-      <h1 className="mb-1 text-2xl font-bold text-ink">{t('reschedule.title')}</h1>
-      <p className="mb-6 text-sm text-ink-muted">
-        {t('reschedule.refLabel')} <span className="font-mono">{appointment.appointmentRef}</span> - {t('reschedule.pickNewTime')}
-      </p>
+      <PageHeader
+        title={t('reschedule.title')}
+        description={
+          <>
+            {t('reschedule.refLabel')} <span className="font-mono">{appointment.appointmentRef}</span> - {t('reschedule.pickNewTime')}
+          </>
+        }
+      />
 
-      <label className="mb-4 block">
-        <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('reschedule.provider')}</span>
+      <Field label={t('reschedule.provider')}>
         <select
           value={effectiveProviderId}
           onChange={(e) => {
             setProviderId(e.target.value);
             setSelectedSlot(null);
           }}
-          className={selectClass}
+          className={`${inputClass} w-full max-w-xs`}
         >
           {providersQuery.data?.map((p) => (
             <option key={p.id} value={p.id}>
@@ -80,31 +83,33 @@ export default function Reschedule() {
             </option>
           ))}
         </select>
-      </label>
+      </Field>
 
-      <SlotPicker
-        clinicId={appointment.tenantId}
-        providerId={effectiveProviderId}
-        appointmentTypeId={appointment.appointmentTypeId}
-        selectedSlotId={selectedSlot?.id}
-        onSelect={(slot) => {
-          setSelectedSlot(slot);
-          setRescheduleError(null);
-        }}
-      />
+      <div className="mt-4">
+        <SlotPicker
+          clinicId={appointment.tenantId}
+          providerId={effectiveProviderId}
+          appointmentTypeId={appointment.appointmentTypeId}
+          selectedSlotId={selectedSlot?.id}
+          onSelect={(slot) => {
+            setSelectedSlot(slot);
+            setRescheduleError(null);
+          }}
+        />
+      </div>
 
-      {selectedSlot && (
-        <div className="mt-6">
-          <button
-            type="button"
-            disabled={reschedule.isPending}
-            onClick={handleConfirm}
-            className="rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
-          >
+      <div className="mt-6 flex items-center gap-3">
+        {selectedSlot && (
+          <Button variant="accent" disabled={reschedule.isPending} onClick={handleConfirm}>
             {reschedule.isPending ? t('reschedule.rescheduling') : t('reschedule.confirmNewTime')}
-          </button>
-        </div>
-      )}
+          </Button>
+        )}
+        {/* A patient who opens this page and changes their mind previously had no way out
+            except the browser back button - every sibling flow in this app gives one. */}
+        <Button as={Link} to={`/appointments/${id}`} variant="ghost">
+          {t('common.cancel')}
+        </Button>
+      </div>
 
       {rescheduleError && (
         <div className="mt-4">

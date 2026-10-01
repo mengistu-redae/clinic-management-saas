@@ -6,6 +6,7 @@ import StatusPill from '../../components/StatusPill.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
+import Button from '../../components/Button.jsx';
 import { formatDateTime } from '../../lib/format.js';
 
 const ACTIVE_APPOINTMENT_STATUSES = new Set(['booked', 'checked_in', 'roomed', 'with_provider']);
@@ -68,18 +69,12 @@ export default function PatientDashboard() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-ink">{t('patientDashboard.title')}</h1>
         <div className="flex gap-2">
-          <Link
-            to="/book"
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark"
-          >
+          <Button as={Link} to="/book">
             {t('nav.patient.bookAppointment')}
-          </Link>
-          <Link
-            to="/my-lab-orders/request"
-            className="rounded-lg border border-brand/40 px-4 py-2 text-sm font-medium text-brand-text hover:bg-brand-light/40"
-          >
+          </Button>
+          <Button as={Link} to="/my-lab-orders/request" variant="secondary">
             {t('myLabOrders.requestTest')}
-          </Link>
+          </Button>
         </div>
       </div>
 
@@ -87,12 +82,12 @@ export default function PatientDashboard() {
         <StatCard
           label={t('patientDashboard.activeAppointments')}
           value={activeAppointments.length}
-          hint={t('frontDeskDashboard.totalHint', { count: myAppointments.length })}
+          hint={t('patientDashboard.totalHint', { count: myAppointments.length })}
         />
         <StatCard
           label={t('patientDashboard.openLabOrders')}
           value={openLabOrders.length}
-          hint={t('frontDeskDashboard.totalHint', { count: myLabOrders.length })}
+          hint={t('patientDashboard.totalHint', { count: myLabOrders.length })}
         />
       </div>
 
@@ -102,13 +97,13 @@ export default function PatientDashboard() {
           action={
             myAppointments.length > 0 && (
               <Link to="/my-appointments" className="text-xs font-medium text-brand-text hover:underline">
-                {t('frontDeskDashboard.viewAll')}
+                {t('patientDashboard.viewAll')}
               </Link>
             )
           }
         >
           {myAppointments.length === 0 ? (
-            <EmptyState title={t('frontDeskDashboard.emptyTitle')} description={t('patientDashboard.emptyAppointmentsDescription')} />
+            <EmptyState title={t('patientDashboard.emptyTitle')} description={t('patientDashboard.emptyAppointmentsDescription')} />
           ) : (
             <ul className="flex flex-col gap-2">
               {myAppointments.slice(0, 5).map((a) => (
@@ -134,7 +129,7 @@ export default function PatientDashboard() {
           action={
             myLabOrders.length > 0 && (
               <Link to="/my-lab-orders" className="text-xs font-medium text-brand-text hover:underline">
-                {t('frontDeskDashboard.viewAll')}
+                {t('patientDashboard.viewAll')}
               </Link>
             )
           }

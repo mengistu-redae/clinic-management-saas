@@ -148,13 +148,32 @@ export default function DataTable({
               {sorted.map((row) => {
                 const key = getKey(row);
                 const expanded = renderExpanded ? expandedId === key || isExpandedByDefault?.(row) : false;
+                const activate = onRowClick ? () => onRowClick(row) : renderExpanded ? () => toggleExpanded(key) : undefined;
                 return (
                   <Fragment key={key}>
                     <tr
                       className={`border-b border-slate-100 last:border-0 ${
                         onRowClick ? 'cursor-pointer hover:bg-slate-50' : renderExpanded ? 'hover:bg-slate-50' : ''
-                      }`}
-                      onClick={onRowClick ? () => onRowClick(row) : renderExpanded ? () => toggleExpanded(key) : undefined}
+                      } ${activate ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/50' : ''}`}
+                      onClick={activate}
+                      // A row that navigates or expands is otherwise a bare <tr> -
+                      // not natively focusable or operable from a keyboard, and
+                      // invisible to a screen reader as an interactive element.
+                      // tabIndex + role + Enter/Space make it behave like a real
+                      // button/link for the same gesture the onClick already uses.
+                      tabIndex={activate ? 0 : undefined}
+                      role={activate ? 'button' : undefined}
+                      aria-expanded={renderExpanded ? expanded : undefined}
+                      onKeyDown={
+                        activate
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                activate();
+                              }
+                            }
+                          : undefined
+                      }
                     >
                       {renderExpanded && (
                         <td className="px-3 py-2.5 text-ink-muted">

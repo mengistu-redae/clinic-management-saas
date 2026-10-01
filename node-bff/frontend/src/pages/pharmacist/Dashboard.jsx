@@ -19,14 +19,13 @@ import StatCard from '../../components/StatCard.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
+import TabGroup from '../../components/TabGroup.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import ChartCard from '../../components/analytics/ChartCard.jsx';
 import DispenseVolumeChart from '../../components/analytics/DispenseVolumeChart.jsx';
 import MedicationDispenseCountChart from '../../components/analytics/MedicationDispenseCountChart.jsx';
 import PaymentsPanel from '../../components/PaymentsPanel.jsx';
 import InvoicePanel from '../../components/InvoicePanel.jsx';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 const WINDOW_OPTIONS = [7, 30, 90];
 
@@ -86,7 +85,7 @@ export default function PharmacistDashboard() {
         <div className="mb-4 flex items-center justify-between rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success">
           <span>{t('pharmacistPage.dispenseConfirmed', { medication: lastDispensed.medicationName, quantity: lastDispensed.quantity })}</span>
           <button type="button" onClick={() => setLastDispensed(null)} className="font-semibold hover:underline">
-            {t('clinicsPage.dismiss')}
+            {t('common.dismiss')}
           </button>
         </div>
       )}
@@ -107,21 +106,13 @@ export default function PharmacistDashboard() {
       <div className="mt-8 flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-ink">{t('clinicAnalytics.sectionTitle')}</h2>
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 text-xs font-medium" role="group" aria-label={t('clinicAnalytics.windowLabel', { days: windowDays })}>
-            {WINDOW_OPTIONS.map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => setWindowDays(d)}
-                aria-pressed={windowDays === d}
-                className={`rounded-md px-2.5 py-1 transition-colors ${
-                  windowDays === d ? 'bg-brand-light text-brand-text' : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
-                }`}
-              >
-                {t(`clinicAnalytics.days${d}`)}
-              </button>
-            ))}
-          </div>
+          <TabGroup
+            compact
+            options={WINDOW_OPTIONS.map((d) => ({ value: d, label: t(`clinicAnalytics.days${d}`) }))}
+            value={windowDays}
+            onChange={setWindowDays}
+            ariaLabel={t('clinicAnalytics.windowLabel', { days: windowDays })}
+          />
         </div>
 
         {analytics.isError && (
@@ -231,7 +222,7 @@ function DispensePanel({ prescription, onDispensed }) {
         <Button type="submit" variant="accent" disabled={dispense.isPending}>
           {dispense.isPending ? t('pharmacistPage.dispensing') : t('pharmacistPage.dispense')}
         </Button>
-        {dispensed && <span className="text-sm text-success">{t('settingsPage.saved')}</span>}
+        {dispensed && <span className="text-sm text-success">{t('pharmacistPage.dispensed')}</span>}
       </form>
       {formError && <div className="mt-3"><ErrorBanner message={formError} /></div>}
       <DispenseHistory prescriptionId={prescription.id} />
@@ -309,14 +300,5 @@ function DispenseBillingPanel({ dispenseRecordId }) {
         extraRoles={['pharmacist']}
       />
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

@@ -6,11 +6,16 @@ import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
-
-/** clinic-admin room management - GET/POST/POST .../update RoomController. All statuses shown, same reasoning as Providers.jsx. */
+/**
+ * clinic-admin room management - GET/POST/POST .../update RoomController.
+ * All statuses shown, same reasoning as Providers.jsx. Edits expand into a
+ * panel via DataTable's own `renderExpanded`, matching every sibling CRUD
+ * page in this same settings area (AppointmentTypes/FeePolicies/LabRates) -
+ * this page used to be the one inline-in-the-cell outlier (2026-10-01 UI
+ * audit), converted here to match.
+ */
 export default function ClinicAdminRooms() {
   const { t } = useTranslation();
   const { data: rooms, isLoading, isError, error, refetch } = useRooms(true);
@@ -18,10 +23,6 @@ export default function ClinicAdminRooms() {
 
   const [name, setName] = useState('');
   const [formError, setFormError] = useState(null);
-
-  const [editingId, setEditingId] = useState(null);
-  const [editName, setEditName] = useState('');
-  const [rowError, setRowError] = useState(null);
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -39,30 +40,13 @@ export default function ClinicAdminRooms() {
   }
 
   const columns = [
-    {
-      key: 'name',
-      header: t('rooms.roomName'),
-      accessor: (room) => room.name,
-      sortable: true,
-      render: (room) =>
-        editingId === room.id ? (
-          <input autoFocus value={editName} onChange={(e) => setEditName(e.target.value)} className={`${inputClass} w-48`} />
-        ) : (
-          <span className="font-semibold">{room.name}</span>
-        ),
-    },
+    { key: 'name', header: t('rooms.roomName'), accessor: (room) => room.name, sortable: true, className: 'font-semibold' },
     {
       key: 'status',
       header: t('referralsPage.status'),
       accessor: (room) => room.status,
       sortable: true,
       render: (room) => <StatusPill status={room.status} />,
-    },
-    {
-      key: 'actions',
-      header: '',
-      headerClassName: 'w-0',
-      render: (room) => <RoomActions room={room} editingId={editingId} editName={editName} setEditingId={setEditingId} setEditName={setEditName} onError={setRowError} />,
     },
   ];
 
@@ -79,7 +63,6 @@ export default function ClinicAdminRooms() {
         </Button>
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
-      {rowError && <div className="mb-4"><ErrorBanner message={rowError} /></div>}
 
       <DataTable
         columns={columns}
@@ -87,6 +70,7 @@ export default function ClinicAdminRooms() {
         rowKey="id"
         searchAccessors={[(room) => room.name]}
         defaultSortKey="name"
+        renderExpanded={(room) => <RoomEditPanel room={room} />}
         isLoading={isLoading}
         error={isError ? error : null}
         onRetry={refetch}
@@ -97,68 +81,44 @@ export default function ClinicAdminRooms() {
   );
 }
 
-function RoomActions({ room, editingId, editName, setEditingId, setEditName, onError }) {
+function RoomEditPanel({ room }) {
   const { t } = useTranslation();
   const updateRoom = useUpdateRoom(room.id);
-  const editing = editingId === room.id;
+  const [name, setName] = useState(room.name);
+  const [rowError, setRowError] = useState(null);
 
   async function saveEdit() {
-    onError(null);
+    setRowError(null);
     try {
-      await updateRoom.mutateAsync({ name: editName.trim() });
-      setEditingId(null);
+      await updateRoom.mutateAsync({ name: name.trim() });
     } catch (err) {
-      onError(err.message || t('common.errorSaveChanges'));
+      setRowError(err.message || t('common.errorSaveChanges'));
     }
   }
 
   async function toggleActive() {
-    onError(null);
+    setRowError(null);
     try {
       await updateRoom.mutateAsync({ status: room.status === 'active' ? 'inactive' : 'active' });
     } catch (err) {
-      onError(err.message || t('rooms.errorUpdate'));
+      setRowError(err.message || t('rooms.errorUpdate'));
     }
   }
 
-  if (editing) {
-    return (
-      <div className="flex items-center gap-3 text-sm">
-        <button type="button" onClick={saveEdit} disabled={updateRoom.isPending} className="font-semibold text-accent hover:underline disabled:opacity-50">
+  return (
+    <div>
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label={t('rooms.roomName')}>
+          <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputClass} w-48`} />
+        </Field>
+        <Button type="button" variant="accent" onClick={saveEdit} disabled={updateRoom.isPending}>
           {t('common.save')}
-        </button>
-        <button type="button" onClick={() => setEditingId(null)} className="text-ink-muted hover:underline">
-          {t('common.cancel')}
+        </Button>
+        <button type="button" onClick={toggleActive} className="text-sm text-ink-muted hover:underline">
+          {room.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
         </button>
       </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-3 text-sm">
-      <button
-        type="button"
-        onClick={() => {
-          onError(null);
-          setEditName(room.name);
-          setEditingId(room.id);
-        }}
-        className="text-brand-text hover:underline"
-      >
-        {t('common.edit')}
-      </button>
-      <button type="button" onClick={toggleActive} className="text-ink-muted hover:underline">
-        {room.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
-      </button>
+      {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

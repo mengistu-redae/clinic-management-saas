@@ -4,10 +4,8 @@ import { useLabRates, useCreateLabRate, useUpdateLabRate, useDeleteLabRate } fro
 import DataTable from '../../components/DataTable.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import { formatCurrency } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 /**
  * "Lab Rates" tab of the clinic-admin settings hub - GET/POST/POST
@@ -138,20 +136,13 @@ function RateEditPanel({ rate }) {
         <Button type="button" variant="accent" onClick={saveEdit} disabled={updateRate.isPending}>
           {t('common.save')}
         </Button>
-        <button type="button" onClick={handleDelete} className="text-sm text-danger hover:underline">
+        {/* True hard delete, no soft-deactivate fallback - same heavier-weight
+            treatment as FeePolicies.jsx's own equivalent button. */}
+        <Button type="button" variant="danger" size="sm" onClick={handleDelete}>
           {t('common.delete')}
-        </button>
+        </Button>
       </div>
       {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

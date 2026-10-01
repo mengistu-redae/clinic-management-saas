@@ -12,6 +12,8 @@ import {
 import StatCard from '../../components/StatCard.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
 import ChartCard from '../../components/analytics/ChartCard.jsx';
 import AppointmentVolumeChart from '../../components/analytics/AppointmentVolumeChart.jsx';
 import RevenueChart from '../../components/analytics/RevenueChart.jsx';
@@ -74,12 +76,10 @@ export default function ClinicAdminDashboard() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-ink">{t('clinicAdminDashboard.title')}</h1>
-        <Link to="/clinic-admin/settings" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
-          {t('clinicAdminDashboard.manageSettings')}
-        </Link>
-      </div>
+      <PageHeader
+        title={t('clinicAdminDashboard.title')}
+        actions={<Button as={Link} to="/clinic-admin/settings">{t('clinicAdminDashboard.manageSettings')}</Button>}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Link to="/clinic-admin/providers" className="block transition-shadow hover:shadow-md">
@@ -91,7 +91,15 @@ export default function ClinicAdminDashboard() {
         <Link to="/clinic-admin/appointment-types" className="block transition-shadow hover:shadow-md">
           <StatCard label={t('clinicAdminDashboard.appointmentTypes')} value={appointmentTypes.data.length} />
         </Link>
-        <StatCard label={t('clinicAdminDashboard.activeAppointments')} value={activeAppointmentCount} />
+        {/* The other four stat cards in this row each link to the page that manages
+            that count - this one previously didn't, the only static card in a row
+            that otherwise reads as uniformly clickable. /front-desk/appointments is
+            this role's own real destination for it (see Sidebar.jsx's
+            nav.clinicAdmin.appointments entry, the same route clinic_admin's own nav
+            already points at). */}
+        <Link to="/front-desk/appointments" className="block transition-shadow hover:shadow-md">
+          <StatCard label={t('clinicAdminDashboard.activeAppointments')} value={activeAppointmentCount} />
+        </Link>
         <Link to="/lab-orders" className="block transition-shadow hover:shadow-md">
           <StatCard
             label={t('clinicAdminDashboard.pendingLabRequests')}
@@ -104,7 +112,11 @@ export default function ClinicAdminDashboard() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-ink">{t('clinicAnalytics.sectionTitle')}</h2>
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 text-xs font-medium" role="group" aria-label={t('clinicAnalytics.windowLabel', { days: windowDays })}>
+          {/* No existing translated string describes "pick the analytics
+              time window" itself (only clinicAnalytics.windowLabel, which
+              states the *current* selection) - a literal, screen-reader
+              -only label stands in until a dedicated key is worth adding. */}
+          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 text-xs font-medium" role="group" aria-label="Select the analytics time window">
             {WINDOW_OPTIONS.map((d) => (
               <button
                 key={d}

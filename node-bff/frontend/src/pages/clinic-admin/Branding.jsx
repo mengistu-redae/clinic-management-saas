@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useClinicBranding, useUpdateClinicBranding } from '../../api/queries.js';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import Button from '../../components/Button.jsx';
 import { themeVars } from '../../lib/color.js';
 
 const inputClass =
@@ -128,10 +129,12 @@ export default function ClinicAdminBranding() {
         {formError && <ErrorBanner message={formError} />}
 
         <div className="flex items-center gap-3">
-          <button type="submit" disabled={updateBranding.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
+          <Button type="submit" variant="accent" disabled={updateBranding.isPending}>
             {updateBranding.isPending ? t('settingsPage.saving') : t('brandingPage.saveBranding')}
-          </button>
-          {saved && <span className="text-sm text-success">{t('brandingPage.saved')}</span>}
+          </Button>
+          <span aria-live="polite">
+            {saved && <span className="text-sm text-success">{t('brandingPage.saved')}</span>}
+          </span>
         </div>
       </form>
     </div>
@@ -141,10 +144,15 @@ export default function ClinicAdminBranding() {
 function ColorField({ label, value, onChange, placeholder }) {
   const valid = HEX.test(value.trim());
   return (
+    // Field's own <label> wraps two inputs (a color swatch + a hex text
+    // field) - ambiguous which one its text names. The swatch gets its
+    // own distinct aria-label; the hex input keeps the implicit label
+    // association (it's the one a screen-reader user actually types into).
     <Field label={label}>
       <div className="flex items-center gap-2">
         <input
           type="color"
+          aria-label={`${label} swatch`}
           value={valid ? value.trim() : placeholder}
           onChange={onChange}
           className="h-9 w-12 shrink-0 cursor-pointer rounded border border-slate-300"

@@ -7,10 +7,8 @@ import PageHeader from '../../components/PageHeader.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import { formatCurrency } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 const now = new Date();
 
@@ -62,7 +60,14 @@ export default function AccountantPayroll() {
 
       <form onSubmit={handleRun} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('accountantPage.year')}>
-          <input type="number" min="2000" value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value })} className={`${inputClass} w-24`} />
+          <input
+            type="number"
+            min="2000"
+            max={now.getFullYear() + 1}
+            value={form.year}
+            onChange={(e) => setForm({ ...form, year: e.target.value })}
+            className={`${inputClass} w-24`}
+          />
         </Field>
         <Field label={t('accountantPage.month')}>
           <select value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} className={`${inputClass} w-24`}>
@@ -78,7 +83,7 @@ export default function AccountantPayroll() {
         <div className="mb-6 flex items-center justify-between rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success">
           <span>{t('accountantPage.payrollRunConfirmed', { amount: formatCurrency(lastRun.run.totalAmount), count: lastRun.payments.length })}</span>
           <button type="button" onClick={() => setLastRun(null)} className="font-semibold hover:underline">
-            {t('clinicsPage.dismiss')}
+            {t('common.dismiss')}
           </button>
         </div>
       )}
@@ -124,14 +129,5 @@ function PayrollRunPayments({ runId, employeeNameById }) {
         ))}
       </tbody>
     </table>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

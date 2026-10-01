@@ -26,10 +26,9 @@ import LabOrderTestsEditor from '../../components/labOrder/LabOrderTestsEditor.j
 import InvoicePanel from '../../components/InvoicePanel.jsx';
 import PaymentsPanel from '../../components/PaymentsPanel.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import Button from '../../components/Button.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 /**
  * Staff lab-order detail - one page covering every LabOrderStatusService
@@ -271,9 +270,9 @@ export default function LabOrderDetail() {
               <LabOrderTestsEditor lines={editLines} onChange={setEditLines} labRates={labRates} />
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <button type="button" onClick={saveEdit} disabled={updateOrder.isPending} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50">
+              <Button type="button" variant="accent" onClick={saveEdit} disabled={updateOrder.isPending}>
                 {updateOrder.isPending ? t('settingsPage.saving') : t('common.save')}
-              </button>
+              </Button>
               <button type="button" onClick={() => setEditing(false)} className="text-sm text-ink-muted hover:underline">{t('common.cancel')}</button>
             </div>
           </div>
@@ -354,9 +353,9 @@ export default function LabOrderDetail() {
             <input type="checkbox" checked={confirmForm.consentAcknowledged} onChange={(e) => setConfirmForm({ ...confirmForm, consentAcknowledged: e.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
             <span>{t('labOrdersPage.consentLabel')}</span>
           </label>
-          <button type="submit" disabled={confirmAndOrder.isPending} className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
+          <Button type="submit" variant="accent" className="mt-4" disabled={confirmAndOrder.isPending}>
             {confirmAndOrder.isPending ? t('labOrderDetail.confirming') : t('labOrderDetail.confirmAndOrderBtn')}
-          </button>
+          </Button>
         </form>
       )}
 
@@ -385,9 +384,9 @@ export default function LabOrderDetail() {
               </div>
             ))}
           </div>
-          <button type="submit" disabled={resultOrder.isPending} className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
+          <Button type="submit" variant="accent" className="mt-4" disabled={resultOrder.isPending}>
             {resultOrder.isPending ? t('settingsPage.saving') : t('labOrderDetail.saveResults')}
-          </button>
+          </Button>
         </form>
       )}
 
@@ -405,21 +404,27 @@ export default function LabOrderDetail() {
         <div className="mt-5 flex flex-wrap items-center gap-3">
           {status === 'ordered' && (
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 p-2">
-              <input value={presentedId} onChange={(e) => setPresentedId(e.target.value)} placeholder={t('labOrderDetail.idPresentedPlaceholder')} className={`${inputClass} w-40`} />
-              <button type="button" onClick={handleCollect} disabled={collectSpecimen.isPending} className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50">
+              <input
+                value={presentedId}
+                onChange={(e) => setPresentedId(e.target.value)}
+                placeholder={t('labOrderDetail.idPresentedPlaceholder')}
+                aria-label={t('labOrderDetail.idPresentedPlaceholder')}
+                className={`${inputClass} w-40`}
+              />
+              <Button type="button" onClick={handleCollect} disabled={collectSpecimen.isPending}>
                 {collectSpecimen.isPending ? t('labOrderDetail.collecting') : t('labOrderDetail.collectSpecimen')}
-              </button>
+              </Button>
             </div>
           )}
           {status === 'specimen_collected' && (
-            <button type="button" onClick={handleSend} disabled={sendOrder.isPending} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50">
+            <Button type="button" onClick={handleSend} disabled={sendOrder.isPending}>
               {sendOrder.isPending ? t('labOrderDetail.marking') : t('labOrderDetail.markSent')}
-            </button>
+            </Button>
           )}
           {status === 'resulted' && (
-            <button type="button" onClick={handleReview} disabled={reviewOrder.isPending} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50">
+            <Button type="button" onClick={handleReview} disabled={reviewOrder.isPending}>
               {reviewOrder.isPending ? t('labOrderDetail.marking') : t('labOrderDetail.markReviewed')}
-            </button>
+            </Button>
           )}
 
           {status === 'ordered' && !confirmingCancel && (
@@ -439,14 +444,5 @@ export default function LabOrderDetail() {
         </div>
       )}
     </PageContainer>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

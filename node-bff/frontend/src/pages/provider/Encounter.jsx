@@ -18,9 +18,10 @@ import ErrorBanner from '../../components/ErrorBanner.jsx';
 import PatientChart from '../../components/PatientChart.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import VisitSummaryLink from '../../components/VisitSummaryLink.jsx';
+import Field, { inputClass as sharedInputClass } from '../../components/Field.jsx';
+import { formatDateTime } from '../../lib/format.js';
 
-const inputClass =
-  'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+const inputClass = `w-full ${sharedInputClass}`;
 
 /** Only reachable once a provider has actually started seeing the patient - matches EncounterService.requireDocumentableStatus exactly, checked client-side too so the common case never round-trips a 409. */
 const DOCUMENTABLE_STATUSES = new Set(['with_provider', 'checked_out']);
@@ -238,7 +239,7 @@ export default function Encounter() {
               <p className="text-sm font-semibold text-ink">{t('encounterPage.note')}</p>
               {signed && (
                 <span className="inline-flex items-center rounded-full bg-success-light px-2.5 py-0.5 text-xs font-semibold text-success">
-                  {t('encounterPage.signedAt', { date: new Date(signedAt).toLocaleString() })}
+                  {t('encounterPage.signedAt', { date: formatDateTime(signedAt) })}
                 </span>
               )}
             </div>
@@ -261,30 +262,42 @@ export default function Encounter() {
 
                 <p className="mt-2 text-sm font-semibold text-ink">{t('encounterPage.physicalExam')}</p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {BODY_SYSTEMS.map((s) => (
-                    <div key={s} className="flex flex-col gap-2 rounded-lg border border-slate-100 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-medium text-ink">{t(`encounterPage.${s}`)}</span>
-                        <select
+                  {BODY_SYSTEMS.map((s) => {
+                    const systemLabel = t(`encounterPage.${s}`);
+                    const abnormal = form[`${s}Normal`] === 'false';
+                    return (
+                      <div
+                        key={s}
+                        className={`flex flex-col gap-2 rounded-lg border p-3 ${abnormal ? 'border-danger/40 bg-danger-light/40' : 'border-slate-100'}`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-medium text-ink">
+                            {systemLabel}
+                            {abnormal && <span className="ml-1.5 text-xs font-semibold text-danger">{t('encounterPage.abnormal')}</span>}
+                          </span>
+                          <select
+                            disabled={signed}
+                            aria-label={systemLabel}
+                            value={form[`${s}Normal`]}
+                            onChange={(e) => { setForm({ ...form, [`${s}Normal`]: e.target.value }); setSaved(false); }}
+                            className={`${inputClass} w-32 disabled:bg-slate-50 disabled:text-ink-muted`}
+                          >
+                            <option value="">{t('encounterPage.notExamined')}</option>
+                            <option value="true">{t('encounterPage.normal')}</option>
+                            <option value="false">{t('encounterPage.abnormal')}</option>
+                          </select>
+                        </div>
+                        <textarea
+                          rows={1}
                           disabled={signed}
-                          value={form[`${s}Normal`]}
-                          onChange={(e) => { setForm({ ...form, [`${s}Normal`]: e.target.value }); setSaved(false); }}
-                          className={`${inputClass} w-32 disabled:bg-slate-50 disabled:text-ink-muted`}
-                        >
-                          <option value="">{t('encounterPage.notExamined')}</option>
-                          <option value="true">{t('encounterPage.normal')}</option>
-                          <option value="false">{t('encounterPage.abnormal')}</option>
-                        </select>
+                          aria-label={systemLabel}
+                          value={form[`${s}Note`]}
+                          onChange={(e) => { setForm({ ...form, [`${s}Note`]: e.target.value }); setSaved(false); }}
+                          className={`${inputClass} disabled:bg-slate-50 disabled:text-ink-muted`}
+                        />
                       </div>
-                      <textarea
-                        rows={1}
-                        disabled={signed}
-                        value={form[`${s}Note`]}
-                        onChange={(e) => { setForm({ ...form, [`${s}Note`]: e.target.value }); setSaved(false); }}
-                        className={`${inputClass} disabled:bg-slate-50 disabled:text-ink-muted`}
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {formError && <ErrorBanner message={formError} />}
@@ -324,7 +337,7 @@ export default function Encounter() {
                   {addenda.map((a) => (
                     <li key={a.id} className="rounded-lg border border-slate-100 px-3 py-2">
                       <p className="text-sm text-ink">{a.text}</p>
-                      <p className="mt-1 text-xs text-ink-muted">{new Date(a.createdAt).toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-ink-muted">{formatDateTime(a.createdAt)}</p>
                     </li>
                   ))}
                 </ul>
@@ -422,14 +435,5 @@ export default function Encounter() {
         </>
       )}
     </PageContainer>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

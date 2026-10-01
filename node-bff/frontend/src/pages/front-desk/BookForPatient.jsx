@@ -6,6 +6,7 @@ import { ApiError } from '../../api/client.js';
 import SlotPicker from '../../components/booking/SlotPicker.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import Button from '../../components/Button.jsx';
 import { formatCurrency } from '../../lib/format.js';
 import PageContainer from '../../components/PageContainer.jsx';
 
@@ -133,14 +134,15 @@ export default function BookForPatient() {
 
       {selectedSlot && (
         <div className="mt-6">
-          <button
+          <Button
             type="button"
+            variant="accent"
             disabled={createAppointment.isPending}
             onClick={handleConfirm}
-            className="w-full rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+            className="w-full px-6 py-2.5 sm:w-auto"
           >
             {createAppointment.isPending ? t('booking.booking') : t('booking.confirmBooking')}
-          </button>
+          </Button>
         </div>
       )}
 

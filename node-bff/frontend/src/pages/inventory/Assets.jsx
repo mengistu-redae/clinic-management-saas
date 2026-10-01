@@ -80,7 +80,7 @@ export default function InventoryAssets() {
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('common.name')}>
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Autoclave" className={`${inputClass} w-56`} />
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('inventoryPage.assetNamePlaceholder')} className={`${inputClass} w-56`} />
         </Field>
         <Field label={t('inventoryPage.serialNumberOptional')}>
           <input value={form.serialNumber} onChange={(e) => setForm({ ...form, serialNumber: e.target.value })} className={`${inputClass} w-40`} />

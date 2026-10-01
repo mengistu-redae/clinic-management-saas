@@ -46,6 +46,13 @@ export default function BookingForm() {
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [bookingError, setBookingError] = useState(null);
+  // Per-field validation state, separate from the generic bookingError banner -
+  // a screen-reader or visually-scanning user needs a direct pointer to which
+  // input is wrong, not just a message at the bottom of the form.
+  const [nameInvalid, setNameInvalid] = useState(false);
+  const [phoneInvalid, setPhoneInvalid] = useState(false);
+  const nameInputRef = useRef(null);
+  const phoneInputRef = useRef(null);
   // Minted once per checkout attempt and reused across a retried click -
   // that's what lets the server's (tenant_id, idempotency_key) uniqueness
   // check actually protect against a double-booking on a flaky network.
@@ -72,12 +79,18 @@ export default function BookingForm() {
     setBookingError(null);
     if (!authenticated && !contactName.trim()) {
       setBookingError(t('bookingForm.errorNameRequired'));
+      setNameInvalid(true);
+      nameInputRef.current?.focus();
       return;
     }
+    setNameInvalid(false);
     if (!authenticated && !contactPhone.trim()) {
       setBookingError(t('bookingForm.errorPhoneRequired'));
+      setPhoneInvalid(true);
+      phoneInputRef.current?.focus();
       return;
     }
+    setPhoneInvalid(false);
     try {
       const created = await booking.mutateAsync(
         authenticated
@@ -191,11 +204,29 @@ export default function BookingForm() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('common.name')}</span>
-                  <input value={contactName} onChange={(e) => setContactName(e.target.value)} className={inputClass} />
+                  <input
+                    ref={nameInputRef}
+                    value={contactName}
+                    onChange={(e) => {
+                      setContactName(e.target.value);
+                      if (nameInvalid) setNameInvalid(false);
+                    }}
+                    aria-invalid={nameInvalid}
+                    className={`${inputClass} ${nameInvalid ? 'border-danger focus:border-danger focus:ring-danger/20' : ''}`}
+                  />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.phone')}</span>
-                  <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className={inputClass} />
+                  <input
+                    ref={phoneInputRef}
+                    value={contactPhone}
+                    onChange={(e) => {
+                      setContactPhone(e.target.value);
+                      if (phoneInvalid) setPhoneInvalid(false);
+                    }}
+                    aria-invalid={phoneInvalid}
+                    className={`${inputClass} ${phoneInvalid ? 'border-danger focus:border-danger focus:ring-danger/20' : ''}`}
+                  />
                 </label>
                 <label className="block sm:col-span-2">
                   <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('patientSearch.emailOptional')}</span>

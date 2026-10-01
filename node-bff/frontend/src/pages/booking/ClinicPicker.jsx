@@ -5,6 +5,7 @@ import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import Card from '../../components/Card.jsx';
 
 /** Step 1 of the booking flow - public, reachable logged-out. See ClinicController.clinics. */
 export default function ClinicPicker() {
@@ -29,13 +30,9 @@ export default function ClinicPicker() {
       {data && data.length > 0 && (
         <div className="flex flex-col gap-2">
           {data.map((clinic) => (
-            <Link
-              key={clinic.id}
-              to={`/book/${clinic.id}`}
-              className="rounded-xl border border-slate-200 bg-surface p-4 shadow-sm transition-shadow hover:shadow-md"
-            >
+            <Card key={clinic.id} as={Link} to={`/book/${clinic.id}`} hover>
               <p className="font-medium text-ink">{clinic.name}</p>
-            </Link>
+            </Card>
           ))}
         </div>
       )}

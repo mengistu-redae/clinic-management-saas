@@ -7,9 +7,7 @@ import PageContainer from '../../components/PageContainer.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+import Field, { inputClass } from '../../components/Field.jsx';
 
 const ACCOUNT_TYPES = ['asset', 'liability', 'equity', 'revenue', 'expense'];
 
@@ -68,7 +66,7 @@ export default function AccountantAccounts() {
           <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="2000" className={`${inputClass} w-28 font-mono`} />
         </Field>
         <Field label={t('common.name')}>
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Accounts Payable" className={`${inputClass} w-56`} />
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('accountantPage.accountNamePlaceholder')} className={`${inputClass} w-56`} />
         </Field>
         <Field label={t('accountantPage.accountType')}>
           <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className={`${inputClass} w-40`}>
@@ -140,14 +138,5 @@ function AccountEditPanel({ account }) {
       </div>
       {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

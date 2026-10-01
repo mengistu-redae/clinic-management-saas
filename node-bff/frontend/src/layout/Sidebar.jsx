@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -18,7 +19,20 @@ import {
   AlertTriangleIcon,
   ShieldIcon,
   RefreshIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
 } from '../components/icons.jsx';
+
+const FOLDED_GROUPS_KEY = 'clinicops.sidebarFoldedGroups';
+
+function readFoldedGroups() {
+  try {
+    const raw = localStorage.getItem(FOLDED_GROUPS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Role-aware nav, re-shelved from AppShell.jsx's old horizontal nav row
@@ -50,6 +64,7 @@ function navGroups(t, hasRole) {
       ],
     });
     groups.push({
+      id: 'inventory',
       heading: t('sidebar.groupInventory'),
       items: [
         { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: BoxIcon },
@@ -82,6 +97,7 @@ function navGroups(t, hasRole) {
       ],
     });
     groups.push({
+      id: 'pharmacy',
       heading: t('sidebar.groupPharmacy'),
       items: [
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
@@ -95,6 +111,7 @@ function navGroups(t, hasRole) {
       // grants clinic_admin the same backend access, so the nav now matches that exactly instead
       // of only exposing Accounts/Payroll (a real gap: Journal/Employees/Budgets were reachable
       // only by typing the URL directly).
+      id: 'finance',
       heading: t('sidebar.groupFinance'),
       items: [
         { to: '/accountant/accounts', label: t('nav.accountant.accounts'), icon: WalletIcon },
@@ -105,6 +122,7 @@ function navGroups(t, hasRole) {
       ],
     });
     groups.push({
+      id: 'inventory',
       heading: t('sidebar.groupInventory'),
       items: [
         { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: BoxIcon },
@@ -165,31 +183,67 @@ function SidebarContent({ collapsed, onNavigate }) {
   const { t } = useTranslation();
   const { hasRole } = useAuth();
   const groups = navGroups(t, hasRole);
+  const [folded, setFolded] = useState(readFoldedGroups);
+
+  function toggleFolded(groupId) {
+    setFolded((prev) => {
+      const next = { ...prev, [groupId]: !prev[groupId] };
+      try {
+        localStorage.setItem(FOLDED_GROUPS_KEY, JSON.stringify(next));
+      } catch {
+        // best-effort only, same as every other localStorage-backed preference here
+      }
+      return next;
+    });
+  }
 
   return (
     <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-3">
-      {groups.map((group, i) => (
-        <div key={i} className="flex flex-col gap-1">
-          {group.heading && !collapsed && (
-            <p className="mt-2 px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              {group.heading}
-            </p>
-          )}
-          {group.items.map((item) => (
-            <NavLink
-              key={item.to + item.label}
-              to={item.to}
-              end={item.end}
-              onClick={onNavigate}
-              title={collapsed ? item.label : undefined}
-              className={itemClass(collapsed)}
-            >
-              <item.icon className="h-5 w-5 shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </NavLink>
-          ))}
-        </div>
-      ))}
+      {groups.map((group, i) => {
+        // Only a heading-labeled group (Pharmacy/Finance/Inventory, etc.) is
+        // foldable - the unlabeled core groups have no heading to click and
+        // stay always-expanded, same as before this change. Fold state is
+        // ignored entirely in icon-only `collapsed` mode, where headings
+        // never render anyway - folding a group you can't see the label of
+        // wouldn't mean anything. Keyed by `group.id` (a stable, untranslated
+        // identifier), not the translated heading text - otherwise switching
+        // UI language would silently reset every fold preference.
+        const isFoldable = Boolean(group.id) && !collapsed;
+        const isOpen = !isFoldable || !folded[group.id];
+        return (
+          <div key={i} className="flex flex-col gap-1">
+            {group.heading && !collapsed && (
+              <button
+                type="button"
+                onClick={() => toggleFolded(group.id)}
+                aria-expanded={isOpen}
+                className="mt-2 flex items-center justify-between gap-1 rounded-lg px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted hover:text-ink"
+              >
+                <span>{group.heading}</span>
+                {isOpen ? (
+                  <ChevronDownIcon className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <ChevronRightIcon className="h-3.5 w-3.5 shrink-0" />
+                )}
+              </button>
+            )}
+            {isOpen &&
+              group.items.map((item) => (
+                <NavLink
+                  key={item.to + item.label}
+                  to={item.to}
+                  end={item.end}
+                  onClick={onNavigate}
+                  title={collapsed ? item.label : undefined}
+                  className={itemClass(collapsed)}
+                >
+                  <item.icon className="h-5 w-5 shrink-0" />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </NavLink>
+              ))}
+          </div>
+        );
+      })}
     </nav>
   );
 }

@@ -11,11 +11,11 @@ import StatusPill from '../../components/StatusPill.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
 import Button from '../../components/Button.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
+import { ClipboardIcon } from '../../components/icons.jsx';
 import { formatDateTime } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 const emptyForm = { name: '', orgAlias: '', domain: '', adminEmail: '', adminFullName: '' };
 
@@ -96,8 +96,7 @@ export default function PlatformAdminClinics() {
 
   return (
     <PageContainer width="lg">
-      <h1 className="mb-1 text-2xl font-bold text-ink">{t('nav.platformAdmin.clinics')}</h1>
-      <p className="mb-6 text-sm text-ink-muted">{t('clinicsPage.intro')}</p>
+      <PageHeader title={t('nav.platformAdmin.clinics')} description={t('clinicsPage.intro')} />
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('common.name')}>
@@ -121,13 +120,14 @@ export default function PlatformAdminClinics() {
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
       {provisionedAdmin && (
-        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="mb-4 rounded-xl border border-warning/30 bg-warning-light p-4 text-sm text-warning">
           <p className="mb-1 font-semibold">{t('clinicsPage.adminCreatedTitle', { email: provisionedAdmin.email })}</p>
-          <p className="mb-2">
-            {t('clinicsPage.tempPasswordNote')}{' '}
+          <p className="mb-2 flex flex-wrap items-center gap-2">
+            {t('clinicsPage.tempPasswordNote')}
             <span className="font-mono font-semibold">{provisionedAdmin.temporaryPassword}</span>
+            <CopyButton value={provisionedAdmin.temporaryPassword} />
           </p>
-          <button type="button" onClick={() => setProvisionedAdmin(null)} className="text-amber-900 underline">
+          <button type="button" onClick={() => setProvisionedAdmin(null)} className="underline">
             {t('clinicsPage.dismiss')}
           </button>
         </div>
@@ -148,6 +148,36 @@ export default function PlatformAdminClinics() {
         emptyDescription={t('clinicsPage.emptyDescription')}
       />
     </PageContainer>
+  );
+}
+
+function CopyButton({ value }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard access can be denied/unavailable - the password is still visible to copy by hand
+    }
+  }
+
+  const label = copied ? t('common.copied') : t('common.copy');
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={label}
+      aria-label={label}
+      className="inline-flex items-center gap-1 rounded-lg border border-warning/40 px-2 py-1 text-xs font-semibold hover:bg-warning/10"
+    >
+      <ClipboardIcon className="h-3.5 w-3.5" />
+      {label}
+    </button>
   );
 }
 
@@ -193,20 +223,20 @@ function ClinicEditPanel({ clinic }) {
         <Button type="button" variant="accent" onClick={saveEdit} disabled={updateClinic.isPending}>
           {updateClinic.isPending ? t('settingsPage.saving') : t('common.save')}
         </Button>
-        <button type="button" onClick={toggleActive} disabled={pending} className="text-sm text-ink-muted hover:underline disabled:opacity-50">
-          {clinic.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
-        </button>
+        {clinic.status === 'active' ? (
+          // Deactivating a clinic locks out every staff login at that tenant -
+          // a tenant-wide, consequential action, so it gets real visual weight
+          // instead of the plain-text-link treatment lower-stakes toggles use.
+          <Button type="button" variant="danger" size="sm" onClick={toggleActive} disabled={pending}>
+            {t('common.deactivate')}
+          </Button>
+        ) : (
+          <button type="button" onClick={toggleActive} disabled={pending} className="text-sm text-ink-muted hover:underline disabled:opacity-50">
+            {t('common.reactivate')}
+          </button>
+        )}
       </div>
       {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

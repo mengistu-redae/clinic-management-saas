@@ -7,10 +7,8 @@ import PageContainer from '../../components/PageContainer.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
+import { inputClass } from '../../components/Field.jsx';
 import { formatDateTime } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 /**
  * GET /api/my-prescriptions (phase 33 backend, phase 39 frontend) - no
@@ -125,7 +123,7 @@ function PrescriptionDetail({ prescription, latestRequest }) {
           <Button type="submit" variant="accent" disabled={createRequest.isPending}>
             {createRequest.isPending ? t('myPrescriptionsPage.requesting') : t('myPrescriptionsPage.requestRefill')}
           </Button>
-          {submitted && <span className="text-sm text-success">{t('settingsPage.saved')}</span>}
+          {submitted && <span className="text-sm text-success">{t('myPrescriptionsPage.refillRequested')}</span>}
         </form>
       )}
       {error && <div className="mt-3"><ErrorBanner message={error} /></div>}

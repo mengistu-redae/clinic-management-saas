@@ -23,6 +23,7 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import Button from '../../components/Button.jsx';
 import PatientChart from '../../components/PatientChart.jsx';
 import InvoicePanel from '../../components/InvoicePanel.jsx';
 import VisitSummaryLink from '../../components/VisitSummaryLink.jsx';
@@ -150,7 +151,7 @@ export default function AppointmentDetail() {
         </p>
         {appointment.contactPhone && <p className="text-xs text-ink-muted">{appointment.contactPhone}</p>}
 
-        <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-sm">
+        <dl className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-ink-muted">{t('appointmentDetail.reference')}</dt>
             <dd className="font-mono text-xs text-ink">{appointment.appointmentRef}</dd>
@@ -175,12 +176,9 @@ export default function AppointmentDetail() {
       {hasRole('clinic_admin') && DOCUMENTABLE_STATUSES.has(status) && (
         <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-200 bg-surface p-4">
           <p className="text-sm text-ink-muted">{t('fdAppointmentDetail.documentEncounterNote')}</p>
-          <Link
-            to={`/provider/appointments/${id}/encounter`}
-            className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
-          >
+          <Button as={Link} to={`/provider/appointments/${id}/encounter`} className="shrink-0">
             {t('fdAppointmentDetail.documentEncounter')}
-          </Link>
+          </Button>
         </div>
       )}
 
@@ -195,53 +193,32 @@ export default function AppointmentDetail() {
                 </span>
                 <input value={presentedId} onChange={(e) => setPresentedId(e.target.value)} className={inputClass} />
               </label>
-              <button
+              <Button
                 type="button"
                 disabled={checkIn.isPending}
                 onClick={() => runAction(checkIn, presentedId.trim() ? { presentedIdNumber: presentedId.trim() } : undefined)}
-                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
               >
                 {checkIn.isPending ? t('fdAppointmentDetail.checkingIn') : t('fdAppointmentDetail.checkIn')}
-              </button>
-              <button
-                type="button"
-                disabled={markNoShow.isPending}
-                onClick={() => runAction(markNoShow)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-ink-muted hover:bg-slate-50"
-              >
+              </Button>
+              <Button type="button" variant="secondary" disabled={markNoShow.isPending} onClick={() => runAction(markNoShow)}>
                 {t('fdAppointmentDetail.markNoShow')}
-              </button>
+              </Button>
             </div>
           )}
           {status === 'checked_in' && (
-            <button
-              type="button"
-              disabled={room.isPending}
-              onClick={() => runAction(room)}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
-            >
+            <Button type="button" disabled={room.isPending} onClick={() => runAction(room)}>
               {room.isPending ? t('fdAppointmentDetail.rooming') : t('fdAppointmentDetail.room')}
-            </button>
+            </Button>
           )}
           {status === 'roomed' && (
-            <button
-              type="button"
-              disabled={start.isPending}
-              onClick={() => runAction(start)}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
-            >
+            <Button type="button" disabled={start.isPending} onClick={() => runAction(start)}>
               {start.isPending ? t('fdAppointmentDetail.starting') : t('fdAppointmentDetail.startVisit')}
-            </button>
+            </Button>
           )}
           {status === 'with_provider' && (
-            <button
-              type="button"
-              disabled={checkOut.isPending}
-              onClick={() => runAction(checkOut)}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
-            >
+            <Button type="button" disabled={checkOut.isPending} onClick={() => runAction(checkOut)}>
               {checkOut.isPending ? t('fdAppointmentDetail.checkingOut') : t('fdAppointmentDetail.checkOut')}
-            </button>
+            </Button>
           )}
           {actionError && (
             <div className="mt-3">
@@ -267,38 +244,26 @@ export default function AppointmentDetail() {
 
       {!isTerminal && (
         <div className="mt-5 flex items-center gap-3">
-          <Link
-            to={`/front-desk/appointments/${id}/reschedule`}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-ink hover:bg-slate-50"
-          >
+          <Button as={Link} to={`/front-desk/appointments/${id}/reschedule`} variant="secondary">
             {t('appointmentDetail.reschedule')}
-          </Link>
+          </Button>
           {!confirmingCancel ? (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => setConfirmingCancel(true)}
-              className="rounded-lg border border-danger/40 px-4 py-2 text-sm font-medium text-danger hover:bg-danger-light"
+              className="border-danger/40 text-danger hover:bg-danger-light"
             >
               {t('appointmentDetail.cancelAppointment')}
-            </button>
+            </Button>
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
               <p className="text-sm text-danger">{t('appointmentDetail.cancelConfirm')}</p>
-              <button
-                type="button"
-                disabled={cancelAppointment.isPending}
-                onClick={handleCancel}
-                className="shrink-0 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger/90 disabled:opacity-50"
-              >
+              <Button variant="danger" size="sm" disabled={cancelAppointment.isPending} onClick={handleCancel}>
                 {cancelAppointment.isPending ? t('appointmentDetail.cancelling') : t('appointmentDetail.yesCancel')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmingCancel(false)}
-                className="shrink-0 text-sm text-ink-muted hover:underline"
-              >
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmingCancel(false)}>
                 {t('appointmentDetail.neverMind')}
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -308,7 +273,7 @@ export default function AppointmentDetail() {
         <div className="mt-4 flex items-center justify-between rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success">
           <span>{t('fdAppointmentDetail.cancelSeriesSuccess', { count: cancelSeriesResult })}</span>
           <button type="button" onClick={() => setCancelSeriesResult(null)} className="font-semibold hover:underline">
-            {t('clinicsPage.dismiss')}
+            {t('common.dismiss')}
           </button>
         </div>
       )}
@@ -332,21 +297,12 @@ export default function AppointmentDetail() {
           ) : (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
               <p className="text-sm text-danger">{t('fdAppointmentDetail.cancelSeriesConfirm')}</p>
-              <button
-                type="button"
-                disabled={cancelSeries.isPending}
-                onClick={handleCancelSeries}
-                className="shrink-0 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger/90 disabled:opacity-50"
-              >
+              <Button variant="danger" size="sm" disabled={cancelSeries.isPending} onClick={handleCancelSeries}>
                 {cancelSeries.isPending ? t('fdAppointmentDetail.cancellingSeries') : t('fdAppointmentDetail.yesCancelSeries')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmingCancelSeries(false)}
-                className="shrink-0 text-sm text-ink-muted hover:underline"
-              >
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmingCancelSeries(false)}>
                 {t('appointmentDetail.neverMind')}
-              </button>
+              </Button>
             </div>
           )}
         </div>

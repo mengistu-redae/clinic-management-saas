@@ -115,7 +115,11 @@
     "delete": "አጥፋ",
     "search": "ፈልግ…",
     "noResults": "ምንም ውጤት የለም",
-    "noResultsHint": "የተለየ ፍለጋ ወይም ማጣሪያ ይሞክሩ።"
+    "noResultsHint": "የተለየ ፍለጋ ወይም ማጣሪያ ይሞክሩ።",
+    "dismiss": "ዝጋ",
+    "filterByStatus": "በሁኔታ ማጣሪያ",
+    "copy": "ቅዳ",
+    "copied": "ተቀድቷል"
   },
   "appointmentDetail": {
     "title": "ቀጠሮ",
@@ -134,6 +138,7 @@
     "errorCancel": "ይህን ቀጠሮ መሰረዝ አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
     "notAvailableGuest": "ይህ ቀጠሮ አሁን እዚህ አይገኝም። በቀጠሮ ማጣቀሻዎ እና ስልክ ቁጥርዎ ይፈልጉት፦",
     "notFound": "ቀጠሮ አልተገኘም።",
+    "typeWithProvider": "{{type}} ከ{{provider}} ጋር",
     "bookedWithoutAccountPrefix": "ያለ መለያ ተይዟል - ማጣቀሻዎን ያስቀምጡ",
     "bookedWithoutAccountSuffix": "እና ስልክ ቁጥርዎን። ይህን ቀጠሮ በማንኛውም ጊዜ መልሰው ለማግኘት፦"
   },
@@ -693,7 +698,10 @@
     "legendLost": "ያልመጣ / የተሰረዘ",
     "unknownProvider": "ያልተመደበ",
     "noDataYet": "እስካሁን በቂ መረጃ የለም።",
-    "errorLoad": "ትንታኔን መጫን አልተቻለም።"
+    "errorLoad": "ትንታኔን መጫን አልተቻለም።",
+    "srSummaryTimeSeries": "ገበታ፦ {{count}} ቀናት፣ ጠቅላላ {{total}}።",
+    "srSummaryCategories": "ገበታ፦ {{count}} ምድቦች፣ ከፍተኛው {{topLabel}} በ{{top}}።",
+    "srSummaryStatusBreakdown": "በሁኔታ የቀጠሮ ብዛቶች፦ {{list}}።"
   },
   "frontDeskDashboard": {
     "title": "አቀባበል",
@@ -737,7 +745,10 @@
     "myAppointmentsPanel": "የእኔ ቀጠሮዎች",
     "myLabOrdersPanel": "የእኔ የላብራቶሪ ትዕዛዞች",
     "emptyAppointmentsDescription": "የሚይዙአቸው ቀጠሮዎች እዚህ ይታያሉ።",
-    "emptyLabOrdersDescription": "ያደረጓቸው የላብራቶሪ ትዕዛዞች እና ጥያቄዎች እዚህ ይታያሉ።"
+    "emptyLabOrdersDescription": "ያደረጓቸው የላብራቶሪ ትዕዛዞች እና ጥያቄዎች እዚህ ይታያሉ።",
+    "totalHint": "ጠቅላላ {{count}}",
+    "viewAll": "ሁሉንም ይመልከቱ",
+    "emptyTitle": "እስካሁን ምንም ቀጠሮ የለም"
   },
   "rooms": {
     "roomName": "የክፍል ስም",
@@ -796,6 +807,7 @@
     "loading": "በመጫን ላይ…",
     "selectClinic": "ክሊኒክ ይምረጡ…",
     "tests": "ምርመራዎች",
+    "testNamePlaceholder": "ለምሳሌ የኮሌስትሮል ምርመራ",
     "addAnotherTest": "+ ሌላ ምርመራ ጨምር",
     "notes": "ማስታወሻ (አማራጭ)",
     "submitting": "በማስገባት ላይ…",
@@ -816,6 +828,7 @@
   "trackLabOrder": {
     "subtitle": "የትዕዛዝ ማጣቀሻ ቁጥር እና በክሊኒኩ ላይ የተመዘገበውን የስልክ ቁጥር ያስገቡ።",
     "reference": "ማጣቀሻ",
+    "referencePlaceholder": "ለምሳሌ A1B2C3",
     "phoneNumber": "የስልክ ቁጥር",
     "track": "ይከታተሉ",
     "notFound": "ለዚያ ማጣቀሻ እና ስልክ ቁጥር ምንም የላብራቶሪ ትዕዛዝ አልተገኘም። ሁለቱንም በድጋሚ ያረጋግጡ እና እንደገና ይሞክሩ።",
@@ -853,6 +866,7 @@
     "notesOptional": "ማስታወሻ (አማራጭ)",
     "dispense": "አድርስ",
     "dispensing": "በማድረስ ላይ…",
+    "dispensed": "ደርሷል።",
     "errorFields": "መድሃኒት፣ የክምችት ጎድጓዳ እና አዎንታዊ ብዛት ያስፈልጋሉ።",
     "errorDispense": "ይህን ማድረስ አልተቻለም - ጎድጓዳው በቂ ክምችት እንዳለው ያረጋግጡ።",
     "unlabeledBatch": "ያልተሰየመ ጎድጓዳ",
@@ -904,6 +918,7 @@
     "assetStatusChartTitle": "ንብረቶች በሁኔታ",
     "assetStatusChartSubtitle": "አሁናዊ እይታ፣ ሁሉም ንብረቶች",
     "category": "ምድብ",
+    "itemNamePlaceholder": "የናይትሪል ጓንት (ሳጥን)",
     "addItem": "ዕቃ ጨምር",
     "errorCreateItem": "ይህን ዕቃ መፍጠር አልተቻለም።",
     "emptyItemsTitle": "እስካሁን ምንም ዕቃ የለም",
@@ -955,6 +970,7 @@
     "purchaseDateOptional": "የግዢ ቀን (አማራጭ)",
     "purchasePriceOptional": "የግዢ ዋጋ (አማራጭ)",
     "warrantyExpiryOptional": "የዋስትና ማብቂያ (አማራጭ)",
+    "assetNamePlaceholder": "አውቶክሌቭ",
     "addAsset": "ንብረት ጨምር",
     "errorCreateAsset": "ይህን ንብረት መፍጠር አልተቻለም።",
     "emptyAssetsTitle": "እስካሁን ምንም ንብረት የለም",
@@ -1029,7 +1045,8 @@
     "refillStatus_approved": "ጸድቋል",
     "refillStatus_denied": "ውድቅ ተደርጓል",
     "emptyTitle": "እስካሁን ምንም ማዘዣ የለም",
-    "emptyDescription": "ከጉብኝቶችዎ የተገኙ ማዘዣዎች እዚህ ይታያሉ።"
+    "emptyDescription": "ከጉብኝቶችዎ የተገኙ ማዘዣዎች እዚህ ይታያሉ።",
+    "refillRequested": "የመሙላት ጥያቄ ተልኳል።"
   },
   "refillRequestsPage": {
     "intro": "ነባር ማዘዣ እንደገና ለመሙላት በታካሚ የቀረቡ ጥያቄዎች።",
@@ -1074,6 +1091,7 @@
     "netIncomeThisMonth": "የዚህ ወር የተጣራ ገቢ",
     "employeesOnPayroll": "{{count}} በደመወዝ ክፍያ ላይ",
     "code": "ኮድ",
+    "accountNamePlaceholder": "የሚከፈል ሂሳቦች",
     "accountType": "ዓይነት",
     "accountsDescription": "መዝገቡን የሚደግፉ የሂሳብ ደብተር ሂሳቦች - የመነሻ ስብስብ (ገንዘብ፣ የአገልግሎት ገቢ፣ ተመላሽ ገንዘብና ቅናሾች፣ የደመወዝ ወጪ) ይህ ዝርዝር ለመጀመሪያ ጊዜ ሲጫን ራሱ በራሱ ይመዘገባል።",
     "errorAccountFieldsRequired": "ኮድ እና ስም ያስፈልጋሉ።",

@@ -78,7 +78,7 @@ export default function InventoryItems() {
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('common.name')}>
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nitrile Gloves (Box)" className={`${inputClass} w-56`} />
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('inventoryPage.itemNamePlaceholder')} className={`${inputClass} w-56`} />
         </Field>
         <Field label={t('inventoryPage.category')}>
           <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className={`${inputClass} w-40`}>

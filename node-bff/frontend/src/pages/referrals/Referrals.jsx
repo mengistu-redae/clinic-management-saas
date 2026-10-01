@@ -5,10 +5,8 @@ import ErrorBanner from '../../components/ErrorBanner.jsx';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import Button from '../../components/Button.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import { formatDateTime } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 const STATUS_STYLE = {
   pending: 'bg-slate-100 text-ink-muted',
@@ -168,11 +166,11 @@ export default function Referrals() {
 
             <div className="mt-4 flex items-center gap-4 text-sm">
               <label className="flex items-center gap-2">
-                <input type="radio" checked={form.kind === 'internal'} onChange={() => setForm({ ...form, kind: 'internal' })} />
+                <input type="radio" checked={form.kind === 'internal'} onChange={() => setForm({ ...form, kind: 'internal' })} className="h-4 w-4 accent-brand" />
                 {t('referralsPage.internalLabel')}
               </label>
               <label className="flex items-center gap-2">
-                <input type="radio" checked={form.kind === 'external'} onChange={() => setForm({ ...form, kind: 'external' })} />
+                <input type="radio" checked={form.kind === 'external'} onChange={() => setForm({ ...form, kind: 'external' })} className="h-4 w-4 accent-brand" />
                 {t('referralsPage.externalLabel')}
               </label>
             </div>
@@ -293,14 +291,5 @@ function ReferralEditPanel({ referral }) {
         {saved && <span className="text-sm text-success">{t('settingsPage.saved')}</span>}
       </div>
     </form>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

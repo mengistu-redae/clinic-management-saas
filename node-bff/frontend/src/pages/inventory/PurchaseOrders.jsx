@@ -15,6 +15,7 @@ import PageContainer from '../../components/PageContainer.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
+import Card from '../../components/Card.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
 
 const inputClass =
@@ -69,11 +70,27 @@ export default function InventoryPurchaseOrders() {
     setLines(lines.filter((_, i) => i !== index));
   }
 
+  // A line with neither field filled in is just an unused extra row (silently
+  // dropped on submit, same as before) - but a line with only ONE of
+  // owner/quantity filled in used to be silently dropped too, with no
+  // indication anything was lost. That's now blocked rather than silent:
+  // handleCreate refuses to submit while any line is in this half-filled
+  // state, and the line itself gets a visible red outline so it's obvious
+  // which one needs finishing (or removing).
+  function lineStatus(line) {
+    const hasOwner = Boolean(line.ownerId);
+    const hasQuantity = Number(line.quantityOrdered) > 0;
+    if (hasOwner && hasQuantity) return 'valid';
+    if (!hasOwner && !hasQuantity) return 'empty';
+    return 'incomplete';
+  }
+
   async function handleCreate(event) {
     event.preventDefault();
     setFormError(null);
-    const validLines = lines.filter((l) => l.ownerId && Number(l.quantityOrdered) > 0);
-    if (!supplierId || validLines.length === 0) {
+    const statuses = lines.map(lineStatus);
+    const validLines = lines.filter((l, i) => statuses[i] === 'valid');
+    if (!supplierId || validLines.length === 0 || statuses.includes('incomplete')) {
       setFormError(t('inventoryPage.errorLinesRequired'));
       return;
     }
@@ -127,7 +144,12 @@ export default function InventoryPurchaseOrders() {
 
         <div className="flex flex-col gap-2">
           {lines.map((line, index) => (
-            <div key={index} className="flex flex-wrap items-end gap-3 rounded-lg bg-slate-50 p-3">
+            <div
+              key={index}
+              className={`flex flex-wrap items-end gap-3 rounded-lg bg-slate-50 p-3 ${
+                lineStatus(line) === 'incomplete' ? 'ring-2 ring-danger/60' : ''
+              }`}
+            >
               <Field label={t('inventoryPage.lineType')}>
                 <select
                   value={line.lineType}
@@ -214,24 +236,26 @@ function OrderLines({ order, lines, lineOwnerName }) {
   return (
     <div>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('inventoryPage.lines')}</p>
-      <table className="mb-3 w-full text-left text-sm">
-        <thead>
-          <tr className="text-xs uppercase tracking-wide text-ink-muted">
-            <th className="py-1 pr-4 font-semibold">{t('common.name')}</th>
-            <th className="py-1 pr-4 font-semibold">{t('inventoryPage.quantityOrdered')}</th>
-            <th className="py-1 font-semibold">{t('inventoryPage.unitCost')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => (
-            <tr key={line.id} className="border-t border-slate-100">
-              <td className="py-1.5 pr-4">{lineOwnerName(line)}</td>
-              <td className="py-1.5 pr-4 font-mono">{line.quantityOrdered}</td>
-              <td className="py-1.5 font-mono">{line.unitCost != null ? formatCurrency(line.unitCost) : '—'}</td>
+      <Card className="mb-3 overflow-x-auto p-0">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-ink-muted">
+              <th className="px-3 py-2 font-semibold">{t('common.name')}</th>
+              <th className="px-3 py-2 font-semibold">{t('inventoryPage.quantityOrdered')}</th>
+              <th className="px-3 py-2 font-semibold">{t('inventoryPage.unitCost')}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {lines.map((line) => (
+              <tr key={line.id} className="border-b border-slate-100 last:border-0">
+                <td className="px-3 py-2">{lineOwnerName(line)}</td>
+                <td className="px-3 py-2 font-mono">{line.quantityOrdered}</td>
+                <td className="px-3 py-2 font-mono">{line.unitCost != null ? formatCurrency(line.unitCost) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
 
       {order.notes && <p className="mb-3 text-sm text-ink-muted">{order.notes}</p>}
 

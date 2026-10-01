@@ -6,6 +6,7 @@ import { ApiError } from '../../api/client.js';
 import SlotPicker from '../../components/booking/SlotPicker.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
+import Button from '../../components/Button.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 
 const selectClass =
@@ -66,6 +67,7 @@ export default function Reschedule() {
           }}
           className={selectClass}
         >
+          <option value="">{t('booking.select')}</option>
           {providersQuery.data?.map((p) => (
             <option key={p.id} value={p.id}>
               {p.fullName}
@@ -87,14 +89,15 @@ export default function Reschedule() {
 
       {selectedSlot && (
         <div className="mt-6">
-          <button
+          <Button
             type="button"
+            variant="accent"
             disabled={reschedule.isPending}
             onClick={handleConfirm}
-            className="rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
+            className="px-6 py-2.5"
           >
             {reschedule.isPending ? t('reschedule.rescheduling') : t('reschedule.confirmNewTime')}
-          </button>
+          </Button>
         </div>
       )}
 

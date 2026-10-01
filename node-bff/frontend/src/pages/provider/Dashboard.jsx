@@ -7,6 +7,7 @@ import StatusPill from '../../components/StatusPill.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
+import Card from '../../components/Card.jsx';
 import { formatTime } from '../../lib/format.js';
 
 /**
@@ -66,7 +67,7 @@ export default function ProviderDashboard() {
         />
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-surface p-4 shadow-sm">
+      <Card>
         <p className="mb-3 text-sm font-semibold text-ink">{t('providerDashboard.appointmentsToday')}</p>
         {data.length === 0 ? (
           <EmptyState title={t('providerDashboard.emptyTitle')} description={t('providerDashboard.emptyDescription')} />
@@ -92,7 +93,7 @@ export default function ProviderDashboard() {
             ))}
           </ul>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

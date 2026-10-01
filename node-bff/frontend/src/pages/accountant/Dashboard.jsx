@@ -6,6 +6,7 @@ import PageHeader from '../../components/PageHeader.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
+import Card from '../../components/Card.jsx';
 import { formatCurrency } from '../../lib/format.js';
 
 const CASH_ACCOUNT_CODE = '1000';
@@ -67,21 +68,21 @@ export default function AccountantDashboard() {
       </div>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Link to="/accountant/accounts" className="rounded-xl border border-slate-200 bg-surface p-4 text-sm font-semibold text-ink transition-shadow hover:shadow-md">
+        <Card as={Link} to="/accountant/accounts" hover className="text-sm font-semibold text-ink">
           {t('nav.accountant.accounts')}
-        </Link>
-        <Link to="/accountant/journal" className="rounded-xl border border-slate-200 bg-surface p-4 text-sm font-semibold text-ink transition-shadow hover:shadow-md">
+        </Card>
+        <Card as={Link} to="/accountant/journal" hover className="text-sm font-semibold text-ink">
           {t('nav.accountant.journal')}
-        </Link>
-        <Link to="/accountant/employees" className="rounded-xl border border-slate-200 bg-surface p-4 text-sm font-semibold text-ink transition-shadow hover:shadow-md">
+        </Card>
+        <Card as={Link} to="/accountant/employees" hover className="text-sm font-semibold text-ink">
           {t('accountantPage.employeesOnPayroll', { count: (employees.data || []).length })}
-        </Link>
-        <Link to="/accountant/payroll" className="rounded-xl border border-slate-200 bg-surface p-4 text-sm font-semibold text-ink transition-shadow hover:shadow-md">
+        </Card>
+        <Card as={Link} to="/accountant/payroll" hover className="text-sm font-semibold text-ink">
           {t('nav.accountant.payroll')}
-        </Link>
-        <Link to="/accountant/budgets" className="rounded-xl border border-slate-200 bg-surface p-4 text-sm font-semibold text-ink transition-shadow hover:shadow-md">
+        </Card>
+        <Card as={Link} to="/accountant/budgets" hover className="text-sm font-semibold text-ink">
           {t('nav.accountant.budgets')}
-        </Link>
+        </Card>
       </div>
     </PageContainer>
   );

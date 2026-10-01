@@ -13,13 +13,12 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import { formatCurrency } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 const FORMS = ['tablet', 'capsule', 'syrup', 'injection', 'other'];
 const WRITE_OFF_STATUSES = ['expired', 'recalled'];
@@ -94,7 +93,7 @@ export default function Medications() {
 
   return (
     <PageContainer width="lg">
-      <h1 className="mb-6 text-2xl font-bold text-ink">{t('nav.pharmacist.medications')}</h1>
+      <PageHeader title={t('nav.pharmacist.medications')} />
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('common.name')}>
@@ -280,7 +279,7 @@ function StockBatchesPanel({ medication }) {
           </div>
           <div className="flex items-center gap-3 text-sm">
             {hasRole('clinic_admin') && (
-              <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <label className="flex items-center gap-1.5 border-r border-slate-200 pr-3 text-xs text-ink-muted">
                 {t('controlledSubstancesPage.schedule')}
                 <select
                   value={medication.controlledSubstanceSchedule || ''}
@@ -293,10 +292,12 @@ function StockBatchesPanel({ medication }) {
                 </select>
               </label>
             )}
-            <button type="button" onClick={startEdit} className="text-brand-text hover:underline">{t('common.edit')}</button>
-            <button type="button" onClick={toggleActive} className="text-ink-muted hover:underline">
-              {medication.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
-            </button>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={startEdit} className="text-brand-text hover:underline">{t('common.edit')}</button>
+              <button type="button" onClick={toggleActive} className="text-ink-muted hover:underline">
+                {medication.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -368,14 +369,5 @@ function StockBatchesPanel({ medication }) {
         {batchError && <div className="mt-3"><ErrorBanner message={batchError} /></div>}
       </div>
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

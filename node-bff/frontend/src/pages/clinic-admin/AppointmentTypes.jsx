@@ -6,10 +6,8 @@ import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Button from '../../components/Button.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import { formatCurrency } from '../../lib/format.js';
-
-const inputClass =
-  'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 const emptyForm = { name: '', durationMinutes: '30', priceAmount: '' };
 
@@ -122,7 +120,7 @@ function TypeEditPanel({ type }) {
   }
 
   return (
-    <div onClick={(e) => e.stopPropagation()}>
+    <div>
       <div className="flex flex-wrap items-end gap-3">
         <Field label={t('common.name')}>
           <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={`${inputClass} w-56`} />
@@ -142,14 +140,5 @@ function TypeEditPanel({ type }) {
       </div>
       {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
     </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block text-left">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      {children}
-    </label>
   );
 }

@@ -27,7 +27,10 @@ export default function AccountantJournal() {
 
   function accountLabel(accountId) {
     const account = accountById[accountId];
-    return account ? `${account.code} ${account.name}` : accountId;
+    if (account) return `${account.code} ${account.name}`;
+    // accounts/entries fetch concurrently - a row expanded before `accounts`
+    // finishes loading would otherwise show a raw, meaningless UUID.
+    return accounts.isLoading ? '—' : accountId;
   }
 
   const trialBalanceColumns = [

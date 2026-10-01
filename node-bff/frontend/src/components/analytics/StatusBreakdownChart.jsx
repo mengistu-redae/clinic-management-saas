@@ -38,9 +38,11 @@ export default function StatusBreakdownChart({ data }) {
   });
 
   const statusLabel = (s) => t(`status.${s}`, { defaultValue: s });
+  const srList = rows.map((r) => `${statusLabel(r.status)}: ${r.total}`).join(', ');
 
   return (
     <>
+      <p className="sr-only">{t('clinicAnalytics.srSummaryStatusBreakdown', { list: srList })}</p>
       <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-ink-muted">
         <LegendSwatch color={palette.primary} label={t('clinicAnalytics.legendInProgress')} />
         <LegendSwatch color={palette.danger} label={t('clinicAnalytics.legendLost')} />

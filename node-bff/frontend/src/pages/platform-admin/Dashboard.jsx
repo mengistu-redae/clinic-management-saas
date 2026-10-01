@@ -6,6 +6,8 @@ import StatusPill from '../../components/StatusPill.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
 
 /** Platform-admin landing page - see GET /api/platform/clinics (every clinic, any status). */
 export default function PlatformAdminDashboard() {
@@ -28,12 +30,14 @@ export default function PlatformAdminDashboard() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-ink">{t('platformAdminDashboard.title')}</h1>
-        <Link to="/platform-admin/clinics" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
-          {t('platformAdminDashboard.onboardClinic')}
-        </Link>
-      </div>
+      <PageHeader
+        title={t('platformAdminDashboard.title')}
+        actions={
+          <Button as={Link} to="/platform-admin/clinics">
+            {t('platformAdminDashboard.onboardClinic')}
+          </Button>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Link to="/platform-admin/clinics" className="block transition-shadow hover:shadow-md">

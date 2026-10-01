@@ -4,11 +4,10 @@ import { useTrackLabOrder } from '../api/queries.js';
 import { ApiError } from '../api/client.js';
 import StatusPill from '../components/StatusPill.jsx';
 import Skeleton from '../components/Skeleton.jsx';
+import ErrorBanner from '../components/ErrorBanner.jsx';
 import { formatDateTime } from '../lib/format.js';
 import PageContainer from '../components/PageContainer.jsx';
-
-const inputClass =
-  'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+import { inputClass } from '../components/Field.jsx';
 
 /**
  * Reachable without logging in - GET /api/lab-orders/track/{ref}?phone=
@@ -41,11 +40,16 @@ export default function TrackLabOrder() {
       <form onSubmit={handleSubmit} className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <label className="block">
           <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('trackLabOrder.reference')}</span>
-          <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="e.g. A1B2C3" className={`${inputClass} font-mono uppercase`} />
+          <input
+            value={ref}
+            onChange={(e) => setRef(e.target.value)}
+            placeholder={t('trackLabOrder.referencePlaceholder')}
+            className={`${inputClass} w-full font-mono uppercase`}
+          />
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('trackLabOrder.phoneNumber')}</span>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} className={`${inputClass} w-full`} />
         </label>
         <button
           type="submit"
@@ -58,15 +62,9 @@ export default function TrackLabOrder() {
 
       {trackQuery.isLoading && <Skeleton className="h-32 w-full" />}
 
-      {notFound && (
-        <div className="rounded-xl border border-danger/30 bg-danger-light px-4 py-3 text-sm text-danger">
-          {t('trackLabOrder.notFound')}
-        </div>
-      )}
+      {notFound && <ErrorBanner message={t('trackLabOrder.notFound')} onRetry={() => trackQuery.refetch()} />}
       {trackQuery.isError && !notFound && (
-        <div className="rounded-xl border border-danger/30 bg-danger-light px-4 py-3 text-sm text-danger">
-          {trackQuery.error?.message || t('common.somethingWrong')}
-        </div>
+        <ErrorBanner message={trackQuery.error?.message} onRetry={() => trackQuery.refetch()} />
       )}
 
       {trackQuery.data && (

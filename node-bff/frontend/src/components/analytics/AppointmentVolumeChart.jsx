@@ -20,9 +20,14 @@ export default function AppointmentVolumeChart({ data }) {
   }
 
   const tickInterval = Math.max(0, Math.ceil(data.length / 7) - 1);
+  const total = data.reduce((sum, d) => sum + Number(d.total || 0), 0);
 
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <>
+      {/* Recharts/SVG has no built-in screen-reader narration - a visually-hidden
+          sentence is this chart's only text alternative. */}
+      <p className="sr-only">{t('clinicAnalytics.srSummaryTimeSeries', { count: data.length, total })}</p>
+      <ResponsiveContainer width="100%" height={220}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={palette.grid} vertical={false} />
         {/* Recharts calls tickFormatter(value, index) - passing formatDayLabel directly leaks the tick index into its own second "zone" param, throwing under "clinic" timezone mode once index > 0 (a real bug found live in phase 34). */}
@@ -47,6 +52,7 @@ export default function AppointmentVolumeChart({ data }) {
           activeDot={{ r: 5, strokeWidth: 2, stroke: palette.surface }}
         />
       </AreaChart>
-    </ResponsiveContainer>
+      </ResponsiveContainer>
+    </>
   );
 }

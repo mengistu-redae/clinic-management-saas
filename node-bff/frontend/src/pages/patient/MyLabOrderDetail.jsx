@@ -6,6 +6,7 @@ import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
 import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
 
 /**
  * Read-only patient view of one lab order - there's no dedicated
@@ -39,13 +40,11 @@ export default function MyLabOrderDetail() {
 
   return (
     <PageContainer width="xl">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-ink">{t('myLabOrderDetail.title')}</h1>
-          <p className="font-mono text-xs text-ink-muted">{order.orderRef}</p>
-        </div>
-        <StatusPill status={order.status} />
-      </div>
+      <PageHeader
+        title={t('myLabOrderDetail.title')}
+        description={<span className="font-mono text-xs">{order.orderRef}</span>}
+        actions={<StatusPill status={order.status} />}
+      />
 
       {order.status === 'requested' && (
         <div className="mb-4 rounded-lg bg-warning-light px-3 py-2 text-sm text-warning">
@@ -69,8 +68,8 @@ export default function MyLabOrderDetail() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                <th className="pb-1 pr-3 font-semibold">{t('myLabOrderDetail.test')}</th>
-                {showResults && <th className="pb-1 font-semibold">{t('myLabOrderDetail.result')}</th>}
+                <th scope="col" className="pb-1 pr-3 font-semibold">{t('myLabOrderDetail.test')}</th>
+                {showResults && <th scope="col" className="pb-1 font-semibold">{t('myLabOrderDetail.result')}</th>}
               </tr>
             </thead>
             <tbody>

@@ -25,7 +25,11 @@ export default function MedicationDispenseCountChart({ data }) {
     .slice(0, 8);
 
   return (
-    <ResponsiveContainer width="100%" height={240}>
+    <>
+      <p className="sr-only">
+        {t('clinicAnalytics.srSummaryCategories', { count: rows.length, topLabel: rows[0]?.name, top: rows[0]?.total })}
+      </p>
+      <ResponsiveContainer width="100%" height={240}>
       <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 32 }}>
         <CartesianGrid stroke={palette.grid} vertical={false} />
         <XAxis
@@ -42,6 +46,7 @@ export default function MedicationDispenseCountChart({ data }) {
         <Tooltip content={<ChartTooltip formatValue={(v) => v} />} />
         <Bar dataKey="total" fill={palette.primary} radius={[4, 4, 0, 0]} maxBarSize={32} />
       </BarChart>
-    </ResponsiveContainer>
+      </ResponsiveContainer>
+    </>
   );
 }
