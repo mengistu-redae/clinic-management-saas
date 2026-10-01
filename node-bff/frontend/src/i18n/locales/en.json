@@ -61,7 +61,10 @@
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
     "collapse": "Collapse sidebar",
-    "expand": "Expand sidebar"
+    "expand": "Expand sidebar",
+    "groupPharmacy": "Pharmacy",
+    "groupFinance": "Finance",
+    "groupInventory": "Inventory"
   },
   "userMenu": {
     "account": "Account"

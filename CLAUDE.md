@@ -3460,6 +3460,81 @@ prescriptions/refills) are built and live-verified. Every role and
 every backend API built across this whole project now has a real
 frontend.
 
+## Sidebar nav arrangement review (2026-10-01)
+
+The user asked for an evaluation of the menu arrangement for every
+role - a real review, not a new feature, prompted by the sidebar
+having organically grown to 19 flat items for `clinic_admin` across
+the six gap-closing phases above with no pass ever taken on the
+*arrangement* itself (every one of those phases added a correct link
+in a reasonable place, but none stepped back to look at the resulting
+whole). Three real, concrete problems were found and fixed, all in
+`layout/Sidebar.jsx`:
+
+- **A real access gap, not just a cosmetic one**: `clinic_admin`'s own
+  curated accountant links only ever exposed Accounts + Payroll, but
+  every `/accountant/*` route already grants `clinic_admin` full
+  backend access (confirmed in `App.jsx` - same `roles={['accountant',
+  'clinic_admin']}` on all six routes, per frontend phase R's own
+  design). Journal, Employees, and Budgets were reachable only by
+  typing the URL directly - no link anywhere. Fixed by adding all
+  three, matching the access the backend already grants. Live
+  -confirmed: `demo-clinic-admin` clicking the new Journal link now
+  loads real trial-balance/journal-entry data that was previously
+  unreachable through the UI.
+- **No grouping at all for what's functionally several departments
+  stacked in one list** - `clinic_admin` (19 items) and `front_desk`
+  (8 items, inventory outnumbering the role's own core 3 scheduling
+  items with nothing to separate them) both read as one undifferentiated
+  list. `navGroups()` already returned an array of group objects (one
+  per role) but every role only ever pushed exactly one; the fix
+  splits `clinic_admin` into five groups (unlabeled core/scheduling,
+  "Pharmacy", "Finance", "Inventory", then a final unlabeled Settings
+  group) and `front_desk` into two (unlabeled core, "Inventory") -
+  `SidebarContent` renders an optional uppercase `group.heading` above
+  a group's items when present and not collapsed (collapsed mode skips
+  headings entirely, matching how item labels are already hidden
+  there). New `sidebar.groupPharmacy`/`groupFinance`/`groupInventory`
+  i18n keys - `"Finance"`, not "Accounting", to match the term this
+  app already uses for this exact domain (`accountantPage.dashboardTitle`),
+  not a new parallel name for the same thing.
+- **Three adjacent, visually-identical `ClipboardIcon` uses** - Drug
+  Interactions/Controlled Substances/Refill Requests rendered as three
+  indistinguishable icons back to back in the collapsed icon-only
+  rail, in both `clinic_admin`'s and `pharmacist`'s own nav (the same
+  three items appear in both). Three new hand-authored stroke icons
+  added to `components/icons.jsx` (`AlertTriangleIcon`, `ShieldIcon`,
+  `RefreshIcon` - same `viewBox="0 0 24 24"`/`strokeWidth="1.75"`
+  convention every existing icon in that file already uses, no icon
+  library), applied to exactly those three items in both roles. Scoped
+  deliberately to just this one proven collision, not a general icon
+  -uniqueness pass across the whole sidebar (`ClipboardIcon`/`BoxIcon`/
+  `FlaskIcon` are still reused elsewhere, just never adjacently).
+- **Zero backend changes** - this was a pure frontend nav/IA fix, no
+  new routes, no new Keycloak role, no `node-bff`/`PUBLIC_ROUTES`
+  change.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate node-bff` (frontend
+  -only change). As a real `demo-clinic-admin` login: confirmed the
+  "PHARMACY"/"FINANCE"/"INVENTORY" headers render correctly between
+  the right groups, confirmed the three new Finance links (Journal/
+  Employees/Budgets) are present and that clicking Journal loads real
+  data; collapsed the sidebar and visually confirmed (via a zoomed
+  screenshot) the three previously-identical pharmacy icons now read
+  as a warning triangle, a shield, and a refresh/cycle glyph, clearly
+  distinct from each other and from every other icon in the rail. As a
+  real `demo-front-desk` login: confirmed the "INVENTORY" header now
+  visually separates its 5 inventory links from the role's own 3 core
+  items. Exercised both roles' updated sidebars once in Dark theme +
+  Amharic together (group headers, icons, and translated labels all
+  confirmed correctly rendered via real screenshots) before resetting
+  back to light/English.
+- Frontend: `npm run build` clean, `npm test` (36/36) unaffected (no
+  shared-component test surface touched - `Sidebar.jsx` itself has no
+  existing Vitest coverage, matching frontend phase S's own "infrastructure
+  + shared components" scope boundary, which never included page
+  -chrome components like this one).
+
 ## Phase 19: clinic-admin analytics dashboard
 
 Built 2026-09-24 at the user's direct request ("modify the dashboard

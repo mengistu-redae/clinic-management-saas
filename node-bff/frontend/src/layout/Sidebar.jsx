@@ -15,6 +15,9 @@ import {
   ReceiptIcon,
   BoxIcon,
   WrenchIcon,
+  AlertTriangleIcon,
+  ShieldIcon,
+  RefreshIcon,
 } from '../components/icons.jsx';
 
 /**
@@ -44,6 +47,11 @@ function navGroups(t, hasRole) {
         { to: '/front-desk', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
         { to: '/front-desk/patients', label: t('nav.frontDesk.bookWalkIn'), icon: UsersIcon },
         { to: '/front-desk/appointments', label: t('nav.frontDesk.appointments'), icon: CalendarIcon },
+      ],
+    });
+    groups.push({
+      heading: t('sidebar.groupInventory'),
+      items: [
         { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: BoxIcon },
         { to: '/inventory/items', label: t('nav.inventory.items'), icon: BoxIcon },
         { to: '/inventory/suppliers', label: t('nav.inventory.suppliers'), icon: BuildingIcon },
@@ -71,17 +79,43 @@ function navGroups(t, hasRole) {
         { to: '/clinic-admin/appointment-types', label: t('nav.clinicAdmin.appointmentTypes'), icon: ClipboardIcon },
         { to: '/lab-orders', label: t('nav.clinicAdmin.labOrders'), icon: FlaskIcon },
         { to: '/referrals', label: t('nav.clinicAdmin.referrals'), icon: ClipboardIcon },
+      ],
+    });
+    groups.push({
+      heading: t('sidebar.groupPharmacy'),
+      items: [
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
-        { to: '/pharmacist/drug-interactions', label: t('nav.pharmacist.drugInteractions'), icon: ClipboardIcon },
-        { to: '/pharmacist/controlled-substances', label: t('nav.pharmacist.controlledSubstances'), icon: ClipboardIcon },
-        { to: '/pharmacist/refill-requests', label: t('nav.pharmacist.refillRequests'), icon: ClipboardIcon },
+        { to: '/pharmacist/drug-interactions', label: t('nav.pharmacist.drugInteractions'), icon: AlertTriangleIcon },
+        { to: '/pharmacist/controlled-substances', label: t('nav.pharmacist.controlledSubstances'), icon: ShieldIcon },
+        { to: '/pharmacist/refill-requests', label: t('nav.pharmacist.refillRequests'), icon: RefreshIcon },
+      ],
+    });
+    groups.push({
+      // Full route parity with the accountant role itself - every /accountant/* route already
+      // grants clinic_admin the same backend access, so the nav now matches that exactly instead
+      // of only exposing Accounts/Payroll (a real gap: Journal/Employees/Budgets were reachable
+      // only by typing the URL directly).
+      heading: t('sidebar.groupFinance'),
+      items: [
         { to: '/accountant/accounts', label: t('nav.accountant.accounts'), icon: WalletIcon },
+        { to: '/accountant/journal', label: t('nav.accountant.journal'), icon: ClipboardIcon },
+        { to: '/accountant/employees', label: t('nav.accountant.employees'), icon: UsersIcon },
         { to: '/accountant/payroll', label: t('nav.accountant.payroll'), icon: ReceiptIcon },
+        { to: '/accountant/budgets', label: t('nav.accountant.budgets'), icon: ClipboardIcon },
+      ],
+    });
+    groups.push({
+      heading: t('sidebar.groupInventory'),
+      items: [
         { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: BoxIcon },
         { to: '/inventory/items', label: t('nav.inventory.items'), icon: BoxIcon },
         { to: '/inventory/suppliers', label: t('nav.inventory.suppliers'), icon: BuildingIcon },
         { to: '/inventory/purchase-orders', label: t('nav.inventory.purchaseOrders'), icon: ReceiptIcon },
         { to: '/inventory/assets', label: t('nav.inventory.assets'), icon: WrenchIcon },
+      ],
+    });
+    groups.push({
+      items: [
         { to: '/clinic-admin/settings', label: t('nav.clinicAdmin.settings'), icon: SettingsIcon },
       ],
     });
@@ -91,9 +125,9 @@ function navGroups(t, hasRole) {
       items: [
         { to: '/pharmacist', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
         { to: '/pharmacist/medications', label: t('nav.pharmacist.medications'), icon: FlaskIcon },
-        { to: '/pharmacist/drug-interactions', label: t('nav.pharmacist.drugInteractions'), icon: ClipboardIcon },
-        { to: '/pharmacist/controlled-substances', label: t('nav.pharmacist.controlledSubstances'), icon: ClipboardIcon },
-        { to: '/pharmacist/refill-requests', label: t('nav.pharmacist.refillRequests'), icon: ClipboardIcon },
+        { to: '/pharmacist/drug-interactions', label: t('nav.pharmacist.drugInteractions'), icon: AlertTriangleIcon },
+        { to: '/pharmacist/controlled-substances', label: t('nav.pharmacist.controlledSubstances'), icon: ShieldIcon },
+        { to: '/pharmacist/refill-requests', label: t('nav.pharmacist.refillRequests'), icon: RefreshIcon },
       ],
     });
   }
@@ -136,6 +170,11 @@ function SidebarContent({ collapsed, onNavigate }) {
     <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-3">
       {groups.map((group, i) => (
         <div key={i} className="flex flex-col gap-1">
+          {group.heading && !collapsed && (
+            <p className="mt-2 px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              {group.heading}
+            </p>
+          )}
           {group.items.map((item) => (
             <NavLink
               key={item.to + item.label}

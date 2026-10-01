@@ -61,7 +61,10 @@
     "openMenu": "ማውጫ ክፈት",
     "closeMenu": "ማውጫ ዝጋ",
     "collapse": "የጎን ማውጫ አሳንስ",
-    "expand": "የጎን ማውጫ ዘርጋ"
+    "expand": "የጎን ማውጫ ዘርጋ",
+    "groupPharmacy": "ፋርማሲ",
+    "groupFinance": "ፋይናንስ",
+    "groupInventory": "ክምችት"
   },
   "userMenu": {
     "account": "መለያ"

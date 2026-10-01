@@ -234,3 +234,39 @@ export function LogoutIcon(props) {
     </svg>
   );
 }
+
+/**
+ * Added to resolve three adjacent ClipboardIcon collisions in the
+ * pharmacist nav group (drug interactions/controlled substances/refill
+ * requests, previously all identical in the collapsed icon-only rail) -
+ * same hand-authored stroke-icon convention as above.
+ */
+
+export function AlertTriangleIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M10.3 3.9 1.8 18.5a1.8 1.8 0 0 0 1.5 2.7h17.4a1.8 1.8 0 0 0 1.5-2.7L13.7 3.9a1.8 1.8 0 0 0-3.4 0Z" />
+      <path d="M12 9.5v4" />
+      <path d="M12 17v.01" />
+    </svg>
+  );
+}
+
+export function ShieldIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M12 21.2s7.3-3.5 7.3-8.9V5.9L12 3.2 4.7 5.9v6.4c0 5.4 7.3 8.9 7.3 8.9Z" />
+    </svg>
+  );
+}
+
+export function RefreshIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M4 12a8 8 0 0 1 13.5-5.8L20 8.5" />
+      <path d="M20 4.5v4h-4" />
+      <path d="M20 12a8 8 0 0 1-13.5 5.8L4 15.5" />
+      <path d="M4 19.5v-4h4" />
+    </svg>
+  );
+}
