@@ -1865,14 +1865,8 @@ results" below for the full write-up.
 **L3. Critical-value alerting** - built 2026-10-02, see "Phase L3:
 critical-value alerting" below for the full write-up.
 
-**L4. Basic QC logging** - a lightweight QC-run entity (instrument
-identifier - free text in v1, no real integration; control-material
-lot; expected vs. observed value; pass/fail), logged per
-instrument/day, reviewable by `lab_technician`. Whether an out-of-range
-QC result should actually block new result entry for that instrument
-(real enforcement) or just flag it (trusting staff judgment, this app's
-own existing bias - no confirm dialogs anywhere) is a real fork worth
-asking about before this phase is built.
+**L4. Basic QC logging** - built 2026-10-02, see "Phase L4: basic QC
+logging" below for the full write-up.
 
 **L5. External reference-lab send-outs** - a new specimen status branch
 (`sent_to_reference_lab`) plus `reference_lab_name`/
@@ -2278,6 +2272,90 @@ role). New migration `V32__lab_critical_values.sql`.
   critical-value banner/acknowledge button on the future lab-technician/
   provider UI is a natural detail for whenever L8 is picked up, not
   pinned further here.
+
+## Phase L4: basic QC logging
+
+Built 2026-10-02, same session as L1-L3. One direct question was put to
+the user first - the fork L4's own sketch explicitly flagged (should a
+failing QC run actually block new result entry, or just flag it) -
+answered **flag only, no enforcement**, the recommended option, matching
+this app's existing bias toward trusting staff judgment over hard blocks
+(no confirm dialogs anywhere in this app, the restricted-test
+acknowledgment pattern lets a provider proceed past a flagged lab-order
+test rather than refusing it outright). New migration
+`V33__lab_qc_runs.sql`.
+
+- **`com.clinicops.laborder.QcRun`** (new) - one control-material run
+  logged against one instrument on one day, genuinely append-only (no
+  update/delete anywhere), same shape `AssetMaintenanceRecord`/
+  `StockAdjustment` already use for this kind of audit-weight log entry.
+  `instrumentIdentifier` is free text in v1 - there's nothing to
+  integrate with in this dev environment, matching L6's own
+  "integration-readiness, not a real integration" scope boundary.
+  `expectedRangeLow`/`expectedRangeHigh` (both required numeric) define
+  the acceptable control range; `observedValue` is a required string
+  (same "value as a string, parsed only when needed" convention
+  `AnalyteResult.value` already uses) that must itself parse as numeric
+  (400 otherwise - a real, measured observation, not something left
+  unflagged the way a non-numeric *result* value can be). `pass` is
+  computed server-side from `observedValue` against the expected range
+  at creation time, not left for the caller to self-report - the one
+  thing this log actually needs to be trustworthy.
+- **Flag-only, by design: nothing anywhere else in this app ever reads
+  `pass`** - `AnalyteResultService.enterResults` is completely untouched
+  by this phase; a failed QC run is visible only on this log itself,
+  never blocks a `lab_technician` from entering a real result against
+  the same instrument. The pinned fork's own "trusting staff judgment"
+  reasoning, held to literally rather than symbolically.
+- **`QcRunController`** (`GET`/`POST /api/lab-qc-runs`) -
+  `lab_technician`+`clinic_admin` only, deliberately not `provider` -
+  this is internal lab-operations record-keeping, not clinical data a
+  provider needs to see, unlike a critical analyte result (L3) which
+  genuinely requires the ordering clinician's own attention. `GET`
+  supports an optional `instrumentIdentifier` filter (blank-means-all,
+  same shape `MedicationController.medications(status)` already uses);
+  both list and filtered results come back newest-first. No single
+  -resource `GET {id}` - a plain list is all this log needs, same bar
+  `AssetMaintenanceRecord`'s own nested list endpoint sets.
+- **Tests**: no new pure-unit test class - this phase's own logic (the
+  pass/fail range check, the numeric-value guard) lives entirely in the
+  controller with no separate service bean, same bar phases 29/30's own
+  CRUD-shaped logic used. `QcRunControllerIntegrationTest` (new, 3
+  cases: recording a run inside the expected range computes `pass:
+  true`, outside computes `pass: false`, and the instrument filter
+  correctly narrows the list; a non-numeric `observedValue` and an
+  inverted expected range both 400; the role gate holds both
+  directions - `provider`/`front_desk` forbidden, `clinic_admin`'s
+  usual override still works). One new `TenantIsolationIntegrationTest`
+  case (`qcRunsAreNotReadableFromAnotherTenant`) - QC runs have no
+  single-resource `GET`, so the isolation check here is "clinic B's own
+  list never includes clinic A's run" rather than a 404 on a shared id,
+  the correct equivalent shape for a list-only resource. Confirmed via
+  a clean `mvn clean test-compile` and a full `mvn test` run showing
+  `Tests run: 479, Errors: 366` (up from 475/362 - exactly the 4 new
+  test methods: 3+1, all Testcontainers-blocked, no pure-unit count
+  change), 0 Failures, every error the identical pre-existing `Could
+  not find a valid Docker environment` wall (confirmed via the new
+  test class's own surefire report hitting the identical
+  `NoClassDefFoundError`) - not a regression, not a new failure mode.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V33` confirmed applied via the container's own
+  startup log (`Migrating schema "public" to version "33 - lab qc
+  runs"` -> `Successfully applied 1 migration to schema "public", now
+  at version v33`) and via a direct `flyway_schema_history` query
+  (`success = t`). No browser-automation tool was available this
+  session (same gap L1-L3 already flagged) - the new
+  `GET /api/lab-qc-runs` endpoint confirmed reachable as a real `401`
+  (not `404`) through both the direct `spring-boot-api:8081` debug port
+  and the real node-bff proxy chain on `:3000`. A real
+  `demo-lab-technician` click-through recording a genuine QC run (both
+  a passing and a failing one, confirming the failing one still leaves
+  result entry on that instrument unblocked) is still owed, same
+  standing gap L1-L3 already flagged, not newly introduced here.
+- **No frontend yet** - backend only, same as L1-L3. L8's own job; a QC
+  log view on the future lab-technician UI is a natural detail for
+  whenever L8 is picked up, not pinned further here.
 
 ## Phase 27: pharmacy clinical safety checks
 

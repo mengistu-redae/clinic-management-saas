@@ -6,6 +6,7 @@ import com.clinicops.clinic.Clinic;
 import com.clinicops.feepolicy.FeePolicy;
 import com.clinicops.laborder.CreateAnalyteDefinitionRequest;
 import com.clinicops.laborder.CreateLabOrderRequest;
+import com.clinicops.laborder.CreateQcRunRequest;
 import com.clinicops.laborder.TestItem;
 import com.clinicops.labrate.LabTestRate;
 import com.clinicops.patient.Patient;
@@ -246,6 +247,28 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/lab-orders/" + orderId + "/tests/" + testId + "/analyte-results").with(asLabTechnician("tech", b.getKeycloakOrgId())))
                 .andExpect(status().isNotFound());
+    }
+
+    /**
+     * Lab module L4 (2026-10-02) - QC runs have no single-resource GET
+     * (list-only), so the isolation check here is "clinic B's own list
+     * never includes clinic A's run" rather than a 404 on a shared id -
+     * the correct equivalent shape for a list-only resource.
+     */
+    @Test
+    void qcRunsAreNotReadableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("qc");
+        mockMvc.perform(post("/api/lab-qc-runs").with(asLabTechnician("tech", a.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new CreateQcRunRequest("ANALYZER-1", "Glucose", "LOT-100",
+                                        BigDecimal.valueOf(90), BigDecimal.valueOf(110), "100"))))
+                .andExpect(status().isOk());
+
+        Clinic b = clinicB("qc");
+        mockMvc.perform(get("/api/lab-qc-runs").with(asLabTechnician("tech", b.getKeycloakOrgId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
     }
 
     @Test
