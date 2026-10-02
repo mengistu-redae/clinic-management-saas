@@ -32,11 +32,21 @@ import java.util.UUID;
  * ('CLINIC_ADMIN', 'FRONT_DESK') throughout - phase 29's own pinned role
  * decision (general operational logistics, not a clinical judgment call
  * or pharmacy-specific concern - deliberately not the pharmacist gate).
+ *
+ * L7 (lab module, 2026-10-02) added the "lab_reagent" category - the
+ * pinned fork's answer (extend this module rather than build a second,
+ * parallel lab-only stock system) - plus LAB_TECHNICIAN read access on
+ * the four GET endpoints below, same "a role is at least as legitimate a
+ * consumer of its own stock data as front_desk" precedent PHARMACIST's
+ * own reorder-alerts widening already set. Write access (create/update/
+ * receive/write-off) stays CLINIC_ADMIN+FRONT_DESK only, unchanged -
+ * ordering/receiving stock is still general logistics, not something
+ * this app's existing role boundaries give lab_technician directly.
  */
 @RestController
 public class InventoryItemController {
 
-    private static final Set<String> VALID_CATEGORIES = Set.of("clinical_supply", "ppe", "office_supply");
+    private static final Set<String> VALID_CATEGORIES = Set.of("clinical_supply", "ppe", "office_supply", "lab_reagent");
     private static final Set<String> VALID_STATUSES = Set.of("active", "inactive");
     private static final Set<String> VALID_WRITE_OFF_STATUSES = Set.of("expired", "recalled");
 
@@ -54,7 +64,7 @@ public class InventoryItemController {
     }
 
     @GetMapping("/api/inventory/items")
-    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK')")
+    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'LAB_TECHNICIAN')")
     public List<InventoryItem> items(@RequestParam(required = false) String status) {
         UUID tenantId = TenantContext.require();
         return status == null || status.isBlank()
@@ -63,7 +73,7 @@ public class InventoryItemController {
     }
 
     @GetMapping("/api/inventory/items/{id}")
-    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK')")
+    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'LAB_TECHNICIAN')")
     public InventoryItem item(@PathVariable UUID id) {
         return requireOwnedItem(id, TenantContext.require());
     }
@@ -120,7 +130,7 @@ public class InventoryItemController {
     }
 
     @GetMapping("/api/inventory/items/{id}/stock-batches")
-    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK')")
+    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'LAB_TECHNICIAN')")
     public List<StockBatch> stockBatches(@PathVariable UUID id) {
         UUID tenantId = TenantContext.require();
         requireOwnedItem(id, tenantId);
@@ -177,7 +187,7 @@ public class InventoryItemController {
      * is unaffected, still clinic_admin/front_desk only.
      */
     @GetMapping("/api/inventory/reorder-alerts")
-    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'PHARMACIST')")
+    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'PHARMACIST', 'LAB_TECHNICIAN')")
     public List<ReorderAlert> reorderAlerts() {
         UUID tenantId = TenantContext.require();
         List<ReorderAlert> alerts = new ArrayList<>();

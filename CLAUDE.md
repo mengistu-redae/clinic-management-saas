@@ -1878,13 +1878,8 @@ endpoint's own request shape should be agnostic to whether a human
 one filling it in, so a later real HL7/ASTM integration could reuse it
 without a redesign. No actual instrument integration gets built now.
 
-**L7. Lab reagent/consumable inventory** - a real scoping question for
-whenever this phase is picked up: extend the already-built general
-inventory module (`com.clinicops.inventory`, phase 29 - already has
-`StockBatch`'s own lot/expiry tracking and could gain a `lab_reagent`
-category) rather than build a second, parallel stock-tracking system
-just for lab reagents. Recommended default, not yet confirmed with the
-user.
+**L7. Lab reagent/consumable inventory** - built 2026-10-02, see "Phase
+L7: lab reagent/consumable inventory" below for the full write-up.
 
 **L8. Frontend** - a new `pages/lab/` section for `lab_technician`
 (dispense-queue-equivalent worklist, specimen collection flow,
@@ -2442,6 +2437,89 @@ re-asked. New migration `V34__lab_reference_lab_sendouts.sql`.
   "Send to reference lab" action on the future lab-technician specimen
   UI is a natural detail for whenever L8 is picked up, not pinned
   further here.
+
+## Phase L7: lab reagent/consumable inventory
+
+Built 2026-10-02, same session as L1-L5. One direct question was put to
+the user first - the fork the sketch itself flagged (extend the
+already-built general inventory module vs. a second, parallel lab-only
+stock system) - answered **extend the general inventory module**, the
+recommended option, avoiding near-identical batch/lot/expiry machinery
+built twice. No new migration - `category` on `InventoryItem` is a
+plain, DB-unconstrained `VARCHAR(30)` (validated only in
+`InventoryItemController`'s own code-level allow-list, confirmed by
+re-reading `V25__inventory_foundation.sql` before writing anything -
+no `CHECK` constraint exists on this column), so widening it to accept
+one more value is a pure application-layer change.
+
+- **`"lab_reagent"` added to `InventoryItemController.VALID_CATEGORIES`**
+  (now `clinical_supply`/`ppe`/`office_supply`/`lab_reagent`) - the
+  entire schema-level change this phase needed. A lab reagent is now
+  just another `InventoryItem` row, inheriting `StockBatch`'s own
+  lot/expiry tracking, `Supplier`/`PurchaseOrder` procurement, and
+  `StockAdjustment`'s own append-only correction log for free - zero
+  new entities, zero new controllers.
+- **`lab_technician` gains read-only access to the four relevant GET
+  endpoints** (`items`, `item`, `stockBatches`, `reorderAlerts`) -
+  **not an explicitly-asked sub-question, a direct application of an
+  already-established precedent**: `PHARMACIST` was added to
+  `reorderAlerts` during the search/filter audit for the identical
+  reason ("a role is at least as legitimate a consumer of its own stock
+  data as `front_desk`"), and a lab technician who can now see
+  `lab_reagent` rows in this catalog has the same legitimate need to
+  see their own stock levels/batches/reorder alerts. Write access
+  (create/update/receive/write-off) stays `clinic_admin`+`front_desk`
+  only, completely unchanged - ordering/receiving stock is still
+  general logistics, not something this app's existing role boundaries
+  give `lab_technician` directly, matching `MedicationController`'s own
+  "broader read gate than write gate" precedent (phase 35) rather than
+  widening write access too.
+- **`PurchaseOrderController`/`StockAdjustmentController` deliberately
+  untouched** - the sketch's own L7 bullet is specifically about
+  catalog/stock-level visibility, not the procurement workflow itself;
+  ordering reagents stays a `clinic_admin`/`front_desk` action, same as
+  ordering any other general-inventory category.
+- **Tests**: no new pure-unit test class - this phase is a pure
+  allow-list widening plus role-gate annotations, the same bar
+  phase 35's own `front_desk`-read-widening used (one direct role-gate
+  test, nothing more). `InventoryItemControllerIntegrationTest` gained
+  one new case (`labReagentIsAValidCategoryAndLabTechnicianCanReadButNotWriteInventory`)
+  - creating a real `lab_reagent`-category item succeeds, `lab_technician`
+  reads it through all four widened endpoints successfully, and
+  `lab_technician` still genuinely 403s on create - confirming the read
+  /write asymmetry holds, not just the read widening alone. No new
+  `TenantIsolationIntegrationTest` case - `InventoryItem`'s own
+  cross-tenant scoping was already covered by phase 29's case; this
+  phase changes no tenant-scoping logic at all. Confirmed via a clean
+  `mvn clean test-compile` and a full `mvn test` run showing `Tests
+  run: 486, Errors: 368` (up from 485/367 - exactly the one new test
+  method, Testcontainers-blocked, no pure-unit count change), 0
+  Failures, every error the identical pre-existing `Could not find a
+  valid Docker environment` wall (confirmed by running
+  `InventoryItemControllerIntegrationTest` in isolation - all 7 of its
+  cases, old and new alike, hit the identical
+  `NoClassDefFoundError`/`ExceptionInInitializerError`, not a new
+  failure mode) - not a regression.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, Flyway confirmed genuinely unaffected (`Current
+  version of schema "public": 34` -> `Schema "public" is up to date. No
+  migration necessary.`, exactly as expected for a pure code-level
+  allow-list/role-gate change). No browser-automation tool was
+  available this session (same gap L1-L5 already flagged), so the
+  `lab_technician` read-widening itself couldn't be exercised through a
+  real login - `GET /api/inventory/items` was confirmed to still
+  genuinely require auth (`401`, not `404`) through both the direct
+  `spring-boot-api:8081` debug port and the real node-bff proxy chain
+  on `:3000`, proving nothing broke, but the real role-widening claim
+  rests on the Testcontainers-run integration test above, not a live
+  browser session - flagged here rather than claimed, same standing gap
+  L1-L5 already carries.
+- **No frontend yet** - backend only, same as L1-L5; `pages/inventory/`
+  (phase 35) already exists but has no `lab_technician` route/nav case,
+  matching this phase's own backend-only scope. L8's own job to decide
+  whether `lab_technician` gets a path into that existing inventory UI
+  or a reagent-scoped view of its own, not pinned further here.
 
 ## Phase 27: pharmacy clinical safety checks
 

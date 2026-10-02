@@ -128,6 +128,44 @@ class InventoryItemControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    /**
+     * Lab module L7 (2026-10-02) - lab reagents are a category on this
+     * same catalog (the pinned fork's answer: extend, not a parallel
+     * system), with lab_technician gaining read-only access to it,
+     * matching PHARMACIST's own reorder-alerts precedent above - write
+     * access (create/receive/etc.) stays clinic_admin/front_desk only.
+     */
+    @Test
+    void labReagentIsAValidCategoryAndLabTechnicianCanReadButNotWriteInventory() throws Exception {
+        Clinic clinic = createClinic("item-reagent-" + UUID.randomUUID(), "Reagent Clinic");
+        String orgAlias = clinic.getKeycloakOrgId();
+
+        String body = mockMvc.perform(post("/api/inventory/items").with(asClinicAdmin("admin", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new CreateInventoryItemRequest("Glucose Control Solution", "lab_reagent", "bottle", new BigDecimal("25.00"), 5))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.category").value("lab_reagent"))
+                .andReturn().getResponse().getContentAsString();
+        UUID itemId = UUID.fromString(objectMapper.readTree(body).get("id").asText());
+
+        mockMvc.perform(get("/api/inventory/items").with(asLabTechnician("tech", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/api/inventory/items/" + itemId).with(asLabTechnician("tech", orgAlias)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/inventory/items/" + itemId + "/stock-batches").with(asLabTechnician("tech", orgAlias)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/inventory/reorder-alerts").with(asLabTechnician("tech", orgAlias)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/inventory/items").with(asLabTechnician("tech", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new CreateInventoryItemRequest("Another Reagent", "lab_reagent", null, null, null))))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     void crossTenantItemIsNotFound() throws Exception {
         Clinic clinic = createClinic("item-tenant-a-" + UUID.randomUUID(), "Clinic A");
