@@ -73,6 +73,8 @@ public class AnalyteDefinitionController {
         definition.setNormalRangeLow(request.normalRangeLow());
         definition.setNormalRangeHigh(request.normalRangeHigh());
         definition.setNormalRangeText(request.normalRangeText());
+        definition.setCriticalRangeLow(request.criticalRangeLow());
+        definition.setCriticalRangeHigh(request.criticalRangeHigh());
         return analyteDefinitionRepository.save(definition);
     }
 
@@ -95,6 +97,12 @@ public class AnalyteDefinitionController {
         }
         if (request.normalRangeText() != null) {
             definition.setNormalRangeText(request.normalRangeText());
+        }
+        if (request.criticalRangeLow() != null) {
+            definition.setCriticalRangeLow(request.criticalRangeLow());
+        }
+        if (request.criticalRangeHigh() != null) {
+            definition.setCriticalRangeHigh(request.criticalRangeHigh());
         }
         return analyteDefinitionRepository.save(definition);
     }

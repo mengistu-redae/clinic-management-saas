@@ -47,4 +47,11 @@ public class AnalyteDefinition extends BaseTenantEntity {
 
     @Column(name = "normal_range_text")
     private String normalRangeText;
+
+    /** The outer danger-zone bounds (L3) - a value beyond these flags "critical" rather than just "abnormal". Null = no critical threshold defined for this analyte yet. */
+    @Column(name = "critical_range_low")
+    private BigDecimal criticalRangeLow;
+
+    @Column(name = "critical_range_high")
+    private BigDecimal criticalRangeHigh;
 }

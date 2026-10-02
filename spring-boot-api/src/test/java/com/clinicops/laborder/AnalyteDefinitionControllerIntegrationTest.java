@@ -22,7 +22,7 @@ class AnalyteDefinitionControllerIntegrationTest extends AbstractIntegrationTest
         String body = mockMvc.perform(post("/api/clinic/analyte-definitions").with(asClinicAdmin("admin", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, "x10^9/L", java.math.BigDecimal.valueOf(4.0), java.math.BigDecimal.valueOf(11.0), null))))
+                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, "x10^9/L", java.math.BigDecimal.valueOf(4.0), java.math.BigDecimal.valueOf(11.0), null, null, null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.analyteName").value("WBC"))
                 .andReturn().getResponse().getContentAsString();
@@ -36,13 +36,13 @@ class AnalyteDefinitionControllerIntegrationTest extends AbstractIntegrationTest
         mockMvc.perform(post("/api/clinic/analyte-definitions").with(asClinicAdmin("admin", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, "x10^9/L", java.math.BigDecimal.valueOf(4.0), java.math.BigDecimal.valueOf(11.0), null))))
+                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, "x10^9/L", java.math.BigDecimal.valueOf(4.0), java.math.BigDecimal.valueOf(11.0), null, null, null))))
                 .andExpect(status().isConflict());
 
         mockMvc.perform(post("/api/clinic/analyte-definitions/" + id + "/update").with(asClinicAdmin("admin", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new UpdateAnalyteDefinitionRequest(null, "10^9/L", null, null, null))))
+                                new UpdateAnalyteDefinitionRequest(null, "10^9/L", null, null, null, null, null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.unit").value("10^9/L"));
 
@@ -63,7 +63,7 @@ class AnalyteDefinitionControllerIntegrationTest extends AbstractIntegrationTest
         mockMvc.perform(post("/api/clinic/analyte-definitions").with(asLabTechnician("tech", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, null, null, null, null))))
+                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, null, null, null, null, null, null))))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/api/clinic/analyte-definitions").with(asProvider("prov", orgAlias)))
@@ -78,7 +78,7 @@ class AnalyteDefinitionControllerIntegrationTest extends AbstractIntegrationTest
         String body = mockMvc.perform(post("/api/clinic/analyte-definitions").with(asClinicAdmin("admin", a.getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, null, null, null, null))))
+                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, null, null, null, null, null, null))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         UUID id = UUID.fromString(objectMapper.readTree(body).get("id").asText());

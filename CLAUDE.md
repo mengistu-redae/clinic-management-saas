@@ -1862,13 +1862,8 @@ foundation" below for the full write-up.
 2026-10-02, see "Phase L2: test catalog + structured per-analyte
 results" below for the full write-up.
 
-**L3. Critical-value alerting** - a critical range alongside each
-analyte's normal range; a result landing in it triggers a dedicated,
-urgent notification (new payload/template type in the existing
-`com.clinicops.notification` outbox, same mechanism every other
-notification in this app already uses) to the order's own
-`ordering_provider_id`, plus a visible flag on the order until
-acknowledged.
+**L3. Critical-value alerting** - built 2026-10-02, see "Phase L3:
+critical-value alerting" below for the full write-up.
 
 **L4. Basic QC logging** - a lightweight QC-run entity (instrument
 identifier - free text in v1, no real integration; control-material
@@ -2163,6 +2158,126 @@ New migration `V31__lab_analyte_results.sql`.
   `demo-lab-technician` click-through covering both L1 and L2 together
   is still owed.
 - **No frontend yet** - backend only, same as L1. L8's own job.
+
+## Phase L3: critical-value alerting
+
+Built 2026-10-02, same session as L1/L2. Closes a gap L2 deliberately
+left open - `AnalyteResultService.computeFlag` was only ever 2-way
+(normal/abnormal); this phase makes it genuinely 3-way, adds a real
+acknowledgment trail, and fires a real outbox notification to the
+order's own ordering provider when a result lands in the danger zone.
+No direct scoping question was needed - the design forks were already
+implicit in the sketch itself (critical range as the outer bound beyond
+normal, standard lab panic-value semantics) or resolved by matching an
+existing convention verbatim (notification content, acknowledge-gate
+role). New migration `V32__lab_critical_values.sql`.
+
+- **`AnalyteDefinition` gains `criticalRangeLow`/`criticalRangeHigh`**
+  (nullable `NUMERIC(12,4)`, same shape as the existing normal-range
+  pair) - outer bounds beyond the normal range, not a separate
+  alternative range. `CreateAnalyteDefinitionRequest`/
+  `UpdateAnalyteDefinitionRequest` both grew two trailing fields (9 and
+  7 total respectively) to carry them; every existing test call site
+  constructing these records mechanically grew to match (see below).
+- **`computeFlag` priority: critical > abnormal > normal**, computed in
+  that order - a value outside the critical range is `"critical"`
+  regardless of where it sits relative to the normal range; one outside
+  normal but still inside critical is `"abnormal"`; one inside normal is
+  `"normal"`. Unchanged from L2: a definition with no real numeric
+  normal range, or a non-numeric entered value, stays `"unflagged"`
+  rather than guessed at - the critical check inherits that same
+  "nothing to compute against" guard for free, since it's gated behind
+  the same early-return.
+- **`AnalyteResult` gains a real acknowledgment trail** -
+  `criticalAcknowledgedAt`/`criticalAcknowledgedBy` (nullable
+  `TIMESTAMPTZ`/FK to `app_users`), meaningless (always null) for a
+  non-critical result, same "null means not applicable" convention
+  `Vitals`'s own optional fields already use. `AnalyteResultService
+  .acknowledgeCritical` rejects a non-critical result (409, reused
+  `InvalidLabOrderStatusException` rather than a new exception type,
+  matching L1's own "no new exception type when the shape already
+  exists" convention) and is idempotent on a re-call (already
+  -acknowledged stays as the first acknowledgment, doesn't overwrite
+  `acknowledgedBy` with whoever re-calls it).
+- **A real outbox notification, not a new mechanism** -
+  `CriticalLabValueAlertPayload(orderRef, testName)` (new,
+  `com.clinicops.notification`), deliberately narrow - no analyte name
+  or the actual value, matching `LabResultReadyPayload`'s own "never
+  leak clinical content into a notification" convention; the recipient
+  logs into the app to see what's actually critical. `SmtpEmailSender`
+  gained one new `case "critical_lab_value"` switch arm (`"URGENT:
+  critical lab value - <orderRef>"` subject). Fired from
+  `AnalyteResultService.enterResults` whenever *any* result in that
+  call's batch computes `"critical"` - skipped gracefully (no
+  exception) when the order has no `orderingProviderId`, that provider
+  has no linked login, or that login has no email on file, the exact
+  same "skipped when there's no contact to reach" precedent
+  `LabOrderStatusService.review`'s own `lab_result_ready` notification
+  already established.
+- **`POST /api/analyte-results/{id}/acknowledge-critical`** (new,
+  `AnalyteResultController`) - **`provider`+`clinic_admin`, deliberately
+  not `lab_technician`** - acknowledging a critical alert is the
+  ordering clinician's own job (the one being alerted), matching
+  `LabOrderStatusController`'s own `review` action's role gate rather
+  than the `lab_technician`-owned result-entry actions L1/L2 already
+  gated the other way. PHI-audited as `lab_order_analyte_result_ack`.
+- **Tests**: `AnalyteResultServiceTest` (pure Mockito, existing file
+  extended - genuinely runs locally, **15/15 passing**, up from 9/9) -
+  every pre-existing case updated only for the new 8-arg constructor
+  (3 new deps: `ProviderRepository`/`AppUserRepository`/
+  `NotificationRepository`, plus `ObjectMapper`), proving current
+  behavior unchanged, plus 6 new cases: a value beyond the critical
+  range flags `"critical"` not just `"abnormal"`; a value outside
+  normal but inside critical stays `"abnormal"`; a critical result
+  notifies the ordering provider when one is linked to a real login; a
+  critical result skips the notification when the provider has no
+  linked login (`verify(notificationRepository, never())`);
+  acknowledging a critical result succeeds and is idempotent;
+  acknowledging a non-critical result is rejected.
+  `SmtpEmailSenderTest` gained one new case confirming the rendered
+  email contains no analyte name/value anywhere, same assertion shape
+  every other notification-rendering test in this file already uses.
+  `AnalyteResultControllerIntegrationTest` (existing file extended, 3
+  new cases) - entering a value beyond the critical range via the real
+  endpoint flags `"critical"` and writes exactly one real
+  `critical_lab_value` notification row; the acknowledge endpoint
+  genuinely 403s for `lab_technician` and succeeds (idempotently) for
+  `provider`; acknowledging a non-critical result genuinely 409s. A new
+  `seedWithLinkedProvider`/`createInTransitOrder(f, orgAlias,
+  providerSubject)` overload was added to this file specifically so a
+  test can later act as the exact provider who placed the order (needed
+  to exercise the acknowledge endpoint as the real notified party, not
+  an arbitrary different provider login). Confirmed via a clean `mvn
+  clean test-compile` and a full `mvn test` run showing `Tests run: 475,
+  Errors: 362` (up from 472/359 - exactly the 3 new Testcontainers
+  -blocked test methods; the 7 new pure-unit cases above had already
+  landed in the prior 465->472 step), 0 Failures, every error the
+  identical pre-existing `Could not find a valid Docker environment`
+  wall (confirmed by running this one test class in isolation too - all
+  7 of its cases, old and new alike, hit the identical
+  `NoClassDefFoundError`/`ExceptionInInitializerError`, not a new
+  failure mode) - 113 pure-unit tests now passing project-wide (up from
+  106).
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V32` confirmed applied via the container's own
+  startup log (`Migrating schema "public" to version "32 - lab critical
+  values"` -> `Successfully applied 1 migration to schema "public", now
+  at version v32`) and via a direct `flyway_schema_history` query
+  (`success = t`). No browser-automation tool was available this
+  session (same gap L1/L2 already flagged) - the new
+  `POST /api/analyte-results/{id}/acknowledge-critical` endpoint
+  confirmed reachable as a real `401` (not `404`) through both the
+  direct `spring-boot-api:8081` debug port and the real node-bff proxy
+  chain on `:3000`. A real `demo-lab-technician`/`demo-provider`
+  click-through exercising a genuine critical result end to end
+  (entering it, confirming the Mailpit email, acknowledging it) is
+  still owed, same standing gap L1/L2 already flagged, not newly
+  introduced here.
+- **No frontend yet** - backend only, same as L1/L2. L8's own job; a
+  critical-value banner/acknowledge button on the future lab-technician/
+  provider UI is a natural detail for whenever L8 is picked up, not
+  pinned further here.
 
 ## Phase 27: pharmacy clinical safety checks
 

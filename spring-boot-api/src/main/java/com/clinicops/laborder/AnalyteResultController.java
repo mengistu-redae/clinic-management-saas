@@ -2,6 +2,7 @@ package com.clinicops.laborder;
 
 import com.clinicops.phiaudit.PhiAccessAuditService;
 import com.clinicops.tenant.TenantContext;
+import com.clinicops.user.CurrentUserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -32,12 +33,17 @@ public class AnalyteResultController {
 
     private final AnalyteResultService analyteResultService;
     private final LabOrderRepository labOrderRepository;
+    private final CurrentUserService currentUserService;
     private final PhiAccessAuditService phiAccessAuditService;
 
     public AnalyteResultController(
-            AnalyteResultService analyteResultService, LabOrderRepository labOrderRepository, PhiAccessAuditService phiAccessAuditService) {
+            AnalyteResultService analyteResultService,
+            LabOrderRepository labOrderRepository,
+            CurrentUserService currentUserService,
+            PhiAccessAuditService phiAccessAuditService) {
         this.analyteResultService = analyteResultService;
         this.labOrderRepository = labOrderRepository;
+        this.currentUserService = currentUserService;
         this.phiAccessAuditService = phiAccessAuditService;
     }
 
@@ -59,6 +65,22 @@ public class AnalyteResultController {
         List<AnalyteResult> results = analyteResultService.enterResults(orderId, testId, tenantId, request.results());
         phiAccessAuditService.logWrite(tenantId, jwt, "lab_order_analyte_results", testId, patientIdFor(orderId, tenantId), "/api/lab-orders/{orderId}/tests/{testId}/analyte-results");
         return results;
+    }
+
+    /**
+     * provider+clinic_admin, not lab_technician - acknowledging a critical
+     * alert is the ordering clinician's own job (the one being alerted),
+     * matching LabOrderStatusController's own "review" action's role gate
+     * rather than the lab_technician-owned entry actions above.
+     */
+    @PostMapping("/api/analyte-results/{id}/acknowledge-critical")
+    @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
+    public AnalyteResult acknowledgeCritical(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        UUID tenantId = TenantContext.require();
+        UUID acknowledgedBy = currentUserService.resolveInternalUserId(jwt);
+        AnalyteResult result = analyteResultService.acknowledgeCritical(id, tenantId, acknowledgedBy);
+        phiAccessAuditService.logWrite(tenantId, jwt, "lab_order_analyte_result_ack", id, null, "/api/analyte-results/{id}/acknowledge-critical");
+        return result;
     }
 
     private UUID patientIdFor(UUID orderId, UUID tenantId) {

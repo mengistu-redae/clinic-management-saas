@@ -222,7 +222,7 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
         String bodyDef = mockMvc.perform(post("/api/clinic/analyte-definitions").with(asClinicAdmin("admin", a.getKeycloakOrgId()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, null, null, null, null))))
+                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, null, null, null, null, null, null))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         UUID definitionId = UUID.fromString(objectMapper.readTree(bodyDef).get("id").asText());

@@ -1,9 +1,19 @@
 package com.clinicops.laborder;
 
+import com.clinicops.notification.CriticalLabValueAlertPayload;
+import com.clinicops.notification.Notification;
+import com.clinicops.notification.NotificationPayloadWriter;
+import com.clinicops.notification.NotificationRepository;
+import com.clinicops.provider.Provider;
+import com.clinicops.provider.ProviderRepository;
+import com.clinicops.user.AppUser;
+import com.clinicops.user.AppUserRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -21,6 +31,14 @@ import java.util.UUID;
  * LabOrderStatusService.result()'s job, now callable with an empty
  * `results` list purely to mark an order resulted once every real value
  * has been entered here instead.
+ *
+ * L3 adds critical-value alerting: a result landing outside its own
+ * analyte's critical range (not just its normal one) fires a real outbox
+ * notification to the order's own ordering provider, same mechanism every
+ * other notification in this app already uses - skipped gracefully when
+ * that provider has no linked login/email on file, same "skipped when
+ * there's no contact to reach" precedent LabOrderStatusService.review
+ * already established for its own lab_result_ready notification.
  */
 @Service
 public class AnalyteResultService {
@@ -31,16 +49,28 @@ public class AnalyteResultService {
     private final LabOrderTestRepository labOrderTestRepository;
     private final AnalyteDefinitionRepository analyteDefinitionRepository;
     private final AnalyteResultRepository analyteResultRepository;
+    private final ProviderRepository providerRepository;
+    private final AppUserRepository appUserRepository;
+    private final NotificationRepository notificationRepository;
+    private final ObjectMapper objectMapper;
 
     public AnalyteResultService(
             LabOrderRepository labOrderRepository,
             LabOrderTestRepository labOrderTestRepository,
             AnalyteDefinitionRepository analyteDefinitionRepository,
-            AnalyteResultRepository analyteResultRepository) {
+            AnalyteResultRepository analyteResultRepository,
+            ProviderRepository providerRepository,
+            AppUserRepository appUserRepository,
+            NotificationRepository notificationRepository,
+            ObjectMapper objectMapper) {
         this.labOrderRepository = labOrderRepository;
         this.labOrderTestRepository = labOrderTestRepository;
         this.analyteDefinitionRepository = analyteDefinitionRepository;
         this.analyteResultRepository = analyteResultRepository;
+        this.providerRepository = providerRepository;
+        this.appUserRepository = appUserRepository;
+        this.notificationRepository = notificationRepository;
+        this.objectMapper = objectMapper;
     }
 
     /** Full-replace on every call, same "replace the whole list" convention every other multi-row write in this codebase already uses. */
@@ -55,6 +85,7 @@ public class AnalyteResultService {
 
         analyteResultRepository.deleteAllByLabOrderTestId(testId);
         List<AnalyteResult> saved = new ArrayList<>();
+        boolean anyCritical = false;
         for (AnalyteResultInput input : inputs) {
             AnalyteDefinition definition = analyteDefinitionRepository
                     .findByTenantIdAndTestCodeAndAnalyteName(tenantId, test.getTestCode(), input.analyteName())
@@ -70,10 +101,31 @@ public class AnalyteResultService {
                 result.setUnit(definition.getUnit());
                 result.setReferenceRangeDisplay(referenceRangeDisplay(definition));
                 result.setFlag(computeFlag(definition, input.value()));
+                anyCritical = anyCritical || "critical".equals(result.getFlag());
             }
             saved.add(analyteResultRepository.save(result));
         }
+        if (anyCritical) {
+            notifyCriticalValue(order, test, tenantId);
+        }
         return saved;
+    }
+
+    /** Idempotent re-call (already-acknowledged stays as first acknowledged); rejects a non-critical or not-yet-critical result. */
+    @Transactional
+    public AnalyteResult acknowledgeCritical(UUID resultId, UUID tenantId, UUID acknowledgedByUserId) {
+        AnalyteResult result = analyteResultRepository.findById(resultId)
+                .filter(r -> r.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new NoSuchElementException("Analyte result not found: " + resultId));
+        if (!"critical".equals(result.getFlag())) {
+            throw new InvalidLabOrderStatusException("Analyte result " + resultId + " is not flagged critical");
+        }
+        if (result.getCriticalAcknowledgedAt() != null) {
+            return result;
+        }
+        result.setCriticalAcknowledgedAt(Instant.now());
+        result.setCriticalAcknowledgedBy(acknowledgedByUserId);
+        return analyteResultRepository.save(result);
     }
 
     public List<AnalyteResult> listForTest(UUID orderId, UUID testId, UUID tenantId) {
@@ -90,25 +142,52 @@ public class AnalyteResultService {
     }
 
     /**
-     * Normal/abnormal only when the definition has a real numeric range AND
-     * the entered value itself parses as numeric - a non-numeric value
-     * against a numeric range (or a definition with only normalRangeText)
-     * is left "unflagged" rather than guessed at. True 3-way
-     * normal/abnormal/critical flagging is L3's own job, once a critical
-     * range exists alongside this normal one.
+     * critical (outside the critical range) takes priority over abnormal
+     * (outside the normal range but still inside the critical one) over
+     * normal - all three only when the definition has the relevant real
+     * numeric range AND the entered value itself parses as numeric; a
+     * non-numeric value, or a definition with only normalRangeText, is left
+     * "unflagged" rather than guessed at.
      */
     private static String computeFlag(AnalyteDefinition definition, String value) {
         if (definition.getNormalRangeLow() == null || definition.getNormalRangeHigh() == null) {
             return "unflagged";
         }
+        BigDecimal numericValue;
         try {
-            BigDecimal numericValue = new BigDecimal(value.trim());
-            boolean inRange = numericValue.compareTo(definition.getNormalRangeLow()) >= 0
-                    && numericValue.compareTo(definition.getNormalRangeHigh()) <= 0;
-            return inRange ? "normal" : "abnormal";
+            numericValue = new BigDecimal(value.trim());
         } catch (NumberFormatException e) {
             return "unflagged";
         }
+        boolean belowCritical = definition.getCriticalRangeLow() != null && numericValue.compareTo(definition.getCriticalRangeLow()) < 0;
+        boolean aboveCritical = definition.getCriticalRangeHigh() != null && numericValue.compareTo(definition.getCriticalRangeHigh()) > 0;
+        if (belowCritical || aboveCritical) {
+            return "critical";
+        }
+        boolean inNormalRange = numericValue.compareTo(definition.getNormalRangeLow()) >= 0
+                && numericValue.compareTo(definition.getNormalRangeHigh()) <= 0;
+        return inNormalRange ? "normal" : "abnormal";
+    }
+
+    /** Skipped gracefully (no exception) when the ordering provider has no linked login or that login has no email - same precedent LabOrderStatusService.review already established. */
+    private void notifyCriticalValue(LabOrder order, LabOrderTest test, UUID tenantId) {
+        if (order.getOrderingProviderId() == null) {
+            return;
+        }
+        Provider provider = providerRepository.findByIdAndTenantId(order.getOrderingProviderId(), tenantId).orElse(null);
+        if (provider == null || provider.getAppUserId() == null) {
+            return;
+        }
+        AppUser appUser = appUserRepository.findById(provider.getAppUserId()).orElse(null);
+        if (appUser == null || appUser.getEmail() == null || appUser.getEmail().isBlank()) {
+            return;
+        }
+        Notification notification = new Notification();
+        notification.setTenantId(tenantId);
+        notification.setRecipient(appUser.getEmail());
+        notification.setType("critical_lab_value");
+        notification.setPayload(NotificationPayloadWriter.toJson(objectMapper, new CriticalLabValueAlertPayload(order.getOrderRef(), test.getTestName())));
+        notificationRepository.save(notification);
     }
 
     private LabOrder requireOrder(UUID orderId, UUID tenantId) {

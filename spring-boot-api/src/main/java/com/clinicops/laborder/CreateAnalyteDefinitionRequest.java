@@ -11,6 +11,8 @@ public record CreateAnalyteDefinitionRequest(
         String unit,
         BigDecimal normalRangeLow,
         BigDecimal normalRangeHigh,
-        String normalRangeText
+        String normalRangeText,
+        BigDecimal criticalRangeLow,
+        BigDecimal criticalRangeHigh
 ) {
 }

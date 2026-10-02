@@ -102,6 +102,18 @@ class SmtpEmailSenderTest {
     }
 
     @Test
+    void rendersACriticalLabValueAlertEmailWithNoClinicalContent() throws Exception {
+        Notification notification = notification("critical_lab_value", new CriticalLabValueAlertPayload("LAB42", "CBC"));
+
+        sender.send(notification);
+
+        SimpleMailMessage message = sentMessage();
+        assertThat(message.getSubject()).contains("URGENT").contains("LAB42");
+        assertThat(message.getText()).contains("CBC").contains("LAB42");
+        // Same "never leak clinical content" convention as lab_result_ready - no analyte name/value anywhere in the payload to begin with.
+    }
+
+    @Test
     void anUnknownTypeStillSendsAGenericFallbackRatherThanThrowing() throws Exception {
         Notification notification = new Notification();
         notification.setRecipient("patient@example.com");

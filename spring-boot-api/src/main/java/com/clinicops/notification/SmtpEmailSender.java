@@ -80,6 +80,12 @@ public class SmtpEmailSender implements NotificationSender {
                 body = "Your lab results for order " + payload.orderRef() + " have been reviewed and are ready. "
                         + "Please contact your clinic or check your patient portal for details.";
             }
+            case "critical_lab_value" -> {
+                var payload = objectMapper.readValue(notification.getPayload(), CriticalLabValueAlertPayload.class);
+                subject = "URGENT: critical lab value - " + payload.orderRef();
+                body = "A critical result has been entered for " + payload.testName() + " on lab order "
+                        + payload.orderRef() + ". Please review and acknowledge it in the app as soon as possible.";
+            }
             case "refill_ready" -> {
                 var payload = objectMapper.readValue(notification.getPayload(), RefillReadyPayload.class);
                 subject = "Your prescription refill is ready - " + payload.medicationName();

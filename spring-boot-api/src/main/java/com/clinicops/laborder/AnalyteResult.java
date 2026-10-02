@@ -7,6 +7,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -42,7 +43,14 @@ public class AnalyteResult extends BaseTenantEntity {
     @Column(name = "reference_range_display")
     private String referenceRangeDisplay;
 
-    /** normal, abnormal, or unflagged - see the migration's own comment for why this isn't 3-way yet. */
+    /** normal, abnormal, critical, or unflagged (L3 - genuinely 3-way now that AnalyteDefinition carries a critical range too). */
     @Column(nullable = false)
     private String flag = "unflagged";
+
+    /** Meaningless (always null) unless flag == "critical" - who acknowledged the alert, and when. */
+    @Column(name = "critical_acknowledged_at")
+    private Instant criticalAcknowledgedAt;
+
+    @Column(name = "critical_acknowledged_by")
+    private UUID criticalAcknowledgedBy;
 }
