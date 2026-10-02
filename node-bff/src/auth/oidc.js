@@ -21,11 +21,10 @@ const DISCOVERY_MAX_ATTEMPTS = 20;
  * "keycloak" - only KEYCLOAK_ISSUER_PUBLIC's host (localhost:8080, published
  * by docker-compose), so those two get rewritten below.
  *
- * The token endpoint is the one that actually mints tokens, so the `iss`
- * claim inside them reflects the internal host regardless of which host the
- * browser used to reach the authorization endpoint - that's why
- * issuer.metadata.issuer itself is left as the internal value returned by
- * discovery, not rewritten.
+ * `issuer.metadata.issuer` itself also gets rewritten to the public value,
+ * not left as the internal one discovery returned - see the comment on the
+ * `issuer:` field below for why (a real, counter-intuitive Keycloak
+ * behavior, confirmed live against a running instance).
  */
 async function buildOidcClient() {
   const internalIssuer = await discoverWithRetry();
