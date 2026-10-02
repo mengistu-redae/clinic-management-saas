@@ -178,4 +178,55 @@ class SpecimenControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/specimens/" + specimenId + "/collect").with(asClinicAdmin("admin", orgAlias)))
                 .andExpect(status().isOk());
     }
+
+    /** Lab module L5 - routing a specimen to an outside lab, correcting the details on a re-call, and completing it afterward the same way any other specimen does. */
+    @Test
+    void sendingASpecimenToAReferenceLabRecordsDetailsAndStillAllowsCompletion() throws Exception {
+        Fixture f = seed("specimen-refer-" + UUID.randomUUID(), "Reference Lab Clinic");
+        String orgAlias = f.clinic().getKeycloakOrgId();
+        createLabTestRate(f.clinic().getId(), "CBC", "20.00", "0.00");
+        String orderBody = mockMvc.perform(post("/api/lab-orders").with(asProvider("prov", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateLabOrderRequest(
+                                f.patient().getId(), null, f.provider().getId(), null, null,
+                                List.of(new TestItem("CBC", "CBC", "blood", null)), false))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID orderId = UUID.fromString(objectMapper.readTree(orderBody).get("order").get("id").asText());
+        String specimensBody = mockMvc.perform(get("/api/lab-orders/" + orderId + "/specimens").with(asLabTechnician("tech", orgAlias)))
+                .andReturn().getResponse().getContentAsString();
+        UUID specimenId = UUID.fromString(objectMapper.readTree(specimensBody).get(0).get("id").asText());
+
+        // Can't send out a specimen that hasn't even been collected yet.
+        mockMvc.perform(post("/api/specimens/" + specimenId + "/send-to-reference-lab").with(asLabTechnician("tech", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SendToReferenceLabRequest("Outside Labs Inc", "REF-1", 5))))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/specimens/" + specimenId + "/collect").with(asLabTechnician("tech", orgAlias)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/specimens/" + specimenId + "/send-to-reference-lab").with(asLabTechnician("tech", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SendToReferenceLabRequest("Outside Labs Inc", "REF-1", 5))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("sent_to_reference_lab"))
+                .andExpect(jsonPath("$.referenceLabName").value("Outside Labs Inc"))
+                .andExpect(jsonPath("$.referenceLabOrderNumber").value("REF-1"))
+                .andExpect(jsonPath("$.expectedTurnaroundDays").value(5));
+
+        // Re-calling while already sent out corrects the details in place, not a reject.
+        mockMvc.perform(post("/api/specimens/" + specimenId + "/send-to-reference-lab").with(asLabTechnician("tech", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SendToReferenceLabRequest("Outside Labs Inc", "REF-2", 7))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("sent_to_reference_lab"))
+                .andExpect(jsonPath("$.referenceLabOrderNumber").value("REF-2"))
+                .andExpect(jsonPath("$.expectedTurnaroundDays").value(7));
+
+        // A reference-lab specimen completes the same way any other one does - no special-cased path.
+        mockMvc.perform(post("/api/specimens/" + specimenId + "/complete").with(asLabTechnician("tech", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("completed"));
+    }
 }

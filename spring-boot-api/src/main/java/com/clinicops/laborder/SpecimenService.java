@@ -117,11 +117,42 @@ public class SpecimenService {
         if ("completed".equals(specimen.getStatus())) {
             return specimen;
         }
-        if (!"received".equals(specimen.getStatus()) && !"processing".equals(specimen.getStatus())) {
+        if (!"received".equals(specimen.getStatus()) && !"processing".equals(specimen.getStatus())
+                && !"sent_to_reference_lab".equals(specimen.getStatus())) {
             throw new InvalidLabOrderStatusException("Cannot complete a specimen with status '" + specimen.getStatus() + "'");
         }
         specimen.setStatus("completed");
         specimen.setCompletedAt(Instant.now());
+        return specimenRepository.save(specimen);
+    }
+
+    /**
+     * L5 - routes a specimen to an outside lab instead of in-house
+     * processing. Reachable from collected/in_transit/received (no single
+     * enforced point - staff may realize a send-out is needed at any of
+     * those stages, same lenient bias this app already holds elsewhere).
+     * Re-calling while already sent_to_reference_lab updates the
+     * reference-lab details in place rather than rejecting - unlike the
+     * other specimen actions, this one actually carries new information
+     * worth correcting on a re-call (a typo'd order number, a revised
+     * turnaround estimate).
+     */
+    @Transactional
+    public Specimen sendToReferenceLab(UUID id, UUID tenantId, SendToReferenceLabRequest request) {
+        Specimen specimen = findOrThrow(id, tenantId);
+        if (!"sent_to_reference_lab".equals(specimen.getStatus())
+                && !"collected".equals(specimen.getStatus())
+                && !"in_transit".equals(specimen.getStatus())
+                && !"received".equals(specimen.getStatus())) {
+            throw new InvalidLabOrderStatusException("Cannot send to a reference lab a specimen with status '" + specimen.getStatus() + "'");
+        }
+        if (!"sent_to_reference_lab".equals(specimen.getStatus())) {
+            specimen.setStatus("sent_to_reference_lab");
+            specimen.setSentToReferenceLabAt(Instant.now());
+        }
+        specimen.setReferenceLabName(request.referenceLabName());
+        specimen.setReferenceLabOrderNumber(request.referenceLabOrderNumber());
+        specimen.setExpectedTurnaroundDays(request.expectedTurnaroundDays());
         return specimenRepository.save(specimen);
     }
 
@@ -162,12 +193,12 @@ public class SpecimenService {
         }
     }
 
-    /** The order-level result action's own bulk equivalent - once results are entered, every specimen that made it that far is done. */
+    /** The order-level result action's own bulk equivalent - once results are entered, every specimen that made it that far is done (L5: including one that was routed to a reference lab). */
     @Transactional
     public void completeAllForOrder(UUID tenantId, UUID labOrderId) {
         for (Specimen specimen : specimenRepository.findAllByLabOrderId(labOrderId)) {
             if ("in_transit".equals(specimen.getStatus()) || "received".equals(specimen.getStatus())
-                    || "processing".equals(specimen.getStatus())) {
+                    || "processing".equals(specimen.getStatus()) || "sent_to_reference_lab".equals(specimen.getStatus())) {
                 // Skip markInTransit/receive's own guard chain - result entry can legitimately
                 // follow "send" directly without every intermediate specimen-level step having
                 // been individually walked through via the new fine-grained endpoints.

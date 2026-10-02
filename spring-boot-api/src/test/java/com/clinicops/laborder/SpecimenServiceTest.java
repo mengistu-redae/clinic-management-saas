@@ -166,4 +166,88 @@ class SpecimenServiceTest {
         // was only ever stubbed/called for the pending one.
         verify(specimenRepository, never()).findByIdAndTenantId(alreadyCollected.getId(), tenantId);
     }
+
+    @Test
+    void sendingToAReferenceLabFromCollectedInTransitOrReceivedSucceeds() {
+        for (String fromStatus : List.of("collected", "in_transit", "received")) {
+            Specimen specimen = new Specimen();
+            specimen.setId(UUID.randomUUID());
+            specimen.setTenantId(tenantId);
+            specimen.setStatus(fromStatus);
+            when(specimenRepository.findByIdAndTenantId(specimen.getId(), tenantId)).thenReturn(Optional.of(specimen));
+            when(specimenRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            Specimen result = service.sendToReferenceLab(specimen.getId(), tenantId,
+                    new SendToReferenceLabRequest("Outside Labs Inc", "REF-1", 5));
+
+            assertThat(result.getStatus()).isEqualTo("sent_to_reference_lab");
+            assertThat(result.getReferenceLabName()).isEqualTo("Outside Labs Inc");
+            assertThat(result.getReferenceLabOrderNumber()).isEqualTo("REF-1");
+            assertThat(result.getExpectedTurnaroundDays()).isEqualTo(5);
+            assertThat(result.getSentToReferenceLabAt()).isNotNull();
+        }
+    }
+
+    @Test
+    void sendingToAReferenceLabFromPendingCollectionOrAfterCompletionIsRejected() {
+        for (String fromStatus : List.of("pending_collection", "completed", "rejected")) {
+            Specimen specimen = new Specimen();
+            specimen.setId(UUID.randomUUID());
+            specimen.setTenantId(tenantId);
+            specimen.setStatus(fromStatus);
+            when(specimenRepository.findByIdAndTenantId(specimen.getId(), tenantId)).thenReturn(Optional.of(specimen));
+
+            assertThatThrownBy(() -> service.sendToReferenceLab(specimen.getId(), tenantId,
+                    new SendToReferenceLabRequest("Outside Labs Inc", null, null)))
+                    .isInstanceOf(InvalidLabOrderStatusException.class);
+        }
+    }
+
+    @Test
+    void reSendingToAReferenceLabWhileAlreadySentUpdatesTheDetailsInPlace() {
+        Specimen specimen = new Specimen();
+        specimen.setId(UUID.randomUUID());
+        specimen.setTenantId(tenantId);
+        specimen.setStatus("sent_to_reference_lab");
+        specimen.setReferenceLabName("Old Name");
+        when(specimenRepository.findByIdAndTenantId(specimen.getId(), tenantId)).thenReturn(Optional.of(specimen));
+        when(specimenRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Specimen result = service.sendToReferenceLab(specimen.getId(), tenantId,
+                new SendToReferenceLabRequest("Corrected Name", "REF-2", 7));
+
+        assertThat(result.getStatus()).isEqualTo("sent_to_reference_lab");
+        assertThat(result.getReferenceLabName()).isEqualTo("Corrected Name");
+        assertThat(result.getReferenceLabOrderNumber()).isEqualTo("REF-2");
+        assertThat(result.getExpectedTurnaroundDays()).isEqualTo(7);
+    }
+
+    @Test
+    void aSpecimenSentToAReferenceLabCanStillBeCompleted() {
+        Specimen specimen = new Specimen();
+        specimen.setId(UUID.randomUUID());
+        specimen.setTenantId(tenantId);
+        specimen.setStatus("sent_to_reference_lab");
+        when(specimenRepository.findByIdAndTenantId(specimen.getId(), tenantId)).thenReturn(Optional.of(specimen));
+        when(specimenRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Specimen result = service.complete(specimen.getId(), tenantId);
+
+        assertThat(result.getStatus()).isEqualTo("completed");
+    }
+
+    @Test
+    void completeAllForOrderAlsoSweepsASpecimenSentToAReferenceLab() {
+        Specimen sentOut = new Specimen();
+        sentOut.setId(UUID.randomUUID());
+        sentOut.setTenantId(tenantId);
+        sentOut.setLabOrderId(orderId);
+        sentOut.setStatus("sent_to_reference_lab");
+        when(specimenRepository.findAllByLabOrderId(orderId)).thenReturn(List.of(sentOut));
+        when(specimenRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.completeAllForOrder(tenantId, orderId);
+
+        assertThat(sentOut.getStatus()).isEqualTo("completed");
+    }
 }

@@ -1868,11 +1868,8 @@ critical-value alerting" below for the full write-up.
 **L4. Basic QC logging** - built 2026-10-02, see "Phase L4: basic QC
 logging" below for the full write-up.
 
-**L5. External reference-lab send-outs** - a new specimen status branch
-(`sent_to_reference_lab`) plus `reference_lab_name`/
-`reference_lab_order_number`/expected-turnaround fields; results coming
-back get entered through the same structured per-analyte shape L2
-already establishes, not a separate parallel path.
+**L5. External reference-lab send-outs** - built 2026-10-02, see "Phase
+L5: external reference-lab send-outs" below for the full write-up.
 
 **L6. Equipment/analyzer integration readiness** - not its own phase so
 much as a design constraint threaded through L1/L2: the result-entry
@@ -2356,6 +2353,95 @@ test rather than refusing it outright). New migration
 - **No frontend yet** - backend only, same as L1-L3. L8's own job; a QC
   log view on the future lab-technician UI is a natural detail for
   whenever L8 is picked up, not pinned further here.
+
+## Phase L5: external reference-lab send-outs
+
+Built 2026-10-02, same session as L1-L4. Unlike L4, the sketch's own
+text for this phase named no open fork to pin, so this was built
+directly from the sketch rather than preceded by a scoping question -
+the only real design calls needed (where in the existing specimen
+status machine the new branch sits, and how lenient the transition into
+it should be) were made in the same spirit every other un-flagged
+design decision in this file already documents inline rather than
+re-asked. New migration `V34__lab_reference_lab_sendouts.sql`.
+
+- **One new specimen status branch, `sent_to_reference_lab`** - reachable
+  from `collected`/`in_transit`/`received` (not `pending_collection`,
+  not `rejected`/`completed`) - no single enforced point in the existing
+  flow where a send-out decision has to happen, matching this app's own
+  lenient "no confirm dialogs, no single mandated path" bias rather than
+  forcing every specimen through `received` first. `Specimen` gains four
+  new nullable columns - `referenceLabName`/`referenceLabOrderNumber`/
+  `expectedTurnaroundDays`/`sentToReferenceLabAt` - all null (not
+  applicable) unless the specimen was ever sent out, same "null means
+  not applicable" convention L3's own acknowledgment columns already
+  use.
+- **`SpecimenService.sendToReferenceLab`** - a genuine deliberate
+  deviation from every other specimen action's exact-idempotent-no-op
+  shape: re-calling it while already `sent_to_reference_lab` **updates**
+  the reference-lab details in place rather than silently no-op'ing,
+  since unlike `collect`/`receive`/`complete` (which carry no payload at
+  all), this action actually carries new information worth correcting
+  on a re-call - a typo'd order number, a revised turnaround estimate.
+  Calling it from any other invalid status (not yet collected, already
+  rejected/completed) still throws the reused
+  `InvalidLabOrderStatusException` (409), same "no new exception type
+  when the shape already exists" convention L1 pinned.
+- **Both `complete` (the individual action) and `completeAllForOrder`
+  (the order-level bulk sweep L1 wired into `LabOrderStatusService
+  .result`) now also accept a specimen sitting at `sent_to_reference_lab`**
+  - a reference-lab specimen completes the exact same way any other one
+  does, no special-cased path, confirming the sketch's own "results
+  coming back get entered through the same structured per-analyte shape
+  L2 already establishes, not a separate parallel path" line holds at
+  the specimen-tracking layer too, not just the result-entry layer.
+- **`POST /api/specimens/{id}/send-to-reference-lab`** (new,
+  `SpecimenController`) - `lab_technician`+`clinic_admin` only, the same
+  write gate every other specimen action already uses; PHI-audited the
+  same way (`lab_order_specimen`, write).
+- **Tests**: `SpecimenServiceTest` (pure Mockito, existing file
+  extended - genuinely runs locally, **14/14 passing**, up from 9/9) - 5
+  new cases: sending to a reference lab succeeds from each of
+  collected/in_transit/received and records all four fields; sending
+  from pending_collection/completed/rejected is rejected; re-sending
+  while already sent out updates the details in place rather than
+  rejecting; a sent-out specimen can still be individually completed;
+  `completeAllForOrder` sweeps a sent-out specimen too.
+  `SpecimenControllerIntegrationTest` gained one new case (a real
+  send-before-collection 409, a real send-then-correct-the-details round
+  trip through the actual endpoint, and completion afterward). One
+  `TenantIsolationIntegrationTest` case extended in place (the existing
+  `specimensAreNotReadableOrWritableFromAnotherTenant` gained one more
+  assertion for the new action) rather than a new test method - same
+  precedent phase 11's field-addition tests already used. Confirmed via
+  a clean `mvn clean test-compile` and a full `mvn test` run showing
+  `Tests run: 485, Errors: 367` (up from 479/366 - exactly the 6 new
+  test methods: 5 pure-unit + 1 Testcontainers-blocked), 0 Failures,
+  every error the identical pre-existing `Could not find a valid Docker
+  environment` wall (confirmed by running `SpecimenControllerIntegrationTest`
+  in isolation - all 6 of its cases, old and new alike, hit the
+  identical `NoClassDefFoundError`/`ExceptionInInitializerError`, not a
+  new failure mode) - 118 pure-unit tests now passing project-wide (up
+  from 113).
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V35` confirmed applied via the container's own
+  startup log (`Migrating schema "public" to version "34 - lab reference
+  lab sendouts"` -> `Successfully applied 1 migration to schema
+  "public", now at version v34`) and via a direct `flyway_schema_history`
+  query (`success = t`). No browser-automation tool was available this
+  session (same gap L1-L4 already flagged) - the new
+  `POST /api/specimens/{id}/send-to-reference-lab` endpoint confirmed
+  reachable as a real `401` (not `404`) through both the direct
+  `spring-boot-api:8081` debug port and the real node-bff proxy chain on
+  `:3000`. A real `demo-lab-technician` click-through (collecting a
+  specimen, sending it to a reference lab, correcting the details, and
+  completing it) is still owed, same standing gap L1-L4 already flagged,
+  not newly introduced here.
+- **No frontend yet** - backend only, same as L1-L4. L8's own job; a
+  "Send to reference lab" action on the future lab-technician specimen
+  UI is a natural detail for whenever L8 is picked up, not pinned
+  further here.
 
 ## Phase 27: pharmacy clinical safety checks
 

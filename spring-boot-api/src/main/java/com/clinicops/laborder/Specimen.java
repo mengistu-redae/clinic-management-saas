@@ -21,7 +21,11 @@ import java.util.UUID;
  * status: pending_collection -> collected -> in_transit -> received ->
  * processing -> completed, or rejected (from collected/in_transit/received -
  * a specimen can't be rejected before it's even been collected, and once
- * completed it's done).
+ * completed it's done). L5 adds one more branch - sent_to_reference_lab,
+ * reachable from collected/in_transit/received - for a specimen routed to
+ * an outside lab instead of processed in-house; results for one still come
+ * back through the existing structured per-analyte path (L2), and a
+ * reference-lab specimen completes the same way any other one does.
  */
 @Entity
 @Table(name = "specimens")
@@ -55,4 +59,17 @@ public class Specimen extends BaseTenantEntity {
 
     @Column(name = "rejection_reason")
     private String rejectionReason;
+
+    /** L5 - all null (not applicable) unless this specimen was ever sent to an outside lab. */
+    @Column(name = "reference_lab_name")
+    private String referenceLabName;
+
+    @Column(name = "reference_lab_order_number")
+    private String referenceLabOrderNumber;
+
+    @Column(name = "expected_turnaround_days")
+    private Integer expectedTurnaroundDays;
+
+    @Column(name = "sent_to_reference_lab_at")
+    private Instant sentToReferenceLabAt;
 }

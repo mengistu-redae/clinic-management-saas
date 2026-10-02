@@ -109,6 +109,18 @@ public class SpecimenController {
         return specimen;
     }
 
+    /** L5 - routes a specimen to an outside lab; results still come back through the existing structured per-analyte path (L2), not a new one. */
+    @PostMapping("/api/specimens/{id}/send-to-reference-lab")
+    @PreAuthorize("hasAnyRole('LAB_TECHNICIAN', 'CLINIC_ADMIN')")
+    public Specimen sendToReferenceLab(
+            @PathVariable UUID id, @Valid @RequestBody SendToReferenceLabRequest request, @AuthenticationPrincipal Jwt jwt) {
+        UUID tenantId = TenantContext.require();
+        Specimen specimen = specimenService.sendToReferenceLab(id, tenantId, request);
+        var order = requireOrder(specimen.getLabOrderId(), tenantId);
+        phiAccessAuditService.logWrite(tenantId, jwt, "lab_order_specimen", id, order.getPatientId(), "/api/specimens/{id}/send-to-reference-lab");
+        return specimen;
+    }
+
     private LabOrder requireOrder(UUID id, UUID tenantId) {
         return labOrderRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Lab order not found: " + id));

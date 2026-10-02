@@ -7,6 +7,7 @@ import com.clinicops.feepolicy.FeePolicy;
 import com.clinicops.laborder.CreateAnalyteDefinitionRequest;
 import com.clinicops.laborder.CreateLabOrderRequest;
 import com.clinicops.laborder.CreateQcRunRequest;
+import com.clinicops.laborder.SendToReferenceLabRequest;
 import com.clinicops.laborder.TestItem;
 import com.clinicops.labrate.LabTestRate;
 import com.clinicops.patient.Patient;
@@ -213,6 +214,12 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
         UUID specimenId = UUID.fromString(objectMapper.readTree(specimensBody).get(0).get("id").asText());
 
         mockMvc.perform(post("/api/specimens/" + specimenId + "/collect").with(asLabTechnician("tech", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+
+        // Lab module L5 (2026-10-02) - the new send-to-reference-lab action is tenant-scoped the same way.
+        mockMvc.perform(post("/api/specimens/" + specimenId + "/send-to-reference-lab").with(asLabTechnician("tech", b.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SendToReferenceLabRequest("Outside Labs Inc", null, null))))
                 .andExpect(status().isNotFound());
     }
 
