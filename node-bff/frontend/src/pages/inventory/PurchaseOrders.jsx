@@ -53,6 +53,7 @@ export default function InventoryPurchaseOrders() {
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState([emptyLine()]);
   const [formError, setFormError] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('');
 
   const supplierById = useMemo(() => Object.fromEntries((allSuppliers.data || []).map((s) => [s.id, s])), [allSuppliers.data]);
   const medicationById = useMemo(() => Object.fromEntries((allMedications.data || []).map((m) => [m.id, m])), [allMedications.data]);
@@ -119,15 +120,36 @@ export default function InventoryPurchaseOrders() {
     return '—';
   }
 
+  function supplierName(o) {
+    return supplierById[o.order.supplierId]?.name || '';
+  }
+
+  const visibleOrders = (orders || []).filter((o) => !statusFilter || o.order.status === statusFilter);
+
   const columns = [
-    { key: 'supplier', header: t('inventoryPage.supplier'), accessor: (o) => supplierById[o.order.supplierId]?.name || o.order.supplierId, sortable: true, className: 'font-semibold' },
+    { key: 'supplier', header: t('inventoryPage.supplier'), accessor: supplierName, sortable: true, className: 'font-semibold' },
     { key: 'status', header: t('referralsPage.status'), accessor: (o) => o.order.status, sortable: true, render: (o) => <StatusPill status={o.order.status} /> },
     { key: 'orderedAt', header: t('inventoryPage.orderedAt'), accessor: (o) => o.order.orderedAt, sortable: true, render: (o) => formatDateTime(o.order.orderedAt) },
   ];
 
   return (
     <PageContainer width="lg">
-      <PageHeader title={t('nav.inventory.purchaseOrders')} />
+      <PageHeader
+        title={t('nav.inventory.purchaseOrders')}
+        actions={
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label={t('common.filterByStatus')}
+            className={`${inputClass} w-44`}
+          >
+            <option value="">{t('common.all')}</option>
+            <option value="ordered">{t('status.ordered')}</option>
+            <option value="received">{t('status.received')}</option>
+            <option value="cancelled">{t('status.cancelled')}</option>
+          </select>
+        }
+      />
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <div className="flex flex-wrap items-end gap-3">
@@ -194,8 +216,9 @@ export default function InventoryPurchaseOrders() {
 
       <DataTable
         columns={columns}
-        rows={orders || []}
+        rows={visibleOrders}
         rowKey={(o) => o.order.id}
+        searchAccessors={[supplierName]}
         defaultSortKey="orderedAt"
         defaultSortDir="desc"
         renderExpanded={(o) => <OrderLines order={o.order} lines={o.lines} lineOwnerName={lineOwnerName} />}

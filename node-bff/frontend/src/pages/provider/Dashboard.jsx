@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMySchedule, usePatients } from '../../api/queries.js';
@@ -8,7 +8,10 @@ import EmptyState from '../../components/EmptyState.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import Card from '../../components/Card.jsx';
+import TabGroup from '../../components/TabGroup.jsx';
 import { formatTime } from '../../lib/format.js';
+
+const SEEN_STATUSES = ['with_provider', 'checked_out'];
 
 /**
  * Provider landing page - see GET /api/my-schedule (already day-scoped
@@ -22,6 +25,7 @@ export default function ProviderDashboard() {
   const schedule = useMySchedule(true);
   const patients = usePatients();
   const { data, isLoading: scheduleLoading, isError: scheduleError, error, refetch } = schedule;
+  const [seenFilter, setSeenFilter] = useState('all');
 
   const patientNames = useMemo(() => {
     const map = new Map();
@@ -52,7 +56,12 @@ export default function ProviderDashboard() {
     );
   }
 
-  const seenCount = data.filter((a) => ['with_provider', 'checked_out'].includes(a.status)).length;
+  const seenCount = data.filter((a) => SEEN_STATUSES.includes(a.status)).length;
+  const visible = data.filter((a) => {
+    if (seenFilter === 'all') return true;
+    const seen = SEEN_STATUSES.includes(a.status);
+    return seenFilter === 'seen' ? seen : !seen;
+  });
 
   return (
     <div className="flex flex-col gap-8">
@@ -68,12 +77,29 @@ export default function ProviderDashboard() {
       </div>
 
       <Card>
-        <p className="mb-3 text-sm font-semibold text-ink">{t('providerDashboard.appointmentsToday')}</p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-ink">{t('providerDashboard.appointmentsToday')}</p>
+          {data.length > 0 && (
+            <TabGroup
+              ariaLabel={t('common.filterByStatus')}
+              compact
+              value={seenFilter}
+              onChange={setSeenFilter}
+              options={[
+                { value: 'all', label: t('providerDashboard.filterAll') },
+                { value: 'notSeen', label: t('providerDashboard.filterNotSeen') },
+                { value: 'seen', label: t('providerDashboard.filterSeen') },
+              ]}
+            />
+          )}
+        </div>
         {data.length === 0 ? (
           <EmptyState title={t('providerDashboard.emptyTitle')} description={t('providerDashboard.emptyDescription')} />
+        ) : visible.length === 0 ? (
+          <EmptyState title={t('common.noResults')} description={t('common.noResultsHint')} />
         ) : (
           <ul className="flex flex-col gap-2">
-            {data.map((a) => (
+            {visible.map((a) => (
               <li key={a.id}>
                 <Link
                   to={`/provider/appointments/${a.id}/encounter`}

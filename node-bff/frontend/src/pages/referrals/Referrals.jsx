@@ -54,6 +54,7 @@ export default function Referrals() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [formError, setFormError] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('');
 
   function patientName(r) {
     const p = patientById[r.patientId];
@@ -127,9 +128,24 @@ export default function Referrals() {
     { key: 'createdAt', header: t('common.bookedAt'), accessor: (r) => r.createdAt, sortAccessor: (r) => new Date(r.createdAt), sortable: true, render: (r) => formatDateTime(r.createdAt) },
   ];
 
+  const visibleReferrals = (referrals || []).filter((r) => !statusFilter || r.status === statusFilter);
+
   return (
     <PageContainer width="lg">
-      <h1 className="mb-6 text-2xl font-bold text-ink">{t('nav.provider.referrals')}</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-ink">{t('nav.provider.referrals')}</h1>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          aria-label={t('common.filterByStatus')}
+          className={`${inputClass} w-44`}
+        >
+          <option value="">{t('common.all')}</option>
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>{t(`referralStatus.${s}`)}</option>
+          ))}
+        </select>
+      </div>
 
       <div className="mb-6">
         <button
@@ -221,7 +237,7 @@ export default function Referrals() {
 
       <DataTable
         columns={columns}
-        rows={referrals || []}
+        rows={visibleReferrals}
         rowKey="id"
         searchAccessors={[patientName, destinationName, (r) => r.referredToSpecialty]}
         renderExpanded={(r) => <ReferralEditPanel referral={r} />}

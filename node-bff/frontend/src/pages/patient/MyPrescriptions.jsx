@@ -19,10 +19,15 @@ import { formatDateTime } from '../../lib/format.js';
  * refill), not a staff-driven status machine worth its own page the
  * way a lab order is.
  */
+const PRESCRIPTION_STATUSES = ['active', 'completed', 'discontinued'];
+
 export default function MyPrescriptions() {
   const { t } = useTranslation();
+  const [statusFilter, setStatusFilter] = useState('');
   const { data: prescriptions, isLoading, isError, error, refetch } = useMyPrescriptions(true);
   const { data: refillRequests } = useMyRefillRequests(true);
+
+  const visiblePrescriptions = (prescriptions || []).filter((p) => !statusFilter || p.status === statusFilter);
 
   function latestRequestFor(prescriptionId) {
     const matches = (refillRequests || []).filter((r) => r.prescriptionId === prescriptionId);
@@ -56,11 +61,26 @@ export default function MyPrescriptions() {
 
   return (
     <PageContainer width="lg">
-      <PageHeader title={t('myPrescriptionsPage.title')} />
+      <PageHeader
+        title={t('myPrescriptionsPage.title')}
+        actions={
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label={t('common.filterByStatus')}
+            className={`${inputClass} w-44`}
+          >
+            <option value="">{t('common.all')}</option>
+            {PRESCRIPTION_STATUSES.map((s) => (
+              <option key={s} value={s}>{t(`prescriptionStatus.${s}`)}</option>
+            ))}
+          </select>
+        }
+      />
 
       <DataTable
         columns={columns}
-        rows={prescriptions || []}
+        rows={visiblePrescriptions}
         rowKey="id"
         searchAccessors={[(p) => p.medicationName]}
         defaultSortKey="createdAt"

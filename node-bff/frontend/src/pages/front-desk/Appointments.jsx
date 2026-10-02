@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAppointments, usePatients } from '../../api/queries.js';
@@ -7,7 +7,10 @@ import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
 import Button from '../../components/Button.jsx';
+import { inputClass } from '../../components/Field.jsx';
 import { formatDateTime } from '../../lib/format.js';
+
+const STATUS_VALUES = ['booked', 'checked_in', 'roomed', 'with_provider', 'checked_out', 'no_show', 'cancelled'];
 
 /**
  * Tenant-wide appointment list (front_desk/clinic_admin/provider) - see
@@ -20,6 +23,7 @@ import { formatDateTime } from '../../lib/format.js';
 export default function Appointments() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [statusFilter, setStatusFilter] = useState('');
   const appointments = useAppointments(true);
   const patients = usePatients();
 
@@ -35,6 +39,8 @@ export default function Appointments() {
 
   const isLoading = appointments.isLoading || patients.isLoading;
   const isError = appointments.isError || patients.isError;
+
+  const visibleAppointments = (appointments.data || []).filter((a) => !statusFilter || a.status === statusFilter);
 
   const columns = [
     { key: 'name', header: t('common.name'), accessor: nameFor, sortable: true },
@@ -55,15 +61,28 @@ export default function Appointments() {
       <PageHeader
         title={t('nav.frontDesk.appointments')}
         actions={
-          <Button as={Link} to="/front-desk/patients">
-            {t('nav.frontDesk.bookWalkIn')}
-          </Button>
+          <>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label={t('common.filterByStatus')}
+              className={`${inputClass} w-44`}
+            >
+              <option value="">{t('common.all')}</option>
+              {STATUS_VALUES.map((s) => (
+                <option key={s} value={s}>{t(`status.${s}`)}</option>
+              ))}
+            </select>
+            <Button as={Link} to="/front-desk/patients">
+              {t('nav.frontDesk.bookWalkIn')}
+            </Button>
+          </>
         }
       />
 
       <DataTable
         columns={columns}
-        rows={appointments.data || []}
+        rows={visibleAppointments}
         rowKey="id"
         searchAccessors={[nameFor, (a) => a.appointmentRef]}
         searchPlaceholder={t('common.search')}

@@ -19,6 +19,11 @@ export default function ClinicAdminAppointmentTypes() {
 
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState(null);
+  // Appointment types accumulate over a clinic's lifetime (new visit types/
+  // pricing tiers added, old ones deactivated rather than deleted) with no
+  // way to hide retired ones (2026-10-01 search/filter audit).
+  const [statusFilter, setStatusFilter] = useState('');
+  const visibleTypes = (types || []).filter((type) => !statusFilter || type.status === statusFilter);
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -52,7 +57,19 @@ export default function ClinicAdminAppointmentTypes() {
 
   return (
     <PageContainer width="lg">
-      <h1 className="mb-6 text-2xl font-bold text-ink">{t('nav.clinicAdmin.appointmentTypes')}</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-ink">{t('nav.clinicAdmin.appointmentTypes')}</h1>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          aria-label={t('common.filterByStatus')}
+          className={`${inputClass} w-40`}
+        >
+          <option value="">{t('common.all')}</option>
+          <option value="active">{t('status.active')}</option>
+          <option value="inactive">{t('status.inactive')}</option>
+        </select>
+      </div>
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('common.name')}>
@@ -72,7 +89,7 @@ export default function ClinicAdminAppointmentTypes() {
 
       <DataTable
         columns={columns}
-        rows={types || []}
+        rows={visibleTypes}
         rowKey="id"
         searchAccessors={[(type) => type.name]}
         defaultSortKey="name"

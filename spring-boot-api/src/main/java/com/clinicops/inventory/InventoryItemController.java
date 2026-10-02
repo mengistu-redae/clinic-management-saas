@@ -165,9 +165,19 @@ public class InventoryItemController {
      * (active) stock batches and flags it if the sum is below threshold.
      * Closes phase 20's own documented simplification (low-stock stayed
      * a per-medication client-side badge, not a cross-catalog endpoint).
+     *
+     * PHARMACIST added (2026-10-02 search/filter audit) - a real gap found
+     * wiring Medications.jsx's new "Low stock" filter: a pharmacist is at
+     * least as legitimate a consumer of "what needs reordering" as
+     * front_desk, and the alternative (fetching every medication's own
+     * stock batches up front just to compute this client-side) is exactly
+     * the N+1 this shared endpoint already exists to avoid. Same "broader
+     * read gate than write gate" precedent MedicationController's own GET
+     * endpoints already set for front_desk (phase 35) - write access here
+     * is unaffected, still clinic_admin/front_desk only.
      */
     @GetMapping("/api/inventory/reorder-alerts")
-    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK')")
+    @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'PHARMACIST')")
     public List<ReorderAlert> reorderAlerts() {
         UUID tenantId = TenantContext.require();
         List<ReorderAlert> alerts = new ArrayList<>();

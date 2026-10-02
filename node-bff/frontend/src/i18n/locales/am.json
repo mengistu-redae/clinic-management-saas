@@ -119,7 +119,9 @@
     "dismiss": "ዝጋ",
     "filterByStatus": "በሁኔታ ማጣሪያ",
     "copy": "ቅዳ",
-    "copied": "ተቀድቷል"
+    "copied": "ተቀድቷል",
+    "all": "ሁሉም",
+    "activeOnly": "ንቁ ብቻ"
   },
   "appointmentDetail": {
     "title": "ቀጠሮ",
@@ -655,7 +657,10 @@
     "remainingHint": "{{count}} ቀሪ",
     "appointmentsToday": "የዛሬ ቀጠሮዎች",
     "emptyTitle": "ዛሬ ምንም አልተያዘም",
-    "emptyDescription": "ለዛሬ ከእርስዎ ጋር የተያዙ ቀጠሮዎች እዚህ ይታያሉ።"
+    "emptyDescription": "ለዛሬ ከእርስዎ ጋር የተያዙ ቀጠሮዎች እዚህ ይታያሉ።",
+    "filterAll": "ሁሉም",
+    "filterNotSeen": "ያልታዩ",
+    "filterSeen": "የታዩ"
   },
   "platformAdminDashboard": {
     "title": "የመድረክ አጠቃላይ እይታ",
@@ -896,6 +901,7 @@
     "errorWriteOff": "ይህን ጎድጓዳ መሰረዝ አልተቻለም።",
     "onHandTotal": "{{count}} በክምችት ውስጥ",
     "lowStock": "ዝቅተኛ ክምችት",
+    "expiringSoon": "በቅርቡ የሚያልቅ",
     "expiringSoonCount": "{{count}} ጊዜው ያለፈ/እያለቀ",
     "dispenseConfirmed": "{{quantity}} የ{{medication}} ተሰጥቷል።",
     "dispenseHistory": "የተሰጡ መድሃኒቶች ታሪክ",

@@ -27,6 +27,9 @@ public class Clinic {
     @Column(nullable = false)
     private String name;
 
+    /** Collected at onboarding (CreateClinicRequest) - nullable, since every clinic provisioned before V29 has nothing on file. */
+    private String domain;
+
     @Column(nullable = false)
     private String status = "active";
 

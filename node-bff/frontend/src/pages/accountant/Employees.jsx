@@ -27,6 +27,9 @@ export default function AccountantEmployees() {
 
   const [form, setForm] = useState({ email: '', salaryAmount: '' });
   const [formError, setFormError] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const visibleEmployees = (employees || []).filter((e) => !statusFilter || e.status === statusFilter);
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -74,9 +77,19 @@ export default function AccountantEmployees() {
       </form>
       {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
 
+      <div className="mb-4 flex items-end gap-3">
+        <Field label={t('referralsPage.status')}>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`${inputClass} w-40`}>
+            <option value="">{t('common.all')}</option>
+            <option value="active">{t('status.active')}</option>
+            <option value="inactive">{t('status.inactive')}</option>
+          </select>
+        </Field>
+      </div>
+
       <DataTable
         columns={columns}
-        rows={employees || []}
+        rows={visibleEmployees}
         rowKey="id"
         searchAccessors={[(e) => e.fullName, (e) => e.email]}
         defaultSortKey="fullName"

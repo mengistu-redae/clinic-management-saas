@@ -8,6 +8,7 @@ import {
   useStockBatches,
   useReceiveStockBatch,
   useWriteOffStockBatch,
+  useReorderAlerts,
 } from '../../api/queries.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
@@ -35,10 +36,25 @@ const SCHEDULES = ['schedule_i', 'schedule_ii', 'schedule_iii', 'schedule_iv', '
 export default function Medications() {
   const { t } = useTranslation();
   const { data: medications, isLoading, isError, error, refetch } = useMedications(true);
+  const { data: reorderAlerts } = useReorderAlerts(true);
   const createMedication = useCreateMedication();
 
   const [form, setForm] = useState({ name: '', form: 'tablet', unitOfMeasure: '', unitPrice: '', reorderThreshold: '' });
   const [formError, setFormError] = useState(null);
+  const [triageFilter, setTriageFilter] = useState('');
+
+  // Reuses the shared, already-computed reorder-alerts endpoint (same one
+  // InventoryItemController.reorderAlerts/the inventory dashboard's own
+  // low-stock badge feed from) rather than fetching every medication's own
+  // stock batches up front just to compute a list-level flag - an N+1 this
+  // app has deliberately avoided elsewhere. No bulk "expiring soon" source
+  // is reachable from the pharmacist role today (the one that exists,
+  // GET /api/inventory/analytics, is clinic_admin/front_desk-only) - an
+  // "Expiring soon" filter option was in scope but isn't included here for
+  // that reason, flagged rather than worked around with a per-row fetch.
+  const lowStockMedicationIds = new Set(
+    (reorderAlerts || []).filter((a) => a.ownerType === 'medication').map((a) => a.ownerId),
+  );
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -60,6 +76,13 @@ export default function Medications() {
       setFormError(err.message || t('pharmacistPage.errorCreate'));
     }
   }
+
+  const visibleMedications = (medications || []).filter((m) => {
+    if (triageFilter === 'active') return m.status === 'active';
+    if (triageFilter === 'lowStock') return lowStockMedicationIds.has(m.id);
+    if (triageFilter === 'controlled') return m.controlledSubstanceSchedule != null;
+    return true;
+  });
 
   const columns = [
     {
@@ -93,7 +116,22 @@ export default function Medications() {
 
   return (
     <PageContainer width="lg">
-      <PageHeader title={t('nav.pharmacist.medications')} />
+      <PageHeader
+        title={t('nav.pharmacist.medications')}
+        actions={
+          <select
+            value={triageFilter}
+            onChange={(e) => setTriageFilter(e.target.value)}
+            aria-label={t('common.filterByStatus')}
+            className={`${inputClass} w-44`}
+          >
+            <option value="">{t('common.all')}</option>
+            <option value="active">{t('common.activeOnly')}</option>
+            <option value="lowStock">{t('pharmacistPage.lowStock')}</option>
+            <option value="controlled">{t('nav.pharmacist.controlledSubstances')}</option>
+          </select>
+        }
+      />
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('common.name')}>
@@ -121,9 +159,9 @@ export default function Medications() {
 
       <DataTable
         columns={columns}
-        rows={medications || []}
+        rows={visibleMedications}
         rowKey="id"
-        searchAccessors={[(m) => m.name]}
+        searchAccessors={[(m) => m.name, (m) => t(`medicationForm.${m.form}`, { defaultValue: m.form })]}
         defaultSortKey="name"
         renderExpanded={(medication) => <StockBatchesPanel medication={medication} />}
         isLoading={isLoading}

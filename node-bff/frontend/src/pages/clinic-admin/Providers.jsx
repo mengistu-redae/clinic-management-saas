@@ -47,6 +47,12 @@ export default function ClinicAdminProviders() {
 
   const [form, setForm] = useState({ fullName: '', specialty: '', roomId: '', licenseNumber: '', licenseExpiry: '', employmentStatus: '' });
   const [formError, setFormError] = useState(null);
+  // A clinic's own provider roster accumulates departed/inactive staff
+  // alongside active ones with no way to hide them (2026-10-01 search/filter
+  // audit) - defaults to "all" since an admin reactivating someone still
+  // needs to find them.
+  const [statusFilter, setStatusFilter] = useState('');
+  const visibleProviders = (providers || []).filter((p) => !statusFilter || p.status === statusFilter);
 
   const roomById = Object.fromEntries((rooms || []).map((r) => [r.id, r]));
 
@@ -94,7 +100,19 @@ export default function ClinicAdminProviders() {
 
   return (
     <PageContainer width="lg">
-      <h1 className="mb-6 text-2xl font-bold text-ink">{t('nav.clinicAdmin.providers')}</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-ink">{t('nav.clinicAdmin.providers')}</h1>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          aria-label={t('common.filterByStatus')}
+          className={`${inputClass} w-40`}
+        >
+          <option value="">{t('common.all')}</option>
+          <option value="active">{t('status.active')}</option>
+          <option value="inactive">{t('status.inactive')}</option>
+        </select>
+      </div>
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('providersPage.fullName')}>
@@ -137,7 +155,7 @@ export default function ClinicAdminProviders() {
       {!isLoading && !isError && providers?.length > 0 && (
         <DataTable
           columns={columns}
-          rows={providers}
+          rows={visibleProviders}
           rowKey="id"
           searchAccessors={[(p) => p.fullName, (p) => p.specialty]}
           defaultSortKey="fullName"

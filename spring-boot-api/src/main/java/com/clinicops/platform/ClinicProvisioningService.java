@@ -65,6 +65,7 @@ public class ClinicProvisioningService {
         Clinic clinic = new Clinic();
         clinic.setKeycloakOrgId(orgAlias);
         clinic.setName(name);
+        clinic.setDomain(domain);
         clinic = clinicRepository.save(clinic);
 
         if (adminEmail == null || adminEmail.isBlank()) {

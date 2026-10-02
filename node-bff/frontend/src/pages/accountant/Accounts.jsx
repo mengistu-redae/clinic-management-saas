@@ -28,6 +28,9 @@ export default function AccountantAccounts() {
 
   const [form, setForm] = useState({ code: '', name: '', type: 'asset' });
   const [formError, setFormError] = useState(null);
+  const [typeFilter, setTypeFilter] = useState('');
+
+  const visibleAccounts = (accounts || []).filter((a) => !typeFilter || a.type === typeFilter);
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -59,7 +62,21 @@ export default function AccountantAccounts() {
 
   return (
     <PageContainer width="lg">
-      <PageHeader title={t('nav.accountant.accounts')} description={t('accountantPage.accountsDescription')} />
+      <PageHeader
+        title={t('nav.accountant.accounts')}
+        description={t('accountantPage.accountsDescription')}
+        actions={
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            aria-label={t('accountantPage.accountType')}
+            className={`${inputClass} w-40`}
+          >
+            <option value="">{t('common.all')}</option>
+            {ACCOUNT_TYPES.map((type) => <option key={type} value={type}>{t(`accountType.${type}`)}</option>)}
+          </select>
+        }
+      />
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('accountantPage.code')}>
@@ -81,7 +98,7 @@ export default function AccountantAccounts() {
 
       <DataTable
         columns={columns}
-        rows={accounts || []}
+        rows={visibleAccounts}
         rowKey="id"
         searchAccessors={[(a) => a.name, (a) => a.code]}
         defaultSortKey="code"

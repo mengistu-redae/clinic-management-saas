@@ -107,6 +107,14 @@ class InventoryItemControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[0].ownerType").value("inventory_item"))
                 .andExpect(jsonPath("$[0].name").value("Low Stock Item"))
                 .andExpect(jsonPath("$[0].currentQuantity").value(5));
+
+        // Widened 2026-10-02 (search/filter audit) so pharmacist/Medications.jsx's
+        // own "Low stock" filter can reuse this shared endpoint instead of an N+1
+        // per-medication stock-batch fetch - pharmacist is at least as legitimate
+        // a consumer of "what needs reordering" as front_desk.
+        mockMvc.perform(get("/api/inventory/reorder-alerts").with(asPharmacist("pharm", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
     }
 
     @Test

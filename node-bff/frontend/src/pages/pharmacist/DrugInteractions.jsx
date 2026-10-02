@@ -43,6 +43,7 @@ export default function DrugInteractions() {
   const [severity, setSeverity] = useState('');
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState(null);
+  const [severityFilter, setSeverityFilter] = useState('');
 
   const medicationById = useMemo(
     () => Object.fromEntries((allMedications.data || []).map((m) => [m.id, m])),
@@ -75,6 +76,12 @@ export default function DrugInteractions() {
       setFormError(err.message || t('drugInteractionsPage.errorCreate'));
     }
   }
+
+  const visiblePairs = (pairs || []).filter((p) => {
+    if (!severityFilter) return true;
+    if (severityFilter === 'unset') return !p.severity;
+    return p.severity === severityFilter;
+  });
 
   const columns = [
     { key: 'medicationA', header: t('drugInteractionsPage.medicationA'), accessor: (p) => medicationName(p.medicationAId), sortable: true, className: 'font-semibold' },

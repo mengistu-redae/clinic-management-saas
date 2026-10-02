@@ -37,8 +37,10 @@ export default function InventoryAssets() {
 
   const [form, setForm] = useState({ name: '', serialNumber: '', purchaseDate: '', purchasePrice: '', warrantyExpiry: '' });
   const [formError, setFormError] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('');
 
   const roomById = useMemo(() => Object.fromEntries((allRooms.data || []).map((r) => [r.id, r])), [allRooms.data]);
+  const visibleAssets = (assets || []).filter((a) => !statusFilter || a.status === statusFilter);
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -76,7 +78,20 @@ export default function InventoryAssets() {
 
   return (
     <PageContainer width="lg">
-      <PageHeader title={t('nav.inventory.assets')} />
+      <PageHeader
+        title={t('nav.inventory.assets')}
+        actions={
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label={t('common.filterByStatus')}
+            className={`${inputClass} w-44`}
+          >
+            <option value="">{t('common.all')}</option>
+            {STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
+          </select>
+        }
+      />
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('common.name')}>
@@ -102,7 +117,7 @@ export default function InventoryAssets() {
 
       <DataTable
         columns={columns}
-        rows={assets || []}
+        rows={visibleAssets}
         rowKey="id"
         searchAccessors={[(a) => a.name, (a) => a.serialNumber]}
         defaultSortKey="name"

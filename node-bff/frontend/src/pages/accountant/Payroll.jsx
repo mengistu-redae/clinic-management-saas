@@ -31,11 +31,18 @@ export default function AccountantPayroll() {
   const [form, setForm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
   const [formError, setFormError] = useState(null);
   const [lastRun, setLastRun] = useState(null);
+  const [yearFilter, setYearFilter] = useState('');
 
   const employeeNameById = useMemo(
     () => Object.fromEntries((employees.data || []).map((e) => [e.id, e.fullName || e.email])),
     [employees.data],
   );
+
+  // Payroll runs are naturally bounded (one per month), but a multi-year
+  // clinic has no headroom once this list grows past a page's worth - a
+  // plain year filter derived from whatever years actually exist.
+  const years = useMemo(() => [...new Set((runs || []).map((r) => r.year))].sort((a, b) => b - a), [runs]);
+  const visibleRuns = (runs || []).filter((r) => !yearFilter || r.year === Number(yearFilter));
 
   async function handleRun(event) {
     event.preventDefault();
@@ -56,7 +63,23 @@ export default function AccountantPayroll() {
 
   return (
     <PageContainer width="lg">
-      <PageHeader title={t('nav.accountant.payroll')} description={t('accountantPage.payrollDescription')} />
+      <PageHeader
+        title={t('nav.accountant.payroll')}
+        description={t('accountantPage.payrollDescription')}
+        actions={
+          years.length > 0 && (
+            <select
+              value={yearFilter}
+              onChange={(e) => setYearFilter(e.target.value)}
+              aria-label={t('accountantPage.year')}
+              className={`${inputClass} w-28`}
+            >
+              <option value="">{t('common.all')}</option>
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          )
+        }
+      />
 
       <form onSubmit={handleRun} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('accountantPage.year')}>
@@ -90,7 +113,7 @@ export default function AccountantPayroll() {
 
       <DataTable
         columns={columns}
-        rows={runs || []}
+        rows={visibleRuns}
         rowKey="id"
         defaultSortKey="period"
         defaultSortDir="desc"

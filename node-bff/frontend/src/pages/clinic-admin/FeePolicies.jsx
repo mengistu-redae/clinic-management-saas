@@ -7,6 +7,7 @@ import ErrorBanner from '../../components/ErrorBanner.jsx';
 import DataTable from '../../components/DataTable.jsx';
 import Button from '../../components/Button.jsx';
 import Field, { inputClass } from '../../components/Field.jsx';
+import { SearchIcon } from '../../components/icons.jsx';
 
 /**
  * "Fee Policies" tab of the clinic-admin settings hub - GET/POST/POST
@@ -28,6 +29,7 @@ export default function ClinicAdminFeePolicies() {
   const [cutoffHours, setCutoffHours] = useState('24');
   const [feePercent, setFeePercent] = useState('0');
   const [formError, setFormError] = useState(null);
+  const [query, setQuery] = useState('');
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -57,6 +59,17 @@ export default function ClinicAdminFeePolicies() {
     if (b === 'default') return 1;
     return (providerById[a]?.fullName || '').localeCompare(providerById[b]?.fullName || '');
   });
+
+  function groupLabel(key) {
+    return key === 'default' ? t('feePoliciesPage.clinicWideDefault') : providerById[key]?.fullName || t('feePoliciesPage.unknownProvider');
+  }
+
+  // A clinic with many providers, each carrying their own override tier set,
+  // otherwise has no way to jump to one provider's group without scrolling
+  // past every other one (2026-10-01 search/filter audit).
+  const visibleKeys = query.trim()
+    ? orderedKeys.filter((key) => groupLabel(key).toLowerCase().includes(query.trim().toLowerCase()))
+    : orderedKeys;
 
   const columns = [
     { key: 'cutoffHours', header: t('feePoliciesPage.cutoffHours'), accessor: (t2) => t2.cutoffHours, sortable: true },
@@ -96,21 +109,34 @@ export default function ClinicAdminFeePolicies() {
 
       {!isLoading && !isError && orderedKeys.length > 0 && (
         <div className="flex flex-col gap-4">
-          {orderedKeys.map((key) => (
-            <div key={key} className="rounded-xl border border-slate-200 bg-surface p-4">
-              <h3 className="mb-3 text-sm font-semibold text-ink">
-                {key === 'default' ? t('feePoliciesPage.clinicWideDefault') : providerById[key]?.fullName || t('feePoliciesPage.unknownProvider')}
-              </h3>
-              <DataTable
-                columns={columns}
-                rows={groups.get(key)}
-                rowKey="id"
-                defaultSortKey="cutoffHours"
-                defaultSortDir="desc"
-                renderExpanded={(tier) => <TierEditPanel tier={tier} />}
-              />
-            </div>
-          ))}
+          <div className="relative w-full max-w-sm">
+            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('common.search')}
+              className="w-full rounded-lg border border-slate-300 bg-surface py-2 pl-9 pr-3 text-sm text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+            />
+          </div>
+
+          {visibleKeys.length === 0 ? (
+            <EmptyState title={t('common.noResults')} description={t('common.noResultsHint')} />
+          ) : (
+            visibleKeys.map((key) => (
+              <div key={key} className="rounded-xl border border-slate-200 bg-surface p-4">
+                <h3 className="mb-3 text-sm font-semibold text-ink">{groupLabel(key)}</h3>
+                <DataTable
+                  columns={columns}
+                  rows={groups.get(key)}
+                  rowKey="id"
+                  defaultSortKey="cutoffHours"
+                  defaultSortDir="desc"
+                  renderExpanded={(tier) => <TierEditPanel tier={tier} />}
+                />
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>

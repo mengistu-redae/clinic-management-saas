@@ -42,6 +42,7 @@ export default function InventoryItems() {
 
   const [form, setForm] = useState({ name: '', category: 'clinical_supply', unitOfMeasure: '', unitPrice: '', reorderThreshold: '' });
   const [formError, setFormError] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState('');
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -64,6 +65,8 @@ export default function InventoryItems() {
     }
   }
 
+  const visibleItems = (items || []).filter((i) => !categoryFilter || i.category === categoryFilter);
+
   const columns = [
     { key: 'name', header: t('common.name'), accessor: (i) => i.name, sortable: true, className: 'font-semibold' },
     { key: 'category', header: t('inventoryPage.category'), accessor: (i) => t(`inventoryCategory.${i.category}`, { defaultValue: i.category }), sortable: true },
@@ -74,7 +77,20 @@ export default function InventoryItems() {
 
   return (
     <PageContainer width="lg">
-      <PageHeader title={t('nav.inventory.items')} />
+      <PageHeader
+        title={t('nav.inventory.items')}
+        actions={
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            aria-label={t('inventoryPage.category')}
+            className={`${inputClass} w-44`}
+          >
+            <option value="">{t('common.all')}</option>
+            {CATEGORIES.map((c) => <option key={c} value={c}>{t(`inventoryCategory.${c}`)}</option>)}
+          </select>
+        }
+      />
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('common.name')}>
@@ -102,7 +118,7 @@ export default function InventoryItems() {
 
       <DataTable
         columns={columns}
-        rows={items || []}
+        rows={visibleItems}
         rowKey="id"
         searchAccessors={[(i) => i.name]}
         defaultSortKey="name"
@@ -133,6 +149,10 @@ function StockBatchesPanel({ item }) {
   const [writeOffTarget, setWriteOffTarget] = useState(null); // { batchId, status } | null
   const [writeOffReason, setWriteOffReason] = useState('');
   const [adjustmentsOpenFor, setAdjustmentsOpenFor] = useState(null); // batchId | null
+  // Defaults on - a long-lived item accumulates years of depleted/expired/
+  // recalled batches alongside the handful of active ones that actually
+  // matter day-to-day; unchecking shows the full history.
+  const [activeBatchesOnly, setActiveBatchesOnly] = useState(true);
 
   function startEdit() {
     setRowError(null);
@@ -259,15 +279,30 @@ function StockBatchesPanel({ item }) {
       {rowError && <div className="mt-3"><ErrorBanner message={rowError} /></div>}
 
       <div className="mt-4 border-t border-slate-100 pt-4">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('pharmacistPage.stockBatches')}</p>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{t('pharmacistPage.stockBatches')}</p>
+          <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <input
+              type="checkbox"
+              checked={activeBatchesOnly}
+              onChange={(e) => setActiveBatchesOnly(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-slate-300"
+            />
+            {t('common.activeOnly')}
+          </label>
+        </div>
         {isLoading && <Skeleton className="h-12 w-full" />}
         {isError && <ErrorBanner message={error?.message} onRetry={refetch} />}
         {!isLoading && !isError && (batches || []).length === 0 && (
           <p className="mb-3 text-sm text-ink-muted">{t('pharmacistPage.noBatches')}</p>
         )}
-        {!isLoading && !isError && (batches || []).length > 0 && (
+        {!isLoading && !isError && (batches || []).length > 0 && (() => {
+          const visibleBatches = activeBatchesOnly ? batches.filter((b) => b.status === 'active') : batches;
+          return visibleBatches.length === 0 ? (
+            <p className="mb-3 text-sm text-ink-muted">{t('pharmacistPage.noBatches')}</p>
+          ) : (
           <ul className="mb-3 flex flex-col gap-1.5">
-            {batches.map((b) => (
+            {visibleBatches.map((b) => (
               <li key={b.id} className="flex flex-col gap-2">
                 <div className="flex items-center justify-between text-sm text-ink">
                   <span>
@@ -311,7 +346,8 @@ function StockBatchesPanel({ item }) {
               </li>
             ))}
           </ul>
-        )}
+          );
+        })()}
 
         <form onSubmit={handleReceive} className="flex flex-wrap items-end gap-3">
           <Field label={t('pharmacistPage.batchNumberOptional')}>

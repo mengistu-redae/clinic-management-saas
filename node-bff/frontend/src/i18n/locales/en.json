@@ -119,7 +119,9 @@
     "dismiss": "Dismiss",
     "filterByStatus": "Filter by status",
     "copy": "Copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    "all": "All",
+    "activeOnly": "Active only"
   },
   "appointmentDetail": {
     "title": "Appointment",
@@ -657,7 +659,10 @@
     "remainingHint": "{{count}} remaining",
     "appointmentsToday": "Today's appointments",
     "emptyTitle": "Nothing scheduled today",
-    "emptyDescription": "Appointments booked with you for today will show up here."
+    "emptyDescription": "Appointments booked with you for today will show up here.",
+    "filterAll": "All",
+    "filterNotSeen": "Not seen",
+    "filterSeen": "Seen"
   },
   "platformAdminDashboard": {
     "title": "Platform Overview",
@@ -898,6 +903,7 @@
     "errorWriteOff": "Could not write off this batch.",
     "onHandTotal": "{{count}} on hand",
     "lowStock": "Low stock",
+    "expiringSoon": "Expiring soon",
     "expiringSoonCount": "{{count}} expired/expiring",
     "dispenseConfirmed": "Dispensed {{quantity}} of {{medication}}.",
     "dispenseHistory": "Dispense history",

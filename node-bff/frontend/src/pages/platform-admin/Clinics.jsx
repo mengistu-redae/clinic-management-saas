@@ -48,6 +48,9 @@ export default function PlatformAdminClinics() {
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState(null);
   const [provisionedAdmin, setProvisionedAdmin] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const visibleClinics = (clinics || []).filter((c) => !statusFilter || c.status === statusFilter);
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -77,6 +80,7 @@ export default function PlatformAdminClinics() {
   const columns = [
     { key: 'name', header: t('common.name'), accessor: (c) => c.name, sortable: true, className: 'font-semibold' },
     { key: 'orgAlias', header: t('clinicsPage.orgAlias'), accessor: (c) => c.keycloakOrgId, sortable: true, className: 'font-mono text-xs' },
+    { key: 'domain', header: t('clinicsPage.domain'), accessor: (c) => c.domain || '', render: (c) => c.domain || '—' },
     {
       key: 'status',
       header: t('referralsPage.status'),
@@ -96,7 +100,22 @@ export default function PlatformAdminClinics() {
 
   return (
     <PageContainer width="lg">
-      <PageHeader title={t('nav.platformAdmin.clinics')} description={t('clinicsPage.intro')} />
+      <PageHeader
+        title={t('nav.platformAdmin.clinics')}
+        description={t('clinicsPage.intro')}
+        actions={
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label={t('common.filterByStatus')}
+            className={`${inputClass} w-40`}
+          >
+            <option value="">{t('common.all')}</option>
+            <option value="active">{t('status.active')}</option>
+            <option value="inactive">{t('status.inactive')}</option>
+          </select>
+        }
+      />
 
       <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-surface p-4">
         <Field label={t('common.name')}>
@@ -135,9 +154,9 @@ export default function PlatformAdminClinics() {
 
       <DataTable
         columns={columns}
-        rows={clinics || []}
+        rows={visibleClinics}
         rowKey="id"
-        searchAccessors={[(c) => c.name, (c) => c.keycloakOrgId]}
+        searchAccessors={[(c) => c.name, (c) => c.keycloakOrgId, (c) => c.domain]}
         defaultSortKey="createdAt"
         defaultSortDir="desc"
         renderExpanded={(clinic) => <ClinicEditPanel clinic={clinic} />}

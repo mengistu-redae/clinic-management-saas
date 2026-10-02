@@ -29,7 +29,7 @@ class PatientControllerIntegrationTest extends AbstractIntegrationTest {
         String body = mockMvc.perform(post("/api/patients").with(asFrontDesk("fd", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreatePatientRequest("Jane", "Walkin", null, "+15550001111", null, null, null))))
+                                new CreatePatientRequest("Jane", "Walkin", null, "+15550001111", null, "ID-998877", null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.firstName").value("Jane"))
                 .andExpect(jsonPath("$.lastName").value("Walkin"))
@@ -45,6 +45,12 @@ class PatientControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.phone").value("+15550001111"));
 
         mockMvc.perform(get("/api/patients").with(asFrontDesk("fd", orgAlias)).param("query", "walkin"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+
+        // A front-desk worker often only has a patient's ID card in hand, not their
+        // name - search must cover nationalId too (fixed 2026-10-01, was name/phone only).
+        mockMvc.perform(get("/api/patients").with(asFrontDesk("fd", orgAlias)).param("query", "998877"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1));
 

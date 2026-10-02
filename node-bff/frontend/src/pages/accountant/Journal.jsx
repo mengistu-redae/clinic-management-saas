@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAccounts, useJournalEntries, useTrialBalance } from '../../api/queries.js';
 import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
 import Card from '../../components/Card.jsx';
+import Field, { inputClass } from '../../components/Field.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
 
 /**
@@ -20,10 +21,36 @@ export default function AccountantJournal() {
   const trialBalance = useTrialBalance(true);
   const entries = useJournalEntries(true);
 
+  // This ledger grows forever (every payment/refund/payroll run posts a new
+  // entry) with no backend date-range param on GET /api/clinic/journal-entries
+  // - a plain client-side period/source-type filter over the already-fetched
+  // list, same spirit as the year/month options being derived from the real
+  // data present rather than a hardcoded guess (2026-10-01 search/filter audit).
+  const [yearFilter, setYearFilter] = useState('');
+  const [monthFilter, setMonthFilter] = useState('');
+  const [sourceTypeFilter, setSourceTypeFilter] = useState('');
+
   const accountById = useMemo(
     () => Object.fromEntries((accounts.data || []).map((a) => [a.id, a])),
     [accounts.data],
   );
+
+  const years = useMemo(
+    () => [...new Set((entries.data || []).map((e) => new Date(e.entry.createdAt).getFullYear()))].sort((a, b) => b - a),
+    [entries.data],
+  );
+  const sourceTypes = useMemo(
+    () => [...new Set((entries.data || []).map((e) => e.entry.sourceType))].sort(),
+    [entries.data],
+  );
+
+  const visibleEntries = (entries.data || []).filter((e) => {
+    const date = new Date(e.entry.createdAt);
+    if (yearFilter && date.getFullYear() !== Number(yearFilter)) return false;
+    if (monthFilter && date.getMonth() + 1 !== Number(monthFilter)) return false;
+    if (sourceTypeFilter && e.entry.sourceType !== sourceTypeFilter) return false;
+    return true;
+  });
 
   function accountLabel(accountId) {
     const account = accountById[accountId];
@@ -68,9 +95,35 @@ export default function AccountantJournal() {
 
       <div>
         <h2 className="mb-4 text-lg font-bold text-ink">{t('accountantPage.journalEntries')}</h2>
+
+        <Card className="mb-4 flex flex-wrap items-end gap-3">
+          <Field label={t('accountantPage.year')}>
+            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className={`${inputClass} w-28`}>
+              <option value="">{t('common.all')}</option>
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </Field>
+          <Field label={t('accountantPage.month')}>
+            <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className={`${inputClass} w-28`}>
+              <option value="">{t('common.all')}</option>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t('accountantPage.sourceType')}>
+            <select value={sourceTypeFilter} onChange={(e) => setSourceTypeFilter(e.target.value)} className={`${inputClass} w-48`}>
+              <option value="">{t('common.all')}</option>
+              {sourceTypes.map((s) => (
+                <option key={s} value={s}>{t(`journalSourceType.${s}`, { defaultValue: s })}</option>
+              ))}
+            </select>
+          </Field>
+        </Card>
+
         <DataTable
           columns={entryColumns}
-          rows={entries.data || []}
+          rows={visibleEntries}
           rowKey={(e) => e.entry.id}
           searchAccessors={[(e) => e.entry.description, (e) => e.entry.sourceType]}
           defaultSortKey="createdAt"

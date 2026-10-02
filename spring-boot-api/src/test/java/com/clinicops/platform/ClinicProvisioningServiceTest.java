@@ -35,6 +35,10 @@ class ClinicProvisioningServiceTest {
 
         assertThat(result.getKeycloakOrgId()).isEqualTo("new-clinic");
         assertThat(result.getName()).isEqualTo("New Clinic");
+        // Collected at onboarding but only ever forwarded to Keycloak until now -
+        // a real gap found in the 2026-10-02 search/filter audit (platform_admin
+        // had no way to look a clinic up by domain since it was never persisted).
+        assertThat(result.getDomain()).isEqualTo("new-clinic.example");
 
         // Keycloak is called before the local save - verified call order.
         var order = inOrder(keycloakOrganizationClient, clinicRepository);
