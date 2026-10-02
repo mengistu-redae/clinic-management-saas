@@ -49,6 +49,7 @@ public class LabOrderService {
     private final CurrentUserService currentUserService;
     private final LabOrderRefGenerator refGenerator;
     private final RestrictedTestsProperties restrictedTestsProperties;
+    private final SpecimenService specimenService;
 
     public LabOrderService(
             LabOrderRepository labOrderRepository,
@@ -61,7 +62,8 @@ public class LabOrderService {
             PatientProvisioningService patientProvisioningService,
             CurrentUserService currentUserService,
             LabOrderRefGenerator refGenerator,
-            RestrictedTestsProperties restrictedTestsProperties) {
+            RestrictedTestsProperties restrictedTestsProperties,
+            SpecimenService specimenService) {
         this.labOrderRepository = labOrderRepository;
         this.labOrderTestRepository = labOrderTestRepository;
         this.labTestRateRepository = labTestRateRepository;
@@ -73,6 +75,7 @@ public class LabOrderService {
         this.currentUserService = currentUserService;
         this.refGenerator = refGenerator;
         this.restrictedTestsProperties = restrictedTestsProperties;
+        this.specimenService = specimenService;
     }
 
     @Transactional
@@ -96,6 +99,7 @@ public class LabOrderService {
         List<LabOrderTest> tests = priceAndSaveTests(tenantId, saved.getId(), request.tests(), request.consentAcknowledged());
         saved.setTotalCost(sumPrices(tests));
         labOrderRepository.save(saved);
+        specimenService.deriveForOrder(tenantId, saved.getId(), tests);
 
         return new LabOrderWithTests(saved, tests);
     }
@@ -144,6 +148,7 @@ public class LabOrderService {
             labOrderTestRepository.deleteAllByLabOrderId(order.getId());
             tests = priceAndSaveTests(tenantId, order.getId(), request.tests(), request.consentAcknowledged());
             order.setTotalCost(sumPrices(tests));
+            specimenService.deriveForOrder(tenantId, order.getId(), tests);
         } else {
             tests = labOrderTestRepository.findAllByLabOrderId(order.getId());
         }
@@ -204,6 +209,12 @@ public class LabOrderService {
         }
         order.setTotalCost(sumPrices(tests));
         labOrderRepository.save(order);
+        // A patient-initiated request's own test lines never carry a specimenType
+        // (CreateLabRequestRequest only takes free-text test names) - this is the
+        // first point a real specimenType ever exists for this order's tests,
+        // whether confirm-and-order replaced them outright or just repriced the
+        // existing rows in place.
+        specimenService.deriveForOrder(tenantId, order.getId(), tests);
         return new LabOrderWithTests(order, tests);
     }
 

@@ -184,6 +184,36 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    /** Lab module L1 (2026-10-02) - specimens are tenant-scoped the same way every other new resource in this file already is. */
+    @Test
+    void specimensAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("specimen");
+        Provider provider = createProvider(a.getId(), "Dr. A");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000044");
+        createLabTestRate(a.getId(), "CBC", "20.00", "0.00");
+
+        String body = mockMvc.perform(post("/api/lab-orders").with(asProvider("prov", a.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateLabOrderRequest(
+                                patient.getId(), null, provider.getId(), null, null,
+                                List.of(new TestItem("CBC", "CBC", "blood", null)), false))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID orderId = UUID.fromString(objectMapper.readTree(body).get("order").get("id").asText());
+
+        Clinic b = clinicB("specimen");
+        mockMvc.perform(get("/api/lab-orders/" + orderId + "/specimens").with(asLabTechnician("tech", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+
+        String specimensBody = mockMvc.perform(get("/api/lab-orders/" + orderId + "/specimens").with(asLabTechnician("tech", a.getKeycloakOrgId())))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID specimenId = UUID.fromString(objectMapper.readTree(specimensBody).get(0).get("id").asText());
+
+        mockMvc.perform(post("/api/specimens/" + specimenId + "/collect").with(asLabTechnician("tech", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     void appointmentAndLabOrderPaymentsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
         Clinic a = clinicA("payment");

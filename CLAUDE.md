@@ -1800,6 +1800,269 @@ valuation), Testcontainers integration tests for the rest, a live
 CLAUDE.md write-up - this section will be replaced by those real
 per-phase write-ups as each one lands, not left standing alongside them.
 
+## In-house laboratory module - sketched 2026-10-02, not yet built
+
+The user asked what it would take to make this a "fulfledged clinic
+system" with its own pharmacy and lab. Pharmacy is already there (phases
+20/27-34 above). Lab is not - phase 7's own module has stayed a thin,
+generic order-tracking shape since 2026-09-13 (`requested -> ordered ->
+specimen_collected -> in_transit -> resulted -> reviewed`, or `cancelled`)
+with no dedicated lab-staff role at all (`provider`+`clinic_admin` own
+every lab endpoint today, confirmed against `docs/api-reference.md`'s own
+"Lab orders" section) and an essentially free-text result
+(`lab_order_tests.result_value`/`result_unit`/`reference_range`/
+`abnormal_flag` are flat columns, one per test line, not a per-analyte
+breakdown). Phase 7's own write-up flagged this exact fork as
+"not yet decided" and it was never revisited.
+
+Four direct questions were put to the user before sketching anything,
+matching this project's own "ask before building" convention - all
+answered with the recommended option, plus both optional capability
+areas taken:
+
+- **Lab staff role**: a new `lab_technician` realm role owns specimen
+  collection/processing/result entry; `provider` keeps the final
+  clinical "reviewed" sign-off that already exists today - the exact
+  same split pharmacy already uses between `pharmacist` (dispensing) and
+  `provider` (prescribing).
+- **Result structure**: real structured per-analyte results (value +
+  unit + reference range + auto-computed flag), not the current flat
+  one-result-per-test-line shape - each test's own catalog entry defines
+  its expected analytes, the way a CBC's own panel (WBC/RBC/Hgb/etc.)
+  actually works in a real lab.
+- **Specimen granularity**: a specimen becomes its own entity under
+  `LabOrder` (one order, 1+ specimens, each with its own
+  collection/accessioning/status timeline) rather than the order itself
+  being the single status machine - needed for a real multi-specimen
+  panel (e.g. blood + urine on one order) and mirrors the
+  `Prescription`-vs-`DispenseRecord` split pharmacy already uses for a
+  similar "one clinical intent, multiple physical fulfillment events"
+  shape.
+- **Capability scope**: both optional areas taken alongside the two
+  recommended ones - critical-value alerting, basic QC logging, external
+  reference-lab send-outs, and equipment/analyzer integration readiness
+  (no real instrument integration gets built - there's nothing to
+  integrate with in this dev environment - just a result-entry shape
+  that wouldn't need reworking if a real HL7/ASTM feed existed later).
+
+Eight phases sketched, building on the existing `com.clinicops.laborder`
+package rather than replacing it - `LabOrder`/`lab_test_rates` stay, the
+new work is additive (a new `Specimen` entity, a new analyte/result
+layer, a new role). Migrations start at `V30` (highest existing is
+`V29__clinic_domain_column.sql`). Nothing here is built yet - full
+field-by-field design happens when each phase is actually picked up,
+same as every other "sketched ahead of need" plan in this file (see the
+pharmacy-expansion sketch above, or phases 16-18's own precedent).
+
+**L1. Lab technician role + specimen entity foundation** - built
+2026-10-02, see "Phase L1: lab technician role + specimen entity
+foundation" below for the full write-up.
+
+**L2. Test catalog + structured per-analyte results** - a new
+analyte-definition layer keyed off `lab_test_rates.test_code` (analyte
+name/unit/normal range per test, a single-analyte test is just the
+degenerate one-row case); `lab_order_tests`' own flat
+`result_value`/`result_unit`/`reference_range`/`abnormal_flag` columns
+get superseded by a child per-analyte result table, each row
+auto-flagging normal/abnormal/critical against its own analyte's range.
+Whether a normal range should vary by patient age/sex is a real,
+separate question worth asking before this phase is built, not assumed
+here.
+
+**L3. Critical-value alerting** - a critical range alongside each
+analyte's normal range; a result landing in it triggers a dedicated,
+urgent notification (new payload/template type in the existing
+`com.clinicops.notification` outbox, same mechanism every other
+notification in this app already uses) to the order's own
+`ordering_provider_id`, plus a visible flag on the order until
+acknowledged.
+
+**L4. Basic QC logging** - a lightweight QC-run entity (instrument
+identifier - free text in v1, no real integration; control-material
+lot; expected vs. observed value; pass/fail), logged per
+instrument/day, reviewable by `lab_technician`. Whether an out-of-range
+QC result should actually block new result entry for that instrument
+(real enforcement) or just flag it (trusting staff judgment, this app's
+own existing bias - no confirm dialogs anywhere) is a real fork worth
+asking about before this phase is built.
+
+**L5. External reference-lab send-outs** - a new specimen status branch
+(`sent_to_reference_lab`) plus `reference_lab_name`/
+`reference_lab_order_number`/expected-turnaround fields; results coming
+back get entered through the same structured per-analyte shape L2
+already establishes, not a separate parallel path.
+
+**L6. Equipment/analyzer integration readiness** - not its own phase so
+much as a design constraint threaded through L1/L2: the result-entry
+endpoint's own request shape should be agnostic to whether a human
+(`lab_technician`, manually) or a future real instrument feed is the
+one filling it in, so a later real HL7/ASTM integration could reuse it
+without a redesign. No actual instrument integration gets built now.
+
+**L7. Lab reagent/consumable inventory** - a real scoping question for
+whenever this phase is picked up: extend the already-built general
+inventory module (`com.clinicops.inventory`, phase 29 - already has
+`StockBatch`'s own lot/expiry tracking and could gain a `lab_reagent`
+category) rather than build a second, parallel stock-tracking system
+just for lab reagents. Recommended default, not yet confirmed with the
+user.
+
+**L8. Frontend** - a new `pages/lab/` section for `lab_technician`
+(dispense-queue-equivalent worklist, specimen collection flow,
+per-analyte result entry, the QC log), mirroring
+`pages/pharmacist/`'s own structure exactly (same `DataTable`+
+`renderExpanded`/`TabGroup`/`Field` shared-component conventions this
+whole app already uses), plus a curated `clinic_admin` sidebar link
+into it, matching the existing "clinic_admin gets a UI path into every
+module it overrides" precedent. A lab analytics endpoint mirroring
+`PharmacyAnalyticsController`'s own shape (turnaround time, volume by
+test, critical-value rate) is a natural L8 add-on, not pinned as its
+own phase.
+
+Each phase, once built, gets the same treatment every other phase in
+this project does: its own migration, `TenantIsolationIntegrationTest`
+coverage, pure-unit tests for anything calculation-heavy (the
+critical-flag computation, the specimen-status roll-up), Testcontainers
+integration tests for the rest, a live-verification pass against the
+real running stack, and its own dated CLAUDE.md write-up replacing this
+sketch section - same discipline the pharmacy-expansion sketch above
+already modeled.
+
+## Phase L1: lab technician role + specimen entity foundation
+
+Built 2026-10-02, same session as the sketch above. First phase of the
+in-house laboratory module - a new `lab_technician` realm role plus a
+new `Specimen` entity, purely additive alongside `LabOrder`'s own
+existing status machine rather than replacing it, mirroring exactly how
+`DispenseRecord` was added for pharmacy without touching `Prescription`.
+New migration `V30__lab_specimens.sql`.
+
+- **`com.clinicops.laborder.Specimen`** (new) - one physical specimen
+  under a `LabOrder`, **derived automatically, never created by hand**:
+  `SpecimenService.deriveForOrder` groups an order's own
+  `LabOrderTest` rows by their existing `specimenType` field (present
+  since phase 7, previously unused for anything but display) and
+  creates one `Specimen` per distinct non-blank type - a CBC+LFT order
+  (both "blood") derives one specimen; a CBC+UA order (blood+urine)
+  derives two, independently trackable. A test row with no
+  `specimenType` set links to nothing (a real, accepted edge case, not
+  a bug). `LabOrderTest` gained a nullable `specimen_id` FK, set once a
+  specimen exists for its own type. Called from all three points a
+  `LabOrder`'s own test list gets finalized -
+  `LabOrderService.create`/`update` (when tests are replaced)/
+  `confirmAndOrder` - wiping and re-deriving from scratch each time,
+  safe since tests only ever get replaced while the order is still
+  `ordered`, before any real specimen work has started.
+- **`LabOrder.status` stays completely unchanged** - still an
+  independently-settable field, still driving every existing
+  staff/patient-facing UI and the public tracking endpoint exactly as
+  before. This was the one real fork the sketch itself left open
+  ("needs pinning when this phase starts") - resolved in favor of the
+  purely-additive reading rather than a derived-roll-up one, to avoid
+  a breaking change to every existing consumer of that field for a
+  first phase whose own job is just to lay the foundation.
+- **Two tracking layers, kept in lockstep for the existing simple
+  flow, independent where it matters**: `LabOrderStatusService`'s own
+  three order-level actions each now also call a new bulk
+  `SpecimenService` method - `collectSpecimen` calls
+  `collectAllForOrder` (every `pending_collection` specimen becomes
+  `collected`), `send` calls `markAllInTransitForOrder`, `result`
+  calls `completeAllForOrder`. For the overwhelming common case (one
+  specimen type per order, true of every order built before this
+  phase existed), this keeps both layers in sync automatically with
+  zero new UI needed. For a genuine multi-specimen order, a
+  `lab_technician` can instead act on each specimen independently via
+  the new fine-grained endpoints below - confirmed live that doing so
+  doesn't disturb the other, untouched specimen on the same order.
+- **New `SpecimenController`** -
+  `GET /api/lab-orders/{id}/specimens` (list, read-gated the same as
+  `LabOrderController`'s own widened read access below) and four
+  per-specimen actions: `POST /api/specimens/{id}/collect`,
+  `.../mark-in-transit`, `.../receive`, `.../complete` - each
+  idempotent on a re-call, each rejecting an out-of-order transition
+  with the reused `InvalidLabOrderStatusException` (409) rather than a
+  new parallel exception type, matching this codebase's own "only a
+  dedicated exception type when the shape doesn't already exist"
+  convention. `POST /api/specimens/{id}/reject` is the one action with
+  no order-level equivalent trigger - purely new (e.g. a hemolyzed
+  sample needing recollection), requires a reason, and is terminal
+  (can't reject an already-completed specimen).
+- **Existing lab endpoints re-gated** - `collect-specimen`/`send`/
+  `result` move from `provider+clinic_admin` to
+  `lab_technician+clinic_admin`, the exact pinned split (provider
+  keeps only order-creation, `update`, `cancel`, and the final
+  `review` sign-off). `GET /api/lab-orders` and
+  `GET /api/lab-orders/{id}` widened to add `lab_technician` read
+  access alongside the existing `provider`+`clinic_admin` (a lab tech
+  needs to see what's ordered to process it) - write access to those
+  (create/update/cancel/confirm-and-order) stays untouched,
+  `provider`+`clinic_admin` only, ordering remains a clinical
+  decision.
+- **Tests**: `SpecimenServiceTest` (new, pure Mockito, genuinely runs
+  locally - 9/9 passing) - derivation groups by distinct specimen type
+  correctly, a test with no specimenType links to nothing, re-deriving
+  wipes any prior specimens first, collect/complete/reject each
+  succeed from a valid prior state and reject an invalid one,
+  re-calling an already-reached transition is idempotent,
+  `collectAllForOrder` only advances specimens still
+  `pending_collection` (confirmed via a `never()` verify that an
+  already-collected specimen's own id is never re-looked-up).
+  `SpecimenControllerIntegrationTest` (new, 5 cases: two distinct
+  specimen types derive two independent specimens, one can advance
+  without disturbing the other, the full fine-grained lifecycle
+  collect→mark-in-transit→receive→complete plus a rejected
+  post-completion re-collect attempt, reject requires a reason and is
+  terminal, the role gate holds both directions - provider forbidden
+  from acting on a specimen, clinic_admin's usual override still
+  works). `LabOrderIntegrationTest` updated throughout - every
+  existing `collect-specimen`/`send`/`result` call site that was using
+  `asProvider` as plain fixture setup (not explicitly testing the role
+  gate) switched to the new `asLabTechnician`; the happy-path test
+  gained real specimen-lockstep assertions (collected → in_transit →
+  completed, confirmed via the real list endpoint at each step); one
+  new dedicated role-gate test
+  (`onlyLabTechnicianAndClinicAdminCanCollectSendOrResult`) confirms
+  provider now genuinely 403s on all three. One new
+  `TenantIsolationIntegrationTest` case
+  (`specimensAreNotReadableOrWritableFromAnotherTenant`). Confirmed
+  via a clean `mvn clean test-compile` and a full `mvn test` run
+  showing `Tests run: 448, Errors: 351` (up from 432/344 - exactly the
+  16 new test methods: 9 pure-unit + 7 Testcontainers-blocked), 0
+  Failures, every error the identical pre-existing `Could not find a
+  valid Docker environment` wall - not a regression, not a new failure
+  mode.
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V30` confirmed applied via the container's own
+  startup log (`Migrating schema "public" to version "30 - lab
+  specimens"` → `Successfully applied 1 migration`), Hibernate's
+  `ddl-auto: validate` accepted the new `Specimen` entity against the
+  new table with no startup failure. The `lab_technician` realm role
+  and a `demo-lab-technician` user (password `DemoPass123!`) were
+  created on the real running Keycloak instance via its admin REST API
+  (role + user + realm-role assignment, each confirmed `201`/`204`),
+  then added to the Demo Clinic Organization via the updated
+  `create-demo-clinic.sh` (now loops over `demo-lab-technician` too) -
+  confirmed via a direct membership-list fetch showing all six
+  clinic-scoped demo users including the new one. No browser-
+  automation tool was available this session, so the full
+  demo-lab-technician click-through this app's own convention would
+  normally expect is **not yet done** - flagged here rather than
+  claimed. What was verified instead: both new endpoint families
+  resolve to a real `401` (not `404`) through both the direct
+  `spring-boot-api:8081` debug port and the real node-bff proxy chain
+  on `:3000`, confirming the routes are genuinely wired end-to-end
+  through the browser-facing path, same bar this project uses when a
+  full session walkthrough isn't available.
+- **No frontend yet** - backend only, matching every other EHR-leaning
+  phase's own first-phase precedent (phase 7, phase 20). A
+  `pages/lab/` section for `lab_technician` is L8's own job, not built
+  here. `infra/keycloak/realm-export.json` updated too (role + a
+  `demo-lab-technician` user, same shape every other demo user
+  already has) for a from-scratch environment - the live dev instance
+  needed the direct-admin-API path above since a realm export only
+  applies on import, not to an already-running realm.
+
 ## Phase 27: pharmacy clinical safety checks
 
 First of the ten sequential phases sketched under "Pharmacy expansion +

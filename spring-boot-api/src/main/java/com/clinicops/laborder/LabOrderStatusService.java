@@ -34,18 +34,21 @@ public class LabOrderStatusService {
     private final PatientRepository patientRepository;
     private final NotificationRepository notificationRepository;
     private final ObjectMapper objectMapper;
+    private final SpecimenService specimenService;
 
     public LabOrderStatusService(
             LabOrderRepository labOrderRepository,
             LabOrderTestRepository labOrderTestRepository,
             PatientRepository patientRepository,
             NotificationRepository notificationRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            SpecimenService specimenService) {
         this.labOrderRepository = labOrderRepository;
         this.labOrderTestRepository = labOrderTestRepository;
         this.patientRepository = patientRepository;
         this.notificationRepository = notificationRepository;
         this.objectMapper = objectMapper;
+        this.specimenService = specimenService;
     }
 
     /**
@@ -55,7 +58,7 @@ public class LabOrderStatusService {
      * javadoc for why this diverges from CheckInService on purpose.
      */
     @Transactional
-    public LabOrderWithTests collectSpecimen(UUID id, UUID tenantId, String presentedIdNumber) {
+    public LabOrderWithTests collectSpecimen(UUID id, UUID tenantId, String presentedIdNumber, UUID collectedByUserId) {
         LabOrder order = findOrThrow(id, tenantId);
         if ("specimen_collected".equals(order.getStatus())) {
             return withTests(order);
@@ -75,6 +78,10 @@ public class LabOrderStatusService {
         order.setStatus("specimen_collected");
         order.setSpecimenCollectedAt(Instant.now());
         labOrderRepository.save(order);
+        // Bulk equivalent of the new per-specimen collect action - keeps the
+        // Specimen layer in lockstep for the existing simple order-level flow,
+        // see SpecimenService's own javadoc.
+        specimenService.collectAllForOrder(tenantId, order.getId(), collectedByUserId);
         return withTests(order);
     }
 
@@ -90,6 +97,7 @@ public class LabOrderStatusService {
         order.setStatus("in_transit");
         order.setSentAt(Instant.now());
         labOrderRepository.save(order);
+        specimenService.markAllInTransitForOrder(tenantId, order.getId());
         return withTests(order);
     }
 
@@ -124,6 +132,7 @@ public class LabOrderStatusService {
         order.setResultedAt(Instant.now());
         order.setResultedBy(resultedByUserId);
         labOrderRepository.save(order);
+        specimenService.completeAllForOrder(tenantId, order.getId());
         return withTests(order);
     }
 

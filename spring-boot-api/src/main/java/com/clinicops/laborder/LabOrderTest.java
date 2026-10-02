@@ -45,4 +45,8 @@ public class LabOrderTest extends BaseTenantEntity {
 
     @Column(name = "abnormal_flag")
     private Boolean abnormalFlag;
+
+    /** Set once SpecimenService derives a Specimen for this test's own specimenType - null if specimenType was never given. */
+    @Column(name = "specimen_id")
+    private UUID specimenId;
 }

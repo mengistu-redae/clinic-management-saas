@@ -131,27 +131,45 @@ class LabOrderIntegrationTest extends AbstractIntegrationTest {
         patientRepository.save(f.patient());
         UUID id = createOrderedOrder(f, orgAlias);
 
-        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asProvider("prov", orgAlias))
+        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asLabTechnician("tech", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CollectSpecimenRequest("ID-ON-FILE-777"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.order.status").value("specimen_collected"));
 
-        mockMvc.perform(post("/api/lab-orders/" + id + "/send").with(asProvider("prov", orgAlias)))
+        // The derived Specimen (specimenType "blood", from createOrderedOrder's own CBC test
+        // line) stays in lockstep with the order-level actions above/below - see SpecimenService.
+        String specimensBody = mockMvc.perform(get("/api/lab-orders/" + id + "/specimens").with(asLabTechnician("tech", orgAlias)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].specimenType").value("blood"))
+                .andExpect(jsonPath("$[0].status").value("collected"))
+                .andReturn().getResponse().getContentAsString();
+        UUID specimenId = UUID.fromString(objectMapper.readTree(specimensBody).get(0).get("id").asText());
+
+        mockMvc.perform(post("/api/lab-orders/" + id + "/send").with(asLabTechnician("tech", orgAlias)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.order.status").value("in_transit"));
+
+        mockMvc.perform(get("/api/lab-orders/" + id + "/specimens").with(asLabTechnician("tech", orgAlias)))
+                .andExpect(jsonPath("$[0].status").value("in_transit"));
 
         String getBody = mockMvc.perform(get("/api/lab-orders/" + id).with(asProvider("prov", orgAlias)))
                 .andReturn().getResponse().getContentAsString();
         UUID testId = UUID.fromString(objectMapper.readTree(getBody).get("tests").get(0).get("id").asText());
 
-        mockMvc.perform(post("/api/lab-orders/" + id + "/result").with(asProvider("prov", orgAlias))
+        mockMvc.perform(post("/api/lab-orders/" + id + "/result").with(asLabTechnician("tech", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new ResultLabOrderRequest(
                                 List.of(new TestResultInput(testId, "5.4", "x10^9/L", "4.0-11.0", false))))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.order.status").value("resulted"))
                 .andExpect(jsonPath("$.tests[0].resultValue").value("5.4"));
+
+        // Result entry is the order-level trigger that completes every specimen on the order.
+        mockMvc.perform(get("/api/lab-orders/" + id + "/specimens").with(asLabTechnician("tech", orgAlias)))
+                .andExpect(jsonPath("$[0].id").value(specimenId.toString()))
+                .andExpect(jsonPath("$[0].status").value("completed"));
 
         // Resulted-but-unreviewed values are readable by a second provider.
         mockMvc.perform(get("/api/lab-orders/" + id).with(asProvider("second-prov", orgAlias)))
@@ -174,7 +192,7 @@ class LabOrderIntegrationTest extends AbstractIntegrationTest {
         String orgAlias = f.clinic().getKeycloakOrgId();
         UUID id = createOrderedOrder(f, orgAlias);
 
-        mockMvc.perform(post("/api/lab-orders/" + id + "/send").with(asProvider("prov", orgAlias)))
+        mockMvc.perform(post("/api/lab-orders/" + id + "/send").with(asLabTechnician("tech", orgAlias)))
                 .andExpect(status().isConflict());
     }
 
@@ -186,7 +204,7 @@ class LabOrderIntegrationTest extends AbstractIntegrationTest {
         patientRepository.save(f.patient());
         UUID id = createOrderedOrder(f, orgAlias);
 
-        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asProvider("prov", orgAlias))
+        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asLabTechnician("tech", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CollectSpecimenRequest("WRONG-ID"))))
                 .andExpect(status().isConflict());
@@ -199,10 +217,31 @@ class LabOrderIntegrationTest extends AbstractIntegrationTest {
         String orgAlias = f.clinic().getKeycloakOrgId();
         UUID id = createOrderedOrder(f, orgAlias);
 
-        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asProvider("prov", orgAlias))
+        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asLabTechnician("tech", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CollectSpecimenRequest("ANYTHING"))))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void onlyLabTechnicianAndClinicAdminCanCollectSendOrResult() throws Exception {
+        Fixture f = seedClinicProviderPatient("lab-role-gate-" + UUID.randomUUID(), "Lab Role Gate Clinic");
+        String orgAlias = f.clinic().getKeycloakOrgId();
+        UUID id = createOrderedOrder(f, orgAlias);
+
+        // Re-gated 2026-10-02 (lab module L1) - provider used to own these three
+        // actions directly; now it's lab_technician's job, provider keeps only
+        // order-creation/update/cancel/review.
+        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asProvider("prov", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CollectSpecimenRequest("ANYTHING"))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/lab-orders/" + id + "/send").with(asProvider("prov", orgAlias)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/lab-orders/" + id + "/result").with(asProvider("prov", orgAlias))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ResultLabOrderRequest(List.of()))))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -227,7 +266,7 @@ class LabOrderIntegrationTest extends AbstractIntegrationTest {
 
         f.patient().setNationalId("ID-999");
         patientRepository.save(f.patient());
-        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asProvider("prov", orgAlias))
+        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asLabTechnician("tech", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CollectSpecimenRequest("ID-999"))))
                 .andExpect(status().isOk());
@@ -277,7 +316,7 @@ class LabOrderIntegrationTest extends AbstractIntegrationTest {
         f.patient().setNationalId("ID-1");
         patientRepository.save(f.patient());
         UUID id = createOrderedOrder(f, orgAlias);
-        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asProvider("prov", orgAlias))
+        mockMvc.perform(post("/api/lab-orders/" + id + "/collect-specimen").with(asLabTechnician("tech", orgAlias))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CollectSpecimenRequest("ID-1"))))
                 .andExpect(status().isOk());

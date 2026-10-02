@@ -61,10 +61,11 @@ fi
 echo "Using organization: $ORG_ID"
 
 # Every realm-export.json demo user tied to one clinic - clinic_admin,
-# provider, front_desk, pharmacist, accountant. Not demo-patient (patients
-# aren't Organization members at all) or demo-platform-admin (acts across
-# every tenant, deliberately not scoped to one org).
-CLINIC_STAFF_USERS=(demo-clinic-admin demo-provider demo-front-desk demo-pharmacist demo-accountant)
+# provider, front_desk, pharmacist, accountant, lab_technician. Not
+# demo-patient (patients aren't Organization members at all) or
+# demo-platform-admin (acts across every tenant, deliberately not scoped to
+# one org).
+CLINIC_STAFF_USERS=(demo-clinic-admin demo-provider demo-front-desk demo-pharmacist demo-accountant demo-lab-technician)
 
 for USERNAME in "${CLINIC_STAFF_USERS[@]}"; do
   echo "Looking up $USERNAME user id..."

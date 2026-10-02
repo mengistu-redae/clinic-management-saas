@@ -700,6 +700,11 @@ public abstract class AbstractIntegrationTest {
         return jwtRequest(subject, "accountant", orgAlias);
     }
 
+    /** Lab module L1 (2026-10-02) - new realm role, same staff-JWT shape. */
+    protected RequestPostProcessor asLabTechnician(String subject, String orgAlias) {
+        return jwtRequest(subject, "lab_technician", orgAlias);
+    }
+
     private RequestPostProcessor jwtRequest(String subject, String realmRole, String orgAlias) {
         Jwt jwt = Jwt.withTokenValue("test-token")
                 .header("alg", "none")

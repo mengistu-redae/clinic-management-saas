@@ -31,18 +31,26 @@ public class LabOrderStatusController {
         this.phiAccessAuditService = phiAccessAuditService;
     }
 
+    /**
+     * Re-gated from provider+clinic_admin to lab_technician+clinic_admin
+     * (2026-10-02, lab module L1) - specimen collection/processing/result
+     * entry is now lab_technician's own job, mirroring the pharmacist/
+     * provider split exactly (provider keeps only order-creation and the
+     * final review sign-off below).
+     */
     @PostMapping("/api/lab-orders/{id}/collect-specimen")
-    @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
+    @PreAuthorize("hasAnyRole('LAB_TECHNICIAN', 'CLINIC_ADMIN')")
     public LabOrderWithTests collectSpecimen(@PathVariable UUID id, @RequestBody(required = false) CollectSpecimenRequest request, @AuthenticationPrincipal Jwt jwt) {
         String presentedIdNumber = request != null ? request.presentedIdNumber() : null;
         UUID tenantId = TenantContext.require();
-        LabOrderWithTests result = labOrderStatusService.collectSpecimen(id, tenantId, presentedIdNumber);
+        UUID collectedByUserId = currentUserService.resolveInternalUserId(jwt);
+        LabOrderWithTests result = labOrderStatusService.collectSpecimen(id, tenantId, presentedIdNumber, collectedByUserId);
         phiAccessAuditService.logWrite(tenantId, jwt, "lab_order", id, result.order().getPatientId(), "/api/lab-orders/{id}/collect-specimen");
         return result;
     }
 
     @PostMapping("/api/lab-orders/{id}/send")
-    @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
+    @PreAuthorize("hasAnyRole('LAB_TECHNICIAN', 'CLINIC_ADMIN')")
     public LabOrderWithTests send(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
         LabOrderWithTests result = labOrderStatusService.send(id, tenantId);
@@ -52,7 +60,7 @@ public class LabOrderStatusController {
 
     /** Entering results is the single most sensitive write this app has - the actual clinical values. */
     @PostMapping("/api/lab-orders/{id}/result")
-    @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
+    @PreAuthorize("hasAnyRole('LAB_TECHNICIAN', 'CLINIC_ADMIN')")
     public LabOrderWithTests result(@PathVariable UUID id, @RequestBody ResultLabOrderRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID resultedByUserId = currentUserService.resolveInternalUserId(jwt);
         UUID tenantId = TenantContext.require();

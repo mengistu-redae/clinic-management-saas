@@ -45,9 +45,13 @@ public class LabOrderController {
         return result;
     }
 
-    /** One log row per list call, not one per order - same "a list touches many patients at once" reasoning as PatientController.patients. */
+    /**
+     * One log row per list call, not one per order - same "a list touches many patients at once" reasoning as PatientController.patients.
+     * Read access widened to lab_technician (2026-10-02, lab module L1) - a lab tech needs to see what's ordered to process it; write access
+     * (create/update/cancel/confirm-and-order below) stays provider+clinic_admin only, ordering remains a clinical decision.
+     */
     @GetMapping("/api/lab-orders")
-    @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
+    @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN', 'LAB_TECHNICIAN')")
     public List<LabOrder> labOrders(@AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
         phiAccessAuditService.logRead(tenantId, jwt, "lab_order_list", null, null, "/api/lab-orders");
@@ -55,7 +59,7 @@ public class LabOrderController {
     }
 
     @GetMapping("/api/lab-orders/{id}")
-    @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN')")
+    @PreAuthorize("hasAnyRole('PROVIDER', 'CLINIC_ADMIN', 'LAB_TECHNICIAN')")
     public LabOrderWithTests labOrder(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
         LabOrderWithTests result = labOrderService.get(id, tenantId);
