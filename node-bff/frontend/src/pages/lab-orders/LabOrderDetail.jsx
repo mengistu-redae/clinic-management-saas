@@ -17,12 +17,16 @@ import {
   useLabOrderInvoice,
   useGenerateLabOrderInvoice,
   useLabRates,
+  useSpecimens,
 } from '../../api/queries.js';
 import { ApiError } from '../../api/client.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 import StatusPill from '../../components/StatusPill.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import LabOrderTestsEditor from '../../components/labOrder/LabOrderTestsEditor.jsx';
+import SpecimensPanel from '../../components/SpecimensPanel.jsx';
+import AnalyteResultsPanel from '../../components/AnalyteResultsPanel.jsx';
 import InvoicePanel from '../../components/InvoicePanel.jsx';
 import PaymentsPanel from '../../components/PaymentsPanel.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
@@ -36,16 +40,26 @@ import { formatCurrency, formatDateTime } from '../../lib/format.js';
  * LabOrderPaymentController, mirroring the reference project's own
  * cargo/WaybillDetail.jsx shape (a "requested" order swaps the normal
  * action UI for a confirm-and-order form, exactly like that page's own
- * confirm-and-issue). Shared by provider and clinic_admin alike (identical
- * backend permissions on every endpoint here).
+ * confirm-and-issue). Shared by provider/clinic_admin/lab_technician -
+ * **not** identical backend permissions anymore (the lab module's own L1
+ * phase re-gated collect-specimen/send/result from provider+clinic_admin
+ * to lab_technician+clinic_admin, provider keeping only order-creation/
+ * update/cancel/the final "review" sign-off) - `canActOnOrder` below
+ * gates exactly that split on this shared page, a real pre-existing bug
+ * fixed as part of L8 (a provider would otherwise see working-looking
+ * buttons that now genuinely 403 on click).
  */
 export default function LabOrderDetail() {
   const { t } = useTranslation();
   const { id } = useParams();
+  const { hasRole } = useAuth();
+  const canActOnOrder = hasRole('lab_technician') || hasRole('clinic_admin');
+  const canManageOrder = hasRole('provider') || hasRole('clinic_admin');
   const orderQuery = useLabOrder(id);
   const resolved = orderQuery.data;
   const order = resolved?.order;
   const tests = resolved?.tests || [];
+  const specimensQuery = useSpecimens(id, canActOnOrder && Boolean(order));
 
   const patientQuery = usePatient(order?.patientId);
   const { data: providers } = useProviders(true);
@@ -324,7 +338,7 @@ export default function LabOrderDetail() {
               </div>
             )}
 
-            {status === 'ordered' && (
+            {canManageOrder && status === 'ordered' && (
               <button type="button" onClick={startEdit} className="mt-4 text-sm text-brand-text hover:underline">{t('labOrderDetail.editOrder')}</button>
             )}
           </>
@@ -359,9 +373,26 @@ export default function LabOrderDetail() {
         </form>
       )}
 
-      {status === 'in_transit' && (
+      {canActOnOrder && (status === 'ordered' || status === 'specimen_collected' || status === 'in_transit' || status === 'resulted') && (
+        <SpecimensPanel orderId={id} specimensQuery={specimensQuery} />
+      )}
+
+      {/* Read access matches AnalyteResultController's own widened gate (provider+clinic_admin+lab_technician) -
+          deliberately not canActOnOrder alone, or a provider could never see (let alone acknowledge) a critical
+          result on their own order. Entry stays lab_technician/clinic_admin-only, enforced inside the panel itself
+          via canEnterResults. */}
+      {(canActOnOrder || canManageOrder) && (status === 'in_transit' || status === 'resulted' || status === 'reviewed') && tests.length > 0 && (
+        <div className="mt-5 flex flex-col gap-4">
+          {tests.map((t2) => (
+            <AnalyteResultsPanel key={t2.id} orderId={id} test={t2} canEnterResults={canActOnOrder} canAcknowledgeCritical={canManageOrder} />
+          ))}
+        </div>
+      )}
+
+      {canActOnOrder && status === 'in_transit' && (
         <form onSubmit={handleResult} className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
           <h2 className="mb-3 text-sm font-semibold text-ink">{t('labOrderDetail.enterResultsTitle')}</h2>
+          <p className="mb-3 text-xs text-ink-muted">{t('labOrderDetail.flatResultsHint')}</p>
           <div className="flex flex-col gap-4">
             {tests.map((t2) => (
               <div key={t2.id} className="rounded-lg border border-slate-100 p-3">
@@ -402,7 +433,7 @@ export default function LabOrderDetail() {
 
       {!isTerminal && status !== 'requested' && (
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          {status === 'ordered' && (
+          {canActOnOrder && status === 'ordered' && (
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 p-2">
               <input
                 value={presentedId}
@@ -416,18 +447,18 @@ export default function LabOrderDetail() {
               </Button>
             </div>
           )}
-          {status === 'specimen_collected' && (
+          {canActOnOrder && status === 'specimen_collected' && (
             <Button type="button" onClick={handleSend} disabled={sendOrder.isPending}>
               {sendOrder.isPending ? t('labOrderDetail.marking') : t('labOrderDetail.markSent')}
             </Button>
           )}
-          {status === 'resulted' && (
+          {canManageOrder && status === 'resulted' && (
             <Button type="button" onClick={handleReview} disabled={reviewOrder.isPending}>
               {reviewOrder.isPending ? t('labOrderDetail.marking') : t('labOrderDetail.markReviewed')}
             </Button>
           )}
 
-          {status === 'ordered' && !confirmingCancel && (
+          {canManageOrder && status === 'ordered' && !confirmingCancel && (
             <button type="button" onClick={() => setConfirmingCancel(true)} className="rounded-lg border border-danger/40 px-4 py-2 text-sm font-medium text-danger hover:bg-danger-light">
               {t('labOrderDetail.cancelOrder')}
             </button>

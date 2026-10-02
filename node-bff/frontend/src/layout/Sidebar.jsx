@@ -93,6 +93,7 @@ function navGroups(t, hasRole) {
         { to: '/clinic-admin/rooms', label: t('nav.clinicAdmin.rooms'), icon: BuildingIcon },
         { to: '/clinic-admin/appointment-types', label: t('nav.clinicAdmin.appointmentTypes'), icon: ClipboardIcon },
         { to: '/lab-orders', label: t('nav.clinicAdmin.labOrders'), icon: FlaskIcon },
+        { to: '/lab/qc-runs', label: t('nav.lab.qcLog'), icon: ClipboardIcon },
         { to: '/referrals', label: t('nav.clinicAdmin.referrals'), icon: ClipboardIcon },
       ],
     });
@@ -166,6 +167,15 @@ function navGroups(t, hasRole) {
       items: [
         { to: '/platform-admin', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
         { to: '/platform-admin/clinics', label: t('nav.platformAdmin.clinics'), icon: BuildingIcon },
+      ],
+    });
+  }
+  if (hasRole('lab_technician')) {
+    groups.push({
+      items: [
+        { to: '/lab', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
+        { to: '/lab-orders', label: t('nav.lab.labOrders'), icon: FlaskIcon },
+        { to: '/lab/qc-runs', label: t('nav.lab.qcLog'), icon: ClipboardIcon },
       ],
     });
   }

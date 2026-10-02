@@ -48,6 +48,10 @@
       "suppliers": "አቅራቢዎች",
       "purchaseOrders": "የግዢ ትዕዛዞች",
       "assets": "ንብረቶች"
+    },
+    "lab": {
+      "labOrders": "የላብራቶሪ ትዕዛዞች",
+      "qcLog": "የጥራት ቁጥጥር መዝገብ"
     }
   },
   "publicNav": {
@@ -203,7 +207,8 @@
     "errorCollect": "ይህን ናሙና መሰብሰብ አልተቻለም።",
     "errorMarkSent": "ይህን ትዕዛዝ እንደተላከ ምልክት ማድረግ አልተቻለም።",
     "errorMarkReviewed": "ይህን ትዕዛዝ እንደተገመገመ ምልክት ማድረግ አልተቻለም።",
-    "errorCancelOrder": "ይህን ትዕዛዝ መሰረዝ አልተቻለም።"
+    "errorCancelOrder": "ይህን ትዕዛዝ መሰረዝ አልተቻለም።",
+    "flatResultsHint": "ወይም ከዚህ በታች በቀላል መጠን/መለኪያ/መደበኛ ክልል በፈተና ያስገቡ - ሁለቱም መንገዶች ይሰራሉ፣ የሚስማማዎትን ይምረጡ።"
   },
   "dayLabel": {
     "sunday": "እሁድ",
@@ -1159,5 +1164,75 @@
   },
   "visitSummary": {
     "downloadPdf": "የጉብኝት ማጠቃለያ ያውርዱ"
+  },
+  "labDashboardPage": {
+    "subtitle": "የላብራቶሪ ትዕዛዞችዎ እና የጥራት ቁጥጥር የስራ ዝርዝር።",
+    "needsAction": "የላብራቶሪ እርምጃ ይፈልጋል",
+    "qcRunsToday": "ዛሬ የተከናወኑ የጥራት ቁጥጥር ምርመራዎች",
+    "failedQcToday": "ዛሬ ያልተሳኩ የጥራት ቁጥጥር ምርመራዎች"
+  },
+  "specimensPanel": {
+    "title": "ናሙናዎች",
+    "collect": "ሰብስብ",
+    "markInTransit": "በመጓጓዝ ላይ ምልክት አድርግ",
+    "receive": "ተቀበል",
+    "complete": "አጠናቅቅ",
+    "sendToReferenceLab": "ወደ ማጣቀሻ ላብራቶሪ ላክ",
+    "editReferenceLabDetails": "የማጣቀሻ ላብራቶሪ ዝርዝሮችን አርም",
+    "reject": "አትቀበል",
+    "errorReasonRequired": "የአለመቀበል ምክንያት ያስፈልጋል።",
+    "errorReject": "ይህን ናሙና አለመቀበል አልተቻለም።",
+    "confirmReject": "አለመቀበልን አረጋግጥ",
+    "rejectReasonLabel": "ምክንያት",
+    "referenceLabName": "ማጣቀሻ ላብራቶሪ",
+    "referenceLabOrderNumber": "የነሱ ትዕዛዝ ቁጥር",
+    "expectedTurnaroundDays": "የመመለሻ ጊዜ (ቀናት)",
+    "errorReferenceLabNameRequired": "የማጣቀሻ ላብራቶሪ ስም ያስፈልጋል።",
+    "errorSendToReferenceLab": "ይህን ናሙና ወደ ማጣቀሻ ላብራቶሪ መላክ አልተቻለም።",
+    "errorCollect": "ይህን ናሙና መሰብሰብ አልተቻለም።",
+    "errorMarkInTransit": "ይህን ናሙና በመጓጓዝ ላይ ምልክት ማድረግ አልተቻለም።",
+    "errorReceive": "ይህን ናሙና መቀበል አልተቻለም።",
+    "errorComplete": "ይህን ናሙና ማጠናቀቅ አልተቻለም።",
+    "collectedAt": "የተሰበሰበው {{when}}",
+    "rejectionReason": "ተቀባይነት አላገኘም፦ {{reason}}",
+    "referenceLabSummary": "{{name}} · ትዕዛዝ {{order}} · {{days}} ቀን የመመለሻ ጊዜ"
+  },
+  "analyteResultsPanel": {
+    "title": "{{testName}} - የትንታኔ ውጤቶች",
+    "enterResults": "ውጤቶችን አስገባ",
+    "editResults": "ውጤቶችን አርም",
+    "errorAtLeastOneRow": "ቢያንስ አንድ የትንታኔ ስም እና መጠን ያስገቡ።",
+    "errorSave": "እነዚህን ውጤቶች ማስቀመጥ አልተቻለም።",
+    "errorAcknowledge": "ይህን አደገኛ ውጤት ማረጋገጥ አልተቻለም።",
+    "analyteName": "ትንታኔ",
+    "value": "መጠን",
+    "addAnalyte": "+ ትንታኔ ጨምር",
+    "referenceRange": "መደበኛ ክልል፦ {{range}}",
+    "flag_normal": "መደበኛ",
+    "flag_abnormal": "ያልተለመደ",
+    "flag_critical": "አደገኛ",
+    "flag_unflagged": "ምልክት ያልተደረገበት",
+    "criticalUnacknowledged": "አደገኛ - እስካሁን አልተረጋገጠም",
+    "acknowledge": "አረጋግጥ",
+    "acknowledged": "ተረጋግጧል"
+  },
+  "qcRunsPage": {
+    "intro": "በመሳሪያ ላይ የቁጥጥር ቁሳቁስ ምርመራ ይመዝግቡ - ምልክት እንጂ እገዳ አይደለም፤ ያልተሳካ ምርመራ እውነተኛ ውጤት ማስገባትን አያቆምም።",
+    "errorRequired": "መሳሪያ፣ ትንታኔ፣ ሎት እና የተስተዋለ መጠንን ይሙሉ።",
+    "errorRangeRequired": "እውነተኛ የሚጠበቅ ክልል (ዝቅተኛ እና ከፍተኛ) ያስገቡ።",
+    "errorCreate": "ይህን የጥራት ቁጥጥር ምርመራ መመዝገብ አልተቻለም።",
+    "instrument": "መሳሪያ",
+    "analyteName": "ትንታኔ",
+    "controlMaterialLot": "የቁጥጥር ሎት",
+    "observedValue": "የተስተዋለ",
+    "result": "ውጤት",
+    "pass": "አለፈ",
+    "fail": "ወደቀ",
+    "performedAt": "የተከናወነበት ጊዜ",
+    "expectedRangeLow": "የሚጠበቅ ዝቅተኛ",
+    "expectedRangeHigh": "የሚጠበቅ ከፍተኛ",
+    "logRun": "ምርመራ መዝግብ",
+    "emptyTitle": "እስካሁን የተመዘገበ የጥራት ቁጥጥር ምርመራ የለም",
+    "emptyDescription": "የመጀመሪያዎን የቁጥጥር ቁሳቁስ ምርመራ ከላይ ይመዝግቡ።"
   }
 }

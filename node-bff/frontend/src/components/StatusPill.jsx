@@ -5,8 +5,11 @@ import { useTranslation } from 'react-i18next';
  * machine (booked -> checked_in -> roomed -> with_provider -> checked_out,
  * plus no_show/cancelled - com.clinicops.appointment), the lab-order
  * lifecycle (requested -> ordered -> specimen_collected -> in_transit ->
- * resulted -> reviewed, plus cancelled - com.clinicops.laborder), and the
- * generic active/inactive used by providers/rooms/appointment-types/clinics.
+ * resulted -> reviewed, plus cancelled - com.clinicops.laborder), the
+ * per-specimen lifecycle (lab module L1/L5 - pending_collection ->
+ * collected -> in_transit -> received -> processing -> completed, or
+ * rejected/sent_to_reference_lab), and the generic active/inactive used by
+ * providers/rooms/appointment-types/clinics.
  */
 const STYLES = {
   // appointments
@@ -24,6 +27,14 @@ const STYLES = {
   in_transit: 'bg-warning-light text-warning',
   resulted: 'bg-accent-light text-accent',
   reviewed: 'bg-success-light text-success',
+  // specimens (lab module L1/L5)
+  pending_collection: 'bg-slate-100 text-ink-muted',
+  collected: 'bg-warning-light text-warning',
+  received: 'bg-warning-light text-warning',
+  processing: 'bg-warning-light text-warning',
+  completed: 'bg-success-light text-success',
+  rejected: 'bg-danger-light text-danger',
+  sent_to_reference_lab: 'bg-accent-light text-accent',
   // generic active/inactive
   active: 'bg-success-light text-success',
   inactive: 'bg-slate-100 text-ink-muted',

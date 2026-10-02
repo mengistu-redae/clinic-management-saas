@@ -48,6 +48,10 @@
       "suppliers": "Suppliers",
       "purchaseOrders": "Purchase Orders",
       "assets": "Assets"
+    },
+    "lab": {
+      "labOrders": "Lab Orders",
+      "qcLog": "QC Log"
     }
   },
   "publicNav": {
@@ -203,7 +207,8 @@
     "errorCollect": "Could not collect this specimen.",
     "errorMarkSent": "Could not mark this order sent.",
     "errorMarkReviewed": "Could not mark this order reviewed.",
-    "errorCancelOrder": "Could not cancel this order."
+    "errorCancelOrder": "Could not cancel this order.",
+    "flatResultsHint": "Or enter a simple value/unit/reference-range per test below - both paths work, pick whichever fits."
   },
   "dayLabel": {
     "sunday": "Sunday",
@@ -1161,5 +1166,75 @@
   },
   "visitSummary": {
     "downloadPdf": "Download visit summary"
+  },
+  "labDashboardPage": {
+    "subtitle": "Your lab orders and quality-control worklist.",
+    "needsAction": "Needs lab action",
+    "qcRunsToday": "QC runs today",
+    "failedQcToday": "Failed QC today"
+  },
+  "specimensPanel": {
+    "title": "Specimens",
+    "collect": "Collect",
+    "markInTransit": "Mark in transit",
+    "receive": "Receive",
+    "complete": "Complete",
+    "sendToReferenceLab": "Send to reference lab",
+    "editReferenceLabDetails": "Edit reference lab details",
+    "reject": "Reject",
+    "errorReasonRequired": "A rejection reason is required.",
+    "errorReject": "Could not reject this specimen.",
+    "confirmReject": "Confirm reject",
+    "rejectReasonLabel": "Reason",
+    "referenceLabName": "Reference lab",
+    "referenceLabOrderNumber": "Their order #",
+    "expectedTurnaroundDays": "Turnaround (days)",
+    "errorReferenceLabNameRequired": "The reference lab's name is required.",
+    "errorSendToReferenceLab": "Could not send this specimen to a reference lab.",
+    "errorCollect": "Could not collect this specimen.",
+    "errorMarkInTransit": "Could not mark this specimen in transit.",
+    "errorReceive": "Could not receive this specimen.",
+    "errorComplete": "Could not complete this specimen.",
+    "collectedAt": "Collected {{when}}",
+    "rejectionReason": "Rejected: {{reason}}",
+    "referenceLabSummary": "{{name}} · order {{order}} · {{days}} day turnaround"
+  },
+  "analyteResultsPanel": {
+    "title": "{{testName}} - analyte results",
+    "enterResults": "Enter results",
+    "editResults": "Edit results",
+    "errorAtLeastOneRow": "Enter at least one analyte name and value.",
+    "errorSave": "Could not save these results.",
+    "errorAcknowledge": "Could not acknowledge this critical result.",
+    "analyteName": "Analyte",
+    "value": "Value",
+    "addAnalyte": "+ Add analyte",
+    "referenceRange": "Reference: {{range}}",
+    "flag_normal": "Normal",
+    "flag_abnormal": "Abnormal",
+    "flag_critical": "Critical",
+    "flag_unflagged": "Unflagged",
+    "criticalUnacknowledged": "Critical - not yet acknowledged",
+    "acknowledge": "Acknowledge",
+    "acknowledged": "Acknowledged"
+  },
+  "qcRunsPage": {
+    "intro": "Log a control-material run against an instrument - a flag, not a block: a failed run never stops real result entry.",
+    "errorRequired": "Fill in the instrument, analyte, lot, and observed value.",
+    "errorRangeRequired": "Enter a real expected range (low and high).",
+    "errorCreate": "Could not log this QC run.",
+    "instrument": "Instrument",
+    "analyteName": "Analyte",
+    "controlMaterialLot": "Control lot",
+    "observedValue": "Observed",
+    "result": "Result",
+    "pass": "Pass",
+    "fail": "Fail",
+    "performedAt": "Performed",
+    "expectedRangeLow": "Expected low",
+    "expectedRangeHigh": "Expected high",
+    "logRun": "Log run",
+    "emptyTitle": "No QC runs logged yet",
+    "emptyDescription": "Log your first control-material run above."
   }
 }

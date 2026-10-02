@@ -874,6 +874,81 @@ export function useGenerateLabOrderInvoice(id) {
   });
 }
 
+// ---- lab specimens (lab module L1/L5 backend, L8 frontend; see SpecimenController) ----
+
+export function useSpecimens(orderId, enabled) {
+  return useQuery({
+    queryKey: ['specimens', orderId],
+    queryFn: () => apiGet(`/api/lab-orders/${orderId}/specimens`),
+    enabled: Boolean(orderId) && enabled !== false,
+  });
+}
+
+function useSpecimenAction(path) {
+  return function useAction(orderId) {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: ({ specimenId, body }) => apiPost(`/api/specimens/${specimenId}/${path}`, body),
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: ['specimens', orderId] }),
+    });
+  };
+}
+
+/** Each takes {specimenId, body} - mutate per-row, since one order can have more than one specimen (L1). */
+export const useCollectSpecimenById = useSpecimenAction('collect');
+export const useMarkSpecimenInTransit = useSpecimenAction('mark-in-transit');
+export const useReceiveSpecimen = useSpecimenAction('receive');
+export const useCompleteSpecimen = useSpecimenAction('complete');
+export const useRejectSpecimen = useSpecimenAction('reject');
+/** L5 - body is {referenceLabName, referenceLabOrderNumber, expectedTurnaroundDays}. */
+export const useSendSpecimenToReferenceLab = useSpecimenAction('send-to-reference-lab');
+
+// ---- structured per-analyte results + critical-value acknowledgment (lab module L2/L3 backend, L8 frontend; see AnalyteResultController) ----
+
+export function useAnalyteResults(orderId, testId, enabled) {
+  return useQuery({
+    queryKey: ['analyte-results', orderId, testId],
+    queryFn: () => apiGet(`/api/lab-orders/${orderId}/tests/${testId}/analyte-results`),
+    enabled: Boolean(orderId && testId) && enabled !== false,
+  });
+}
+
+/** Full-replace on every call, matching AnalyteResultService.enterResults's own convention - body is {results: [{analyteName, value}]}. */
+export function useEnterAnalyteResults(orderId, testId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/lab-orders/${orderId}/tests/${testId}/analyte-results`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analyte-results', orderId, testId] }),
+  });
+}
+
+/** provider+clinic_admin only on the backend - acknowledging a critical alert is the ordering clinician's own job, not lab_technician's. */
+export function useAcknowledgeCriticalResult(orderId, testId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (resultId) => apiPost(`/api/analyte-results/${resultId}/acknowledge-critical`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analyte-results', orderId, testId] }),
+  });
+}
+
+// ---- basic QC logging (lab module L4 backend, L8 frontend; see QcRunController) ----
+
+export function useQcRuns(enabled, instrumentIdentifier) {
+  return useQuery({
+    queryKey: ['qc-runs', instrumentIdentifier || ''],
+    queryFn: () => apiGet(`/api/lab-qc-runs${instrumentIdentifier ? `?instrumentIdentifier=${encodeURIComponent(instrumentIdentifier)}` : ''}`),
+    enabled,
+  });
+}
+
+export function useCreateQcRun() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/lab-qc-runs', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['qc-runs'] }),
+  });
+}
+
 // ---- patient lab requests (see PatientLabRequestController.createRequest - GET is useMyLabOrders above) ----
 
 export function useCreateLabRequest() {

@@ -31,6 +31,8 @@ import ClinicAdminLabRates from './pages/clinic-admin/LabRates.jsx';
 import ProviderEncounter from './pages/provider/Encounter.jsx';
 import LabOrders from './pages/lab-orders/LabOrders.jsx';
 import LabOrderDetail from './pages/lab-orders/LabOrderDetail.jsx';
+import LabDashboard from './pages/lab/Dashboard.jsx';
+import LabQcRuns from './pages/lab/QcRuns.jsx';
 import Referrals from './pages/referrals/Referrals.jsx';
 import RequestLabTest from './pages/patient/RequestLabTest.jsx';
 import MyLabOrders from './pages/patient/MyLabOrders.jsx';
@@ -360,15 +362,16 @@ export default function App() {
           <Route path="fee-policies" element={<ClinicAdminFeePolicies />} />
           <Route path="lab-rates" element={<ClinicAdminLabRates />} />
         </Route>
-        {/* Lab orders - shared by provider and clinic_admin alike (identical
-            backend permissions on every LabOrderController/
-            LabOrderStatusController/LabOrderCancellationController/
-            PatientLabRequestController endpoint), one route tree instead of
-            duplicating it per role. */}
+        {/* Lab orders - shared by provider/clinic_admin/lab_technician, one route
+            tree instead of duplicating it per role. **Not** identical backend
+            permissions across all three anymore (lab module L1 re-gated
+            collect-specimen/send/result to lab_technician+clinic_admin only) -
+            LabOrderDetail.jsx's own canActOnOrder/canManageOrder split handles
+            that, not the route gate here (which only governs reachability). */}
         <Route
           path="/lab-orders"
           element={
-            <RequireRole roles={['provider', 'clinic_admin']}>
+            <RequireRole roles={['provider', 'clinic_admin', 'lab_technician']}>
               <LabOrders />
             </RequireRole>
           }
@@ -376,8 +379,26 @@ export default function App() {
         <Route
           path="/lab-orders/:id"
           element={
-            <RequireRole roles={['provider', 'clinic_admin']}>
+            <RequireRole roles={['provider', 'clinic_admin', 'lab_technician']}>
               <LabOrderDetail />
+            </RequireRole>
+          }
+        />
+        {/* Lab module L8 - lab_technician's own dashboard + QC log, the first
+            frontend this role has had across L1-L7's own backend work. */}
+        <Route
+          path="/lab"
+          element={
+            <RequireRole role="lab_technician">
+              <LabDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/lab/qc-runs"
+          element={
+            <RequireRole roles={['lab_technician', 'clinic_admin']}>
+              <LabQcRuns />
             </RequireRole>
           }
         />

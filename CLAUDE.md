@@ -1881,17 +1881,8 @@ without a redesign. No actual instrument integration gets built now.
 **L7. Lab reagent/consumable inventory** - built 2026-10-02, see "Phase
 L7: lab reagent/consumable inventory" below for the full write-up.
 
-**L8. Frontend** - a new `pages/lab/` section for `lab_technician`
-(dispense-queue-equivalent worklist, specimen collection flow,
-per-analyte result entry, the QC log), mirroring
-`pages/pharmacist/`'s own structure exactly (same `DataTable`+
-`renderExpanded`/`TabGroup`/`Field` shared-component conventions this
-whole app already uses), plus a curated `clinic_admin` sidebar link
-into it, matching the existing "clinic_admin gets a UI path into every
-module it overrides" precedent. A lab analytics endpoint mirroring
-`PharmacyAnalyticsController`'s own shape (turnaround time, volume by
-test, critical-value rate) is a natural L8 add-on, not pinned as its
-own phase.
+**L8. Frontend** - built 2026-10-02, see "Phase L8: frontend" below for
+the full write-up.
 
 Each phase, once built, gets the same treatment every other phase in
 this project does: its own migration, `TenantIsolationIntegrationTest`
@@ -2520,6 +2511,171 @@ one more value is a pure application-layer change.
   matching this phase's own backend-only scope. L8's own job to decide
   whether `lab_technician` gets a path into that existing inventory UI
   or a reagent-scoped view of its own, not pinned further here.
+
+## Phase L8: frontend
+
+Built 2026-10-02, same session as L1-L7, closing out the whole lab
+module. One direct question was put to the user first - no browser
+-automation tool was available this session (the same standing gap
+L1-L7 already flagged), so unlike every other frontend phase in this
+project's history, this one couldn't be clicked through and visually
+confirmed, only build-verified - answered **build it now, build-only
+verification**, the recommended option, with the missing click-through
+explicitly flagged here rather than claimed.
+
+- **A real, pre-existing bug found before writing any new code, not
+  introduced by this phase** - `lab-orders/LabOrderDetail.jsx`
+  (frontend phase F, built 2025-09-14, long before the lab module
+  existed) renders its collect-specimen/send/result controls with zero
+  role-gating at all - every action button shows for whoever can reach
+  the page. L1 (2026-10-02, this same session) re-gated exactly those
+  three backend endpoints from `provider`+`clinic_admin` to
+  `lab_technician`+`clinic_admin`, but never touched this page (L1's
+  own write-up explicitly deferred the frontend to L8). The result: a
+  `provider` opening this still-`provider`-only-routed page has been
+  seeing working-looking "Collect specimen"/"Mark sent"/"Enter
+  results" controls that genuinely `403` on click since L1 shipped,
+  earlier this same session - caught here before it ever reached a
+  real user, not live-observed. Fixed as the first step of this phase:
+  `canActOnOrder` (`lab_technician`+`clinic_admin`) now gates those
+  three plus the specimen panel; `canManageOrder` (`provider`+
+  `clinic_admin`, renamed from a narrower `canReview` once it started
+  covering edit/cancel too) gates edit/cancel/review - matching
+  `LabOrderStatusController`'s/`LabOrderController`'s exact backend
+  split, not a cosmetic change.
+- **Shared the existing page rather than building a parallel one** -
+  the same "share the existing page/component" instinct this project
+  has used repeatedly (the clinic_admin encounter-access fix,
+  `PatientChart.jsx`, `PaymentsPanel.jsx`'s `extraRoles`): `/lab-orders`
+  and `/lab-orders/:id` widened to add `lab_technician` to their
+  `RequireRole`, rather than a second, parallel lab-order list/detail
+  page duplicating most of what `LabOrders.jsx`/`LabOrderDetail.jsx`
+  already do (payments, invoice, the tests table, cancellation). This
+  also means `lab_technician`'s own "worklist" is the exact same
+  searchable/sortable `DataTable` every other role's lab-order list
+  already is - no new backend queue endpoint needed (unlike pharmacy's
+  own dedicated `/api/pharmacy/queue`), confirmed by `pages/lab/
+  Dashboard.jsx`'s own client-side `needsAction` count computed from
+  the same plain `GET /api/lab-orders` list, same reasoning
+  `front-desk/Appointments.jsx` already filters client-side.
+- **`components/SpecimensPanel.jsx`** (new) - a `lab_technician`/
+  `clinic_admin`-only panel on the shared detail page listing an
+  order's own specimens (L1's own "one order can have more than one"
+  shape) with per-specimen action buttons matching whatever status
+  each one is actually at - collect/mark-in-transit/receive/complete/
+  reject (L1), plus send-to-reference-lab with an inline
+  name/order-number/turnaround-days form that re-opens pre-filled for
+  correcting the details on an already-sent specimen (L5's own
+  "re-calling updates in place" backend semantics, carried through to
+  the UI). Specimens had zero frontend visibility anywhere in this app
+  before this phase, even though L1 built the complete backend
+  lifecycle for them five phases ago.
+- **`components/AnalyteResultsPanel.jsx`** (new) - structured
+  per-analyte results for one `LabOrderTest`, alongside (not replacing)
+  the page's own pre-existing flat value/unit/reference-range form - a
+  new `labOrderDetail.flatResultsHint` line now tells whoever's looking
+  at both that either path works. **A real design bug caught and fixed
+  before this component was ever wired in**: the first version gated
+  the *entire* panel (viewing included) behind `canActOnOrder`
+  (`lab_technician`+`clinic_admin`), which would have hidden analyte
+  results - and the critical-value acknowledge button - from the one
+  role that most needs to see a critical result: `provider`. Fixed by
+  splitting `canEnterResults` (gates the entry form only) from
+  `canAcknowledgeCritical` (gates the acknowledge button only) and
+  mounting the panel for `provider`+`clinic_admin`+`lab_technician`
+  alike (`AnalyteResultController`'s own real read gate), not
+  `canActOnOrder` alone - confirmed by re-reading L2/L3's own write-ups
+  before fixing it, not caught live (no browser tool to catch it that
+  way this session). A critical, unacknowledged result renders with a
+  visible red-bordered row regardless of viewer role; only
+  `provider`/`clinic_admin` get the working "Acknowledge" button,
+  matching `AnalyteResultController`'s own `acknowledge-critical` gate
+  exactly.
+- **`pages/lab/QcRuns.jsx`** (new, `/lab/qc-runs`) - mirrors
+  `pharmacist/DrugInteractions.jsx`'s own create-form-above-`DataTable`
+  shape, minus its edit/delete panel (QC runs have neither endpoint -
+  genuinely append-only, L4's own pinned shape). `pass`/`fail` renders
+  as a colored pill computed entirely server-side; nothing here lets a
+  user self-report a result the backend didn't actually compute.
+- **`pages/lab/Dashboard.jsx`** (new, `/lab`) - `lab_technician`'s own
+  landing page (this role had none before this phase), mirroring
+  `accountant/Dashboard.jsx`'s own stat-cards-plus-link-tiles shape:
+  needs-lab-action count, QC runs today, failed QC today (all computed
+  client-side from already-fetched lists, no new backend).
+- **Routing/nav** - `/lab` (`RequireRole role="lab_technician"` - the
+  one other staff role, besides `clinic_admin`, with its own singular
+  dashboard) and `/lab/qc-runs` (`RequireRole roles={['lab_technician',
+  'clinic_admin']}`), plus `lab_technician` added to `/lab-orders`'s
+  own existing `RequireRole`. New `lab_technician` sidebar group
+  (Dashboard/Lab Orders/QC Log); `clinic_admin`'s own existing core
+  group gained one curated `/lab/qc-runs` link next to its pre-existing
+  `/lab-orders` one, matching the "clinic_admin gets a UI path into
+  every module it overrides" precedent L8's own sketch bullet named.
+  **A second real, pre-existing stale comment found and fixed along
+  the way** - `auth/RequireRole.jsx`'s own doc comment had speculated,
+  before the lab module existed, that "the eventual /lab route tree...
+  is reachable by PROVIDER and CLINIC_ADMIN alike (identical backend
+  permissions)" - not what L1-L8 actually built (`/lab` itself is
+  `lab_technician`-only; `/lab-orders` is shared by three roles with
+  now-*different* backend permissions, the exact bug fixed above).
+  Corrected to describe what's actually true today.
+- **`StatusPill.jsx` extended** with the full specimen-status
+  vocabulary (L1/L5 - `pending_collection`/`collected`/`received`/
+  `processing`/`completed`/`rejected`/`sent_to_reference_lab`) -
+  already functional via the component's own raw-string fallback
+  before this, just unstyled; now visually distinct like every other
+  status vocabulary this component already covers.
+- **Deliberately not built: a lab analytics endpoint/dashboard chart**
+  - the sketch's own text named this as "a natural L8 add-on, not
+  pinned as its own phase," i.e. explicitly optional, unlike every
+  other bullet in this write-up. Skipped to keep this single pass
+  proportionate to a build-only-verified session; a natural candidate
+  for a later phase once a browser tool can actually validate chart
+  rendering, mirroring how phase 34's own `PharmacyAnalyticsController`
+  got picked up.
+- **i18n**: five new namespaces (`labDashboardPage`, `specimensPanel`,
+  `analyteResultsPanel`, `qcRunsPage`, plus `nav.lab` and one new
+  `labOrderDetail.flatResultsHint` key on the existing namespace) added
+  to `en.json`/`am.json` together - confirmed exact key-parity via the
+  same flatten-and-diff Node script every prior phase this session
+  used (1068 keys each side, the same two pre-existing intentional
+  English-only pluralization keys as always - not a new gap).
+- **Tests**: no new Vitest coverage - `SpecimensPanel.jsx`/
+  `AnalyteResultsPanel.jsx`/`QcRuns.jsx`/`LabDashboard.jsx` are
+  page-level/feature components, outside frontend phase S's own
+  explicit "infrastructure + shared components" scope boundary (the
+  same bar every other page-level frontend phase since S has used).
+  `npm run build` clean both before and after the i18n additions;
+  `npm test` **36/36 passing**, unaffected (no shared-component test
+  surface touched - `StatusPill.test.jsx` keeps passing with the
+  extended style map, confirming the addition didn't disturb its
+  existing fallback-rendering assertions).
+- **Live-verified against the real running stack, through both
+  `node-bff` directly and the real nginx front door** -
+  `docker compose up -d --build --force-recreate node-bff` (no
+  `spring-boot-api` rebuild needed - this phase is frontend-only) +
+  `docker compose restart nginx` (the known stale-upstream-IP gotcha
+  after a `node-bff` recreate), both confirmed healthy. Every new SPA
+  route (`/lab`, `/lab-orders`, implicitly `/lab/qc-runs` via the same
+  index-fallback mechanism) confirmed resolving to a real `200`
+  through `node-bff` on `:3000` *and* through nginx on `:80` directly -
+  the static-file/client-router layer is genuinely wired end to end.
+  **What this does *not* confirm, flagged explicitly rather than
+  implied**: no real `demo-lab-technician` (or `demo-provider`/
+  `demo-clinic-admin`) browser login exercised any of this session's
+  new UI - the specimen action buttons, the analyte-result entry
+  form, the critical-value acknowledge flow, the QC log, the sidebar
+  nav, Dark theme, Amharic. Every other frontend phase in this
+  project's history reached that bar; this one explicitly didn't, by
+  the user's own informed choice before any code was written. A real
+  click-through covering all of the above is still owed, the single
+  biggest standing gap this whole lab module carries - flagged here,
+  not claimed.
+
+This closes out the entire "In-house laboratory module" sketched
+2026-10-02 - all eight phases (L1-L8) are now built. `lab_technician`
+has a real backend *and* a real (build-verified, not yet
+click-verified) frontend.
 
 ## Phase 27: pharmacy clinical safety checks
 

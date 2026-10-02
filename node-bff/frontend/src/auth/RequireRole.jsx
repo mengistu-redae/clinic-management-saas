@@ -8,10 +8,12 @@ import { useAuth } from './AuthContext.jsx';
  * enforced check on every endpoint this app calls) - a determined user
  * bypassing this component gets 403s from the API, not unauthorized data.
  *
- * Pass either `role` (single) or `roles` (an array) - the eventual /lab
- * route tree (later phase) is reachable by PROVIDER and CLINIC_ADMIN alike
- * (identical backend permissions), unlike most other staff pages here which
- * are single-role.
+ * Pass either `role` (single) or `roles` (an array) - most staff pages here
+ * are single-role, but e.g. `/lab-orders` is reachable by PROVIDER,
+ * CLINIC_ADMIN, and LAB_TECHNICIAN alike even though their backend write
+ * access on that same page now differs (lab module L1) - the component
+ * hosted there gates individual actions itself, this wrapper only governs
+ * page reachability.
  */
 export default function RequireRole({ role, roles, children }) {
   const { isLoading, authenticated, hasRole } = useAuth();
