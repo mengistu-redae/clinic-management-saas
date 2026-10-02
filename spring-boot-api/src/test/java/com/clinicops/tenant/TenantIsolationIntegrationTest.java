@@ -4,6 +4,7 @@ import com.clinicops.appointment.Appointment;
 import com.clinicops.appointmenttype.AppointmentType;
 import com.clinicops.clinic.Clinic;
 import com.clinicops.feepolicy.FeePolicy;
+import com.clinicops.laborder.CreateAnalyteDefinitionRequest;
 import com.clinicops.laborder.CreateLabOrderRequest;
 import com.clinicops.laborder.TestItem;
 import com.clinicops.labrate.LabTestRate;
@@ -211,6 +212,39 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
         UUID specimenId = UUID.fromString(objectMapper.readTree(specimensBody).get(0).get("id").asText());
 
         mockMvc.perform(post("/api/specimens/" + specimenId + "/collect").with(asLabTechnician("tech", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+    }
+
+    /** Lab module L2 (2026-10-02) - the analyte catalog and per-analyte results are tenant-scoped the same way. */
+    @Test
+    void analyteDefinitionsAndResultsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("analyte");
+        String bodyDef = mockMvc.perform(post("/api/clinic/analyte-definitions").with(asClinicAdmin("admin", a.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new CreateAnalyteDefinitionRequest("CBC", "WBC", 1, null, null, null, null))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID definitionId = UUID.fromString(objectMapper.readTree(bodyDef).get("id").asText());
+
+        Clinic b = clinicB("analyte");
+        mockMvc.perform(get("/api/clinic/analyte-definitions/" + definitionId).with(asClinicAdmin("admin", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+
+        Provider provider = createProvider(a.getId(), "Dr. A");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000055");
+        createLabTestRate(a.getId(), "CBC", "20.00", "0.00");
+        String orderBody = mockMvc.perform(post("/api/lab-orders").with(asProvider("prov", a.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateLabOrderRequest(
+                                patient.getId(), null, provider.getId(), null, null,
+                                List.of(new TestItem("CBC", "CBC", "blood", null)), false))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID orderId = UUID.fromString(objectMapper.readTree(orderBody).get("order").get("id").asText());
+        UUID testId = UUID.fromString(objectMapper.readTree(orderBody).get("tests").get(0).get("id").asText());
+
+        mockMvc.perform(get("/api/lab-orders/" + orderId + "/tests/" + testId + "/analyte-results").with(asLabTechnician("tech", b.getKeycloakOrgId())))
                 .andExpect(status().isNotFound());
     }
 

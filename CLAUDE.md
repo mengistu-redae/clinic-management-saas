@@ -1858,16 +1858,9 @@ pharmacy-expansion sketch above, or phases 16-18's own precedent).
 2026-10-02, see "Phase L1: lab technician role + specimen entity
 foundation" below for the full write-up.
 
-**L2. Test catalog + structured per-analyte results** - a new
-analyte-definition layer keyed off `lab_test_rates.test_code` (analyte
-name/unit/normal range per test, a single-analyte test is just the
-degenerate one-row case); `lab_order_tests`' own flat
-`result_value`/`result_unit`/`reference_range`/`abnormal_flag` columns
-get superseded by a child per-analyte result table, each row
-auto-flagging normal/abnormal/critical against its own analyte's range.
-Whether a normal range should vary by patient age/sex is a real,
-separate question worth asking before this phase is built, not assumed
-here.
+**L2. Test catalog + structured per-analyte results** - built
+2026-10-02, see "Phase L2: test catalog + structured per-analyte
+results" below for the full write-up.
 
 **L3. Critical-value alerting** - a critical range alongside each
 analyte's normal range; a result landing in it triggers a dedicated,
@@ -2062,6 +2055,114 @@ New migration `V30__lab_specimens.sql`.
   already has) for a from-scratch environment - the live dev instance
   needed the direct-admin-API path above since a realm export only
   applies on import, not to an already-running realm.
+
+## Phase L2: test catalog + structured per-analyte results
+
+Built 2026-10-02, same session as L1. One direct question was put to the
+user first - the fork L1's own sketch explicitly left open (should a
+normal range vary by patient age/sex) - answered **one range per
+test+analyte**, the recommended option, matching this app's own "keep
+minimal in v1" bias (ICD-10 free text, `Prescription.route`'s allow-list).
+New migration `V31__lab_analyte_results.sql`.
+
+- **`AnalyteDefinition`** (new) - the analyte catalog for a `test_code`
+  (keyed off `lab_test_rates.test_code`, no JPA relation, same
+  "own-table, explicit-repository-lookup" convention every entity in this
+  package already follows). A single-analyte test (e.g. "Glucose") is
+  just the degenerate one-row case; a panel (e.g. "CBC") gets one row per
+  component. `normalRangeLow`/`normalRangeHigh` (numeric, drives
+  auto-flagging) or `normalRangeText` (qualitative, e.g. "Negative" - no
+  auto-flag computed for it). `UNIQUE(tenant_id, test_code,
+  analyte_name)`.
+- **`AnalyteDefinitionController`** (`/api/clinic/analyte-definitions`) -
+  same CRUD shape as `LabRateController` (real hard delete - a missing
+  definition just means "this test stays unstructured," the same
+  well-defined fallback `LabRate`/`FeePolicy` already use). Write stays
+  `clinic_admin`-only, matching that same "config setup is an admin job"
+  convention - **a judgment call, not an explicitly pinned decision**,
+  flagged here rather than assumed silently, same as Allergy's own gate
+  back in phase 8. Read widened to `lab_technician` too, since they're
+  the ones actually entering results against these ranges day to day.
+- **`AnalyteResult`** (new) - one structured value for one analyte on one
+  `LabOrderTest`, **purely additive alongside that same `LabOrderTest`'s
+  own existing flat `result_value`/`result_unit`/`reference_range`/
+  `abnormal_flag` columns, which stay completely unchanged** - the old
+  `POST /api/lab-orders/{id}/result` endpoint keeps working exactly as
+  before, for any test, structured or not. `analyteName`/`unit`/
+  `referenceRangeDisplay` are snapshotted from `AnalyteDefinition` at
+  entry time (same "snapshot pricing at order time" convention
+  `lab_order_tests.price` already uses against `lab_test_rates`) -
+  `analyteDefinitionId` can be null, an ad-hoc analyte with no catalog
+  entry is still enterable, just never flagged.
+- **`AnalyteResultService.computeFlag`** - normal/abnormal only when the
+  definition has a real numeric range **and** the entered value itself
+  parses as numeric; a non-numeric value against a numeric range, or a
+  definition with only `normalRangeText`, is left `unflagged` rather than
+  guessed at. Deliberately 2-way (normal/abnormal), not 3-way - true
+  `critical` flagging is L3's own job once a critical range exists
+  alongside this normal one; the sketch's own L2 bullet had loosely said
+  "normal/abnormal/critical" but building a 3rd flag state with no
+  critical-range column to drive it would have been scope bleed into
+  L3's own job, so this phase stops at 2-way, same discipline every
+  other tightly-scoped phase pair in this project already keeps (e.g.
+  phase 27 vs. 28).
+- **`AnalyteResultController`** (`GET`/`POST
+  /api/lab-orders/{orderId}/tests/{testId}/analyte-results`) - write is
+  `lab_technician`+`clinic_admin` only, the identical split L1's own
+  re-gated `/result` endpoint uses; read matches `LabOrderController`'s
+  own widened gate (`provider`+`clinic_admin`+`lab_technician`). Entry
+  requires the owning `LabOrder` to be `in_transit` or later (same
+  "specimen must actually be in transit before a result exists" gate the
+  old flat endpoint always enforced) - rejected with the reused
+  `InvalidLabOrderStatusException` (409), no new parallel exception type.
+  Full-replace on every call, same "replace the whole list" convention
+  every other multi-row write in this codebase already uses.
+- **A real, small compatibility gap closed along the way**:
+  `ResultLabOrderRequest.results` was `@NotEmpty` - meaning a
+  `lab_technician` who entered every real value through the new
+  structured path would have had no way to flip the order to `resulted`
+  at all, since the old endpoint demanded at least one flat-style input
+  to call it. Relaxed to allow (and default a `null` body field to) an
+  empty list - the old endpoint is now callable purely to mark an order
+  resulted once every real value was entered via the new path instead,
+  with zero change to its behavior when real flat inputs are still
+  provided the old way.
+- **Tests**: `AnalyteResultServiceTest` (new, pure Mockito, genuinely
+  runs locally - 9/9 passing) - entering before `in_transit` rejected,
+  entering after succeeds, a value inside/outside the normal range
+  flags normal/abnormal, a non-numeric value against a numeric range
+  stays unflagged (not guessed), a qualitative definition is never
+  flagged, an analyte with no matching catalog definition is still
+  entered just never flagged, a test belonging to a different order
+  404s, re-entering replaces the previous set (`deleteAllByLabOrderTestId`
+  confirmed called). `AnalyteDefinitionControllerIntegrationTest` (new,
+  3 cases: CRUD round-trip + duplicate-pair 409, the read/write role
+  split holds both directions, cross-tenant 404).
+  `AnalyteResultControllerIntegrationTest` (new, 4 cases: auto-flagging
+  against a real catalog definition, the old flat endpoint still works
+  unchanged and structured entry doesn't require it, entering before
+  specimen-sent 409s, the role gate holds both directions). One new
+  `TenantIsolationIntegrationTest` case
+  (`analyteDefinitionsAndResultsAreNotReadableOrWritableFromAnotherTenant`).
+  Confirmed via a clean `mvn clean test-compile` and a full `mvn test`
+  run showing `Tests run: 465, Errors: 359` (up from 448/351 - exactly
+  the 17 new test methods: 9 pure-unit + 8 Testcontainers-blocked), 0
+  Failures, every error the identical pre-existing `Could not find a
+  valid Docker environment` wall - not a regression, not a new failure
+  mode. 18 pure-unit tests now exist for the lab module alone (9
+  `SpecimenServiceTest` + 9 `AnalyteResultServiceTest`).
+- **Live-verified against the real running stack** -
+  `docker compose up -d --build --force-recreate spring-boot-api`
+  confirmed healthy, `V31` confirmed applied via the container's own
+  startup log (`Migrating schema "public" to version "31 - lab analyte
+  results"` -> `Successfully applied 1 migration`). No browser-
+  automation tool was available this session (same gap L1 already
+  flagged) - both new endpoint families confirmed reachable as a real
+  `401` (not `404`) through the real node-bff proxy chain on `:3000`,
+  same bar used when a full session walkthrough isn't available. A real
+  `demo-lab-technician` click-through covering both L1 and L2 together
+  is still owed.
+- **No frontend yet** - backend only, same as L1. L8's own job.
 
 ## Phase 27: pharmacy clinical safety checks
 
