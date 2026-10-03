@@ -14,6 +14,11 @@ describe('StatusPill', () => {
     expect(screen.getByText('Specimen Collected')).toBeInTheDocument();
   });
 
+  it('renders the real translated label for a known insurance-claim status', () => {
+    render(<StatusPill status="partially_paid" />);
+    expect(screen.getByText('Partially Paid')).toBeInTheDocument();
+  });
+
   it('falls back to the raw, underscore-split status for one this app has no translation for', () => {
     render(<StatusPill status="some_unmapped_status" />);
     expect(screen.getByText('some unmapped status')).toBeInTheDocument();

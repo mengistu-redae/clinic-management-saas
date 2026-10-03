@@ -28,6 +28,7 @@ import PatientChart from '../../components/PatientChart.jsx';
 import InvoicePanel from '../../components/InvoicePanel.jsx';
 import VisitSummaryLink from '../../components/VisitSummaryLink.jsx';
 import PaymentsPanel from '../../components/PaymentsPanel.jsx';
+import ClaimsPanel from '../../components/ClaimsPanel.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import { formatDateTime } from '../../lib/format.js';
 
@@ -232,6 +233,10 @@ export default function AppointmentDetail() {
 
       {status !== 'cancelled' && (
         <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} pdfUrl={`/api/appointments/${id}/invoice/pdf`} />
+      )}
+
+      {status !== 'cancelled' && invoiceQuery.data && appointment.patientId && (
+        <ClaimsPanel invoiceId={invoiceQuery.data.id} patientId={appointment.patientId} />
       )}
 
       {status !== 'cancelled' && <VisitSummaryLink href={`/api/appointments/${id}/visit-summary/pdf`} />}

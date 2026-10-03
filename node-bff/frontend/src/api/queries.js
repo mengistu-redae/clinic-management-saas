@@ -1665,3 +1665,72 @@ export function useInventoryAnalytics(enabled, days) {
     enabled,
   });
 }
+
+// ---- insurance policies + claims (phase 40 backend, frontend follow-up -
+// InsurancePolicyController/ClaimController) ----
+
+export function useInsurancePolicies(patientId) {
+  return useQuery({
+    queryKey: ['insurance-policies', patientId],
+    queryFn: () => apiGet(`/api/patients/${patientId}/insurance-policies`),
+    enabled: Boolean(patientId),
+  });
+}
+
+export function useCreateInsurancePolicy(patientId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/patients/${patientId}/insurance-policies`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['insurance-policies', patientId] }),
+  });
+}
+
+/** Partial update, per InsurancePolicyController.updatePolicy - payerName/memberId are fixed at creation. */
+export function useUpdateInsurancePolicy(patientId, id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/patients/${patientId}/insurance-policies/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['insurance-policies', patientId] }),
+  });
+}
+
+export function useInvoiceClaims(invoiceId) {
+  return useQuery({
+    queryKey: ['invoice-claims', invoiceId],
+    queryFn: () => apiGet(`/api/invoices/${invoiceId}/claims`),
+    enabled: Boolean(invoiceId),
+  });
+}
+
+export function useCreateClaim(invoiceId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/invoices/${invoiceId}/claims`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoice-claims', invoiceId] }),
+  });
+}
+
+/** The four claim-lifecycle action endpoints share one invalidation target (the owning invoice's own claims list) - each takes invoiceId only for that, the claim itself is addressed by id in the URL. */
+function useClaimAction(invoiceId, action) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ claimId, body }) => apiPost(`/api/claims/${claimId}/${action}`, body || {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoice-claims', invoiceId] }),
+  });
+}
+
+export function useSubmitClaim(invoiceId) {
+  return useClaimAction(invoiceId, 'submit');
+}
+
+export function useRecordClaimAdjudication(invoiceId) {
+  return useClaimAction(invoiceId, 'record-adjudication');
+}
+
+export function useAppealClaim(invoiceId) {
+  return useClaimAction(invoiceId, 'appeal');
+}
+
+export function useCloseClaim(invoiceId) {
+  return useClaimAction(invoiceId, 'close');
+}

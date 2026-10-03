@@ -38,6 +38,14 @@ const STYLES = {
   // generic active/inactive
   active: 'bg-success-light text-success',
   inactive: 'bg-slate-100 text-ink-muted',
+  // insurance claims (phase 40 backend)
+  draft: 'bg-slate-100 text-ink-muted',
+  submitted: 'bg-brand-light text-brand-text',
+  paid: 'bg-success-light text-success',
+  partially_paid: 'bg-warning-light text-warning',
+  denied: 'bg-danger-light text-danger',
+  appealed: 'bg-accent-light text-accent',
+  closed: 'bg-slate-100 text-ink-muted',
 };
 
 export default function StatusPill({ status }) {

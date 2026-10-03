@@ -13,6 +13,9 @@ import {
   useUpsertMedicalHistory,
   useConsentRecords,
   useCreateConsentRecord,
+  useInsurancePolicies,
+  useCreateInsurancePolicy,
+  useUpdateInsurancePolicy,
 } from '../api/queries.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Skeleton from './Skeleton.jsx';
@@ -53,11 +56,18 @@ function Field({ label, children }) {
  * history are writable by all three (matches their own controllers'
  * gates); allergies and consent both restrict the write form to
  * front_desk/clinic_admin (provider reads but doesn't write either,
- * same as this app's PatientController gate).
+ * same as this app's PatientController gate). **Insurance (phase 40
+ * backend) is the one section that's not just write-restricted but
+ * invisible to `provider` entirely** - `InsurancePolicyController` grants
+ * no provider access at all, so unlike every section above it, this one
+ * is gated at the mount point itself (never even queried for a
+ * provider-only session), not just at its own write form.
  */
 export default function PatientChart({ patientId, appointmentId }) {
   const { t } = useTranslation();
+  const { hasRole } = useAuth();
   const [open, setOpen] = useState(true);
+  const canSeeInsurance = hasRole('front_desk') || hasRole('clinic_admin');
 
   return (
     <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
@@ -73,6 +83,7 @@ export default function PatientChart({ patientId, appointmentId }) {
           {appointmentId && <VitalsSection appointmentId={appointmentId} />}
           {patientId && <MedicalHistorySection patientId={patientId} />}
           {patientId && <ConsentSection patientId={patientId} />}
+          {patientId && canSeeInsurance && <InsuranceSection patientId={patientId} />}
           {!patientId && !appointmentId && <p className="text-sm text-ink-muted">{t('patientChart.nothingForGuest')}</p>}
         </div>
       )}
@@ -614,5 +625,188 @@ function ConsentSection({ patientId }) {
       )}
       {formError && <div className="mt-3"><ErrorBanner message={formError} /></div>}
     </div>
+  );
+}
+
+const POLICY_STATUS_STYLE = { active: 'bg-success-light text-success', inactive: 'bg-slate-100 text-ink-muted' };
+
+function emptyPolicyForm() {
+  return { payerName: '', memberId: '', groupNumber: '', planType: '', rank: 'primary', subscriberName: '', relationshipToSubscriber: 'self', effectiveDate: '', expirationDate: '' };
+}
+
+/**
+ * Patient-level coverage records (phase 40 backend) - front_desk and
+ * clinic_admin only, both read and write (no provider carve-out at all,
+ * see PatientChart's own top-of-file note). No delete - a mistaken entry
+ * is corrected with a new row and the old one marked inactive via
+ * InsurancePolicyRow, same convention AllergiesSection already uses.
+ */
+function InsuranceSection({ patientId }) {
+  const { t } = useTranslation();
+  const policiesQuery = useInsurancePolicies(patientId);
+  const createPolicy = useCreateInsurancePolicy(patientId);
+
+  const [form, setForm] = useState(emptyPolicyForm());
+  const [formError, setFormError] = useState(null);
+
+  async function handleCreate(event) {
+    event.preventDefault();
+    setFormError(null);
+    if (!form.payerName.trim() || !form.memberId.trim()) {
+      setFormError(t('patientChart.errorPolicyRequired'));
+      return;
+    }
+    try {
+      await createPolicy.mutateAsync({
+        payerName: form.payerName.trim(),
+        memberId: form.memberId.trim(),
+        groupNumber: form.groupNumber.trim() || undefined,
+        planType: form.planType.trim() || undefined,
+        rank: form.rank,
+        subscriberName: form.subscriberName.trim() || undefined,
+        relationshipToSubscriber: form.relationshipToSubscriber,
+        effectiveDate: form.effectiveDate || undefined,
+        expirationDate: form.expirationDate || undefined,
+      });
+      setForm(emptyPolicyForm());
+    } catch (err) {
+      setFormError(err.message || t('patientChart.errorAddPolicy'));
+    }
+  }
+
+  const policies = policiesQuery.data || [];
+
+  return (
+    <div className="border-t border-slate-100 pt-4">
+      <p className="mb-3 text-sm font-semibold text-ink">{t('patientChart.insuranceSection')}</p>
+      {policiesQuery.isLoading && <Skeleton className="h-12 w-full" />}
+      {policiesQuery.isError && <ErrorBanner message={policiesQuery.error?.message} onRetry={policiesQuery.refetch} />}
+      {!policiesQuery.isLoading && !policiesQuery.isError && policies.length === 0 && (
+        <p className="text-sm text-ink-muted">{t('patientChart.noPolicies')}</p>
+      )}
+      {policies.length > 0 && (
+        <ul className="mb-3 flex flex-col gap-2">
+          {policies.map((p) => (
+            <InsurancePolicyRow key={p.id} policy={p} patientId={patientId} />
+          ))}
+        </ul>
+      )}
+      <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
+        <Field label={t('patientChart.payerName')}>
+          <input value={form.payerName} onChange={(e) => setForm({ ...form, payerName: e.target.value })} placeholder="Acme Health" className={`${inputClass} w-36`} />
+        </Field>
+        <Field label={t('patientChart.memberId')}>
+          <input value={form.memberId} onChange={(e) => setForm({ ...form, memberId: e.target.value })} className={`${inputClass} w-28`} />
+        </Field>
+        <Field label={t('patientChart.groupNumberOptional')}>
+          <input value={form.groupNumber} onChange={(e) => setForm({ ...form, groupNumber: e.target.value })} className={`${inputClass} w-24`} />
+        </Field>
+        <Field label={t('patientChart.rank')}>
+          <select value={form.rank} onChange={(e) => setForm({ ...form, rank: e.target.value })} className={inputClass}>
+            <option value="primary">{t('patientChart.primary')}</option>
+            <option value="secondary">{t('patientChart.secondary')}</option>
+          </select>
+        </Field>
+        <Field label={t('patientChart.relationship')}>
+          <select value={form.relationshipToSubscriber} onChange={(e) => setForm({ ...form, relationshipToSubscriber: e.target.value })} className={inputClass}>
+            <option value="self">{t('patientChart.relationshipSelf')}</option>
+            <option value="spouse">{t('patientChart.relationshipSpouse')}</option>
+            <option value="child">{t('patientChart.relationshipChild')}</option>
+            <option value="other">{t('patientChart.relationshipOther')}</option>
+          </select>
+        </Field>
+        <Field label={t('patientChart.effectiveDateOptional')}>
+          <input type="date" value={form.effectiveDate} onChange={(e) => setForm({ ...form, effectiveDate: e.target.value })} className={inputClass} />
+        </Field>
+        <button type="submit" disabled={createPolicy.isPending} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
+          {createPolicy.isPending ? t('common.adding') : t('patientChart.addPolicy')}
+        </button>
+      </form>
+      {formError && <div className="mt-3"><ErrorBanner message={formError} /></div>}
+    </div>
+  );
+}
+
+function InsurancePolicyRow({ policy, patientId }) {
+  const { t } = useTranslation();
+  const updatePolicy = useUpdateInsurancePolicy(patientId, policy.id);
+  const [editing, setEditing] = useState(false);
+  const [rowError, setRowError] = useState(null);
+  const [editForm, setEditForm] = useState({
+    groupNumber: policy.groupNumber || '',
+    planType: policy.planType || '',
+    subscriberName: policy.subscriberName || '',
+  });
+
+  async function handleSave(event) {
+    event.preventDefault();
+    setRowError(null);
+    try {
+      await updatePolicy.mutateAsync({
+        groupNumber: editForm.groupNumber.trim() || undefined,
+        planType: editForm.planType.trim() || undefined,
+        subscriberName: editForm.subscriberName.trim() || undefined,
+      });
+      setEditing(false);
+    } catch (err) {
+      setRowError(err.message || t('patientChart.errorUpdatePolicy'));
+    }
+  }
+
+  async function toggleStatus() {
+    setRowError(null);
+    try {
+      await updatePolicy.mutateAsync({ status: policy.status === 'active' ? 'inactive' : 'active' });
+    } catch (err) {
+      setRowError(err.message || t('patientChart.errorUpdatePolicy'));
+    }
+  }
+
+  return (
+    <li className="rounded-lg border border-slate-100 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <span className="text-sm font-semibold text-ink">{policy.payerName}</span>
+          <span className="ml-2 text-xs text-ink-muted">{policy.memberId}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge style="bg-brand-light text-brand-text">{t(`patientChart.${policy.rank}`, { defaultValue: policy.rank })}</Badge>
+          <Badge style={POLICY_STATUS_STYLE[policy.status] || POLICY_STATUS_STYLE.active}>{t(`status.${policy.status}`, { defaultValue: policy.status })}</Badge>
+          {!editing && (
+            <button type="button" onClick={() => setEditing(true)} className="text-xs font-medium text-brand-text hover:underline">
+              {t('common.edit')}
+            </button>
+          )}
+          <button type="button" disabled={updatePolicy.isPending} onClick={toggleStatus} className="text-xs font-medium text-brand-text hover:underline disabled:opacity-50">
+            {policy.status === 'active' ? t('common.deactivate') : t('common.reactivate')}
+          </button>
+        </div>
+      </div>
+      {!editing && (
+        <p className="mt-1 text-xs text-ink-muted">
+          {[policy.groupNumber, policy.planType, policy.subscriberName].filter(Boolean).join(' · ') || '—'}
+        </p>
+      )}
+      {editing && (
+        <form onSubmit={handleSave} className="mt-2 flex flex-wrap items-end gap-3">
+          <Field label={t('patientChart.groupNumberOptional')}>
+            <input value={editForm.groupNumber} onChange={(e) => setEditForm({ ...editForm, groupNumber: e.target.value })} className={`${inputClass} w-24`} />
+          </Field>
+          <Field label={t('patientChart.planTypeOptional')}>
+            <input value={editForm.planType} onChange={(e) => setEditForm({ ...editForm, planType: e.target.value })} className={`${inputClass} w-28`} />
+          </Field>
+          <Field label={t('patientChart.subscriberNameOptional')}>
+            <input value={editForm.subscriberName} onChange={(e) => setEditForm({ ...editForm, subscriberName: e.target.value })} className={`${inputClass} w-36`} />
+          </Field>
+          <button type="submit" disabled={updatePolicy.isPending} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50">
+            {t('common.save')}
+          </button>
+          <button type="button" onClick={() => setEditing(false)} className="text-xs font-medium text-ink-muted hover:underline">
+            {t('common.cancel')}
+          </button>
+        </form>
+      )}
+      {rowError && <p className="mt-1 text-xs text-danger">{rowError}</p>}
+    </li>
   );
 }

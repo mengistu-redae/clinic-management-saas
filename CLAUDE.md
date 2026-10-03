@@ -1803,6 +1803,18 @@ was written straight from reading the real files, not a round of
 questions), so this write-up is mostly "which existing pattern got
 reused where," not new design. *(Full write-up moved to `CLAUDE-history.md`.)*
 
+**Frontend phase U: insurance & claims UI** (built 2026-10-03) - closes
+phase 40's own "no frontend yet" gap. A new `InsuranceSection` in
+`PatientChart.jsx` (the one section with no provider carve-out at all -
+gated at the mount point, not just its own write form, since
+`InsurancePolicyController` grants provider zero access) and a new
+`ClaimsPanel.jsx`, mounted next to `InvoicePanel`/`PaymentsPanel` on both
+`front-desk/AppointmentDetail.jsx` and `lab-orders/LabOrderDetail.jsx`
+(deliberately not the dispense-billing panel - a pharmacy dispense isn't
+a typical insurance scenario, revisit if needed). `StatusPill.jsx`
+extended with the claim-status vocabulary. No backend changes. *(Full
+write-up moved to `CLAUDE-history.md`.)*
+
 ## Post-phase-7 backend additions
 
 Built 2026-09-19/20, later extended the same session. Two "Known gaps"

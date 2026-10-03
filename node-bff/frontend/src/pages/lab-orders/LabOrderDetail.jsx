@@ -29,6 +29,7 @@ import SpecimensPanel from '../../components/SpecimensPanel.jsx';
 import AnalyteResultsPanel from '../../components/AnalyteResultsPanel.jsx';
 import InvoicePanel from '../../components/InvoicePanel.jsx';
 import PaymentsPanel from '../../components/PaymentsPanel.jsx';
+import ClaimsPanel from '../../components/ClaimsPanel.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import Button from '../../components/Button.jsx';
 import Field, { inputClass } from '../../components/Field.jsx';
@@ -427,6 +428,10 @@ export default function LabOrderDetail() {
 
       {status !== 'requested' && status !== 'cancelled' && (
         <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} pdfUrl={`/api/lab-orders/${id}/invoice/pdf`} />
+      )}
+
+      {status !== 'requested' && status !== 'cancelled' && invoiceQuery.data && order.patientId && (
+        <ClaimsPanel invoiceId={invoiceQuery.data.id} patientId={order.patientId} />
       )}
 
       {actionError && <div className="mt-4"><ErrorBanner message={actionError} /></div>}

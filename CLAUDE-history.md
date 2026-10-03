@@ -7727,3 +7727,96 @@ with the recommended option. New migration `V35__insurance_claims.sql`.
   A `pages/front-desk/` or `pages/clinic-admin/` insurance/claims UI is a
   natural next frontend phase, not built here.
 
+## Frontend phase U: insurance & claims UI
+
+Built 2026-10-03, same session as phase 40's backend - closes its own
+"no frontend yet" gap, picked as the user's own explicit next-step choice
+over three other candidate modules (telemedicine, imaging/radiology
+orders, patient engagement) offered directly. Zero backend changes -
+every endpoint this drives already existed and was already
+live-verified server-side in phase 40 itself.
+
+- **`InsuranceSection` (new, inside `PatientChart.jsx`)** - patient-level
+  coverage records, list + create form + per-row edit/status-toggle,
+  mirroring `AllergiesSection`'s own shape (no delete, correct a mistaken
+  entry with a new row + a status flip). **The one genuinely new pattern
+  this phase introduces to `PatientChart.jsx`**: every other section in
+  that file is visible (read-only at minimum) to all three staff roles
+  that can reach either host page, but `InsurancePolicyController` grants
+  `provider` zero access at all - not even read. Gated at the **mount
+  point** in the parent `PatientChart` component itself
+  (`{patientId && canSeeInsurance && <InsuranceSection ... />}`), so a
+  provider session never even fires the query, rather than the section
+  rendering and hiding only its write form the way Allergies/Consent do.
+- **`ClaimsPanel.jsx` (new, standalone component)** - mounted next to
+  `InvoicePanel`/`PaymentsPanel` on both `front-desk/AppointmentDetail.jsx`
+  and `lab-orders/LabOrderDetail.jsx`, only once an invoice actually
+  exists and the owner has a known patient (`invoiceQuery.data &&
+  appointment.patientId` / `order.patientId`) - a guest/walk-in invoice
+  has no patient to bill insurance for at all
+  (`ClaimService.createClaim`'s own 400), so the host page simply skips
+  mounting this rather than the component rendering a permanent error.
+  Each `ClaimRow` drives its own lifecycle actions (submit/record
+  -adjudication/appeal/close) through one `action` state - at most one
+  inline form open at a time, the same "click a link, a small form
+  appears below" shape `PaymentRow`'s own refund affordance already
+  established. `submit` is available from both `draft` and `submitted`
+  statuses (re-submitting while already submitted corrects the claim
+  number in place, matching `ClaimService.submit`'s own deliberate
+  non-idempotent re-call - the same precedent `Specimen
+  .sendToReferenceLab`'s UI, phase L8, already carried through to its own
+  "re-opens pre-filled for correcting the details" form).
+- **Deliberately not wired into the dispense-billing panel**
+  (`pharmacist/Dashboard.jsx`'s `DispenseBillingPanel`, phase 37) - a
+  pharmacy dispense isn't a typical insurance-claim scenario in practice,
+  and the user's own scoping answer for phase 40 pinned
+  `front_desk`+`clinic_admin` as the only roles managing claims, not
+  `pharmacist` - extending there would need the exact same component at
+  one more mount point for a use case that doesn't obviously need it.
+  Revisit if a real need turns up, same as every other "explicitly
+  skipped this pass" note in this file.
+- **`StatusPill.jsx` extended** with the full claim-status vocabulary
+  (`draft`/`submitted`/`paid`/`partially_paid`/`denied`/`appealed`/
+  `closed`) - already functional via the component's own raw-string
+  fallback before this, just unstyled, same "extend the shared style map"
+  precedent lab module L8 already used for the specimen vocabulary.
+- **i18n**: ~20 new `patientChart.*` keys (insurance section labels/
+  fields/errors) and a new `claimsPanel.*` namespace (~32 keys) plus 7
+  new `status.*` keys, added to `en.json`/`am.json` together - confirmed
+  exact key parity via a flatten-and-diff Python script afterward (1128
+  keys each side, the same two pre-existing intentional English-only
+  pluralization keys as every prior phase - not a new gap). A real
+  mid-edit mistake was caught before it shipped: a manually-typed Unicode
+  escape for the Amharic "appealed" status accidentally included stray
+  Cyrillic characters from a copy-paste slip - caught by writing the
+  literal Amharic text directly instead of hand-rolled escapes, then
+  re-verifying the saved file's actual bytes rather than trusting the
+  script had run correctly.
+- **Tests**: `StatusPill.test.jsx` gained one new case (a known
+  insurance-claim status renders its real translated label) - consistent
+  with frontend phase S's own scope boundary (shared components only,
+  not page-level `ClaimsPanel.jsx`/`InsuranceSection` itself). `npm run
+  build` clean; `npm test` showed `37/37` passing (up from 36 - exactly
+  the one new `StatusPill` case).
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`)** - `docker compose up -d --build --force-recreate
+  node-bff` (healthy). No browser extension was connected this session
+  (same standing gap several lab-module phases already flagged), so
+  verification stayed at this project's own established "build-only"
+  bar, strengthened one step further: confirmed the served JS bundle
+  itself genuinely contains the new code (`grep`'d the built bundle for
+  `insuranceSection`/`File claim`/`recordAdjudication` - all present,
+  not just assumed from a clean build), and confirmed `GET
+  /api/invoices/{id}/claims`/`GET /api/patients/{id}/insurance-policies`
+  - called through the real node-bff proxy, the identical path the new
+  React hooks use - return the exact real claim/policy rows phase 40's
+  own backend verification created, in the exact field shapes
+  (`payerName`/`memberId`/`rank`/`status`/`billedAmount`/`allowedAmount`/
+  etc.) these new components expect. The original session's login cookie
+  had expired (tokens, not the Express session itself, per
+  `refreshIfExpired`'s own invalid_grant handling) - re-ran the same
+  scripted Authorization Code + PKCE login from the phase-40 session (see
+  the `scripted-curl-oidc-login` memory) to get a fresh one. **A real
+  click-through of the new UI itself is still owed** - the exact same gap
+  phase 40's own backend had, not newly introduced here.
+
