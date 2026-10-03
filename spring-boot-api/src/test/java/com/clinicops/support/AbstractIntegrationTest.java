@@ -291,6 +291,15 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected DispenseRecordRepository dispenseRecordRepository;
 
+    @Autowired
+    protected com.clinicops.invoice.InvoiceRepository invoiceRepository;
+
+    @Autowired
+    protected com.clinicops.insurance.InsurancePolicyRepository insurancePolicyRepository;
+
+    @Autowired
+    protected com.clinicops.insurance.ClaimRepository claimRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -666,6 +675,25 @@ public abstract class AbstractIntegrationTest {
         appointment.setIdempotencyKey("fixture-" + UUID.randomUUID());
         appointment.setAppointmentRef(UUID.randomUUID().toString().substring(0, 6).toUpperCase(java.util.Locale.ROOT));
         return appointmentRepository.save(appointment);
+    }
+
+    protected com.clinicops.invoice.Invoice createInvoiceForAppointment(UUID tenantId, UUID appointmentId, java.math.BigDecimal totalAmount) {
+        com.clinicops.invoice.Invoice invoice = new com.clinicops.invoice.Invoice();
+        invoice.setTenantId(tenantId);
+        invoice.setAppointmentId(appointmentId);
+        invoice.setSubtotalAmount(totalAmount);
+        invoice.setTaxAmount(java.math.BigDecimal.ZERO);
+        invoice.setTotalAmount(totalAmount);
+        return invoiceRepository.save(invoice);
+    }
+
+    protected com.clinicops.insurance.InsurancePolicy createInsurancePolicy(UUID tenantId, UUID patientId, String payerName) {
+        com.clinicops.insurance.InsurancePolicy policy = new com.clinicops.insurance.InsurancePolicy();
+        policy.setTenantId(tenantId);
+        policy.setPatientId(patientId);
+        policy.setPayerName(payerName);
+        policy.setMemberId("MEM-" + UUID.randomUUID().toString().substring(0, 8));
+        return insurancePolicyRepository.save(policy);
     }
 
     // ---- auth builders: hand these straight to MockMvc's .with(...). ----

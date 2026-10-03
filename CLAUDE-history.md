@@ -1063,7 +1063,6 @@ encounter page directly - unaffected, and it correctly showed the note
 documented by clinic_admin"), proving the shared-editing path works
 across roles, not just per-role in isolation.
 
-
 ## Verified this session - phase 15: real billing build-out
 
 Rebuilt the `spring-boot-api` container (`docker compose up -d --build
@@ -7105,7 +7104,6 @@ whole). Three real, concrete problems were found and fixed, all in
   + shared components" scope boundary, which never included page
   -chrome components like this one).
 
-
 ## Archived full frontend phase write-ups (moved from CLAUDE.md, 2026-10-03 size-reduction pass)
 
 ### Frontend phase P
@@ -7568,4 +7566,164 @@ reused where," not new design.
 
 This closes the "no frontend yet" gap the full-EHR-breadth backlog
 (phases 24-26) left open - see "Known gaps" below, updated accordingly.
+
+## Archived full phase write-ups (moved from CLAUDE.md, 2026-10-03, phase 40)
+
+## Phase 40: insurance & claims billing
+
+Built 2026-10-03. The user asked what it would take to make this a "full
+clinic system"; the biggest real gap identified was that every existing
+billing path (`Payment`/`Invoice`, phases 15/16/31) models cash/self-pay
+only - `Payment.method` has allowed the literal string `"insurance"` since
+phase 1, but nothing ever tracked a claim's own lifecycle behind that
+label. Four direct scoping questions were put to the user before writing
+any code (matching this project's own "ask before building" convention) -
+real EDI/clearinghouse integration vs. a self-contained tracker, single
+vs. primary+secondary policies per patient, who manages claims, and
+whether to include eligibility verification this phase - all four answered
+with the recommended option. New migration `V35__insurance_claims.sql`.
+
+- **Self-contained tracker, not a real clearinghouse/EDI integration** - no
+  real payer credentials exist in this dev environment, the identical
+  "mock/defer the real vendor" call phases 16 (payment gateway) and 17
+  (email) already made. A `Claim` bills one already-issued `Invoice`
+  against one `InsurancePolicy` - a plain reference to the Invoice, **not**
+  a new Invoice/Payment owner type, so neither table's own exactly-one
+  -owner CHECK needed touching.
+- **`com.clinicops.insurance.InsurancePolicy`** - patient-level, primary
+  **and** secondary policies per patient (`rank`), for real coordination
+  -of-benefits (a claim can bill a secondary payer for whatever the
+  primary didn't cover). No delete endpoint - same "correct via a new row
+  + a status flip" precedent `Allergy` already set, not a replacement for
+  the pre-existing flat `patients.insurance_member_id` column (phase 1),
+  which is left untouched.
+- **`com.clinicops.insurance.Claim`** lifecycle, self-contained and
+  manually staff-driven: `draft -> submitted -> (paid | partially_paid |
+  denied) ->` optionally `appealed` (from `denied`, back into an
+  adjudicatable state) `-> closed` (callable from any status, including
+  abandoning a draft filed by mistake). Mirrors `LabOrderStatusService`'s
+  own conventions - re-calling a transition already reached is idempotent,
+  calling one out of order throws a new `InvalidClaimStatusException`
+  (409). `submit` is the one deliberate exception: like `Specimen
+  .sendToReferenceLab` (phase L5), a re-call while already submitted
+  updates the claim number in place rather than no-op'ing, since a payer's
+  own claim number often isn't known until after the first submission.
+  `recordAdjudication` requires `denialReason` for a `denied` outcome, or
+  all three amount fields (`allowedAmount`/`paidAmount`/
+  `patientResponsibilityAmount`) otherwise - validated in the service, not
+  via annotations, since which fields are required depends on the outcome.
+- **Patient resolution reuses `DispenseService`'s own multi-hop chain** -
+  `ClaimService.resolvePatientId` walks `Invoice`'s own three nullable
+  owner columns (appointment/lab-order/dispense-record) back to a
+  `patientId`, the dispense-record branch going through the identical
+  `Prescription -> Encounter -> Appointment` hop `DispenseService` already
+  established for the same reason (a `DispenseRecord` carries no
+  `patientId` of its own). An invoice with no resolvable patient (a guest/
+  walk-in booking) is rejected at claim-creation time (400) - insurance
+  billing is structurally impossible without a known patient, a real,
+  documented limitation, not an oversight. A policy that doesn't belong to
+  the invoice's own resolved patient is also rejected (400).
+- **Role gate: `front_desk` + `clinic_admin` only, no provider access at
+  all** - the user's own pinned answer; insurance billing is a billing
+  -team concern, not a clinical one, deliberately narrower than
+  `AppointmentPaymentController`'s own provider-readable carve-out.
+- **A genuine small gap found and closed while building**:
+  `InvoiceRepository` had no `findByIdAndTenantId` at all before this
+  phase (every existing lookup was by owner - `findByAppointmentIdAndTenantId`
+  etc.) - a claim is the first thing in this codebase that ever needs to
+  fetch an invoice by its own id, so the method was added.
+- **Eligibility verification deliberately deferred** - the user's own
+  pinned answer; a real check needs a real payer API this environment
+  doesn't have, the identical reasoning SMS was deferred in phase 17.
+- **Tests**: `ClaimServiceTest` (new, pure Mockito, genuinely runs locally
+  - **15/15 passing**) - billed-amount snapshotting and patient resolution
+  through all three invoice-owner branches (appointment/lab-order/
+  dispense-record chain); rejected when the invoice has no resolvable
+  patient or the policy belongs to a different patient; `submit`'s
+  draft->submitted transition and its deliberate non-idempotent re-call
+  (updates the claim number in place) and its rejection from an already
+  -adjudicated status; `recordAdjudication`'s required-field validation
+  for both `paid` and `denied` outcomes, its rejection from `draft`, and
+  idempotent re-call once already adjudicated (`verify(claimRepository,
+  never()).save(any())`); `appeal`'s denied->appealed transition and its
+  own re-adjudication afterward; `close`'s callable-from-any-status/
+  idempotent-once-closed behavior. `InsurancePolicyControllerIntegrationTest`
+  (new, 5 cases: CRUD round-trip, invalid rank/relationship/status 400,
+  role gate - `provider` forbidden on both read and write, cross-tenant
+  404, update-for-the-wrong-patientId 404) and
+  `ClaimControllerIntegrationTest` (new, 7 cases: the full draft-\>
+  submitted-\>paid-\>closed lifecycle through the real endpoints, the
+  denied-\>appealed-\>partially_paid re-adjudication path, invalid
+  -outcome/missing-required-field 400s, the guest-invoice-with-no-patient
+  400, the mismatched-policy 400, the role gate, cross-tenant 404 on both
+  the invoice and the claim). One new `TenantIsolationIntegrationTest`
+  case (`insurancePoliciesAndClaimsAreNotReadableOrWritableFromAnotherTenant`).
+  Confirmed via a clean `mvn clean test-compile` and a full `mvn test` run
+  showing `Tests run: 514, Errors: 381, Failures: 0` (up from 486/368 -
+  exactly the 28 new test methods: 15 pure-unit + 13 Testcontainers
+  -blocked), 133 pure-unit tests now passing project-wide (up from 118);
+  confirmed via computing pass/fail per surefire report that every one of
+  the 13 new Testcontainers-blocked failures hits the identical
+  pre-existing `Could not find a valid Docker environment` wall every
+  other integration test on this machine already hits - not a new failure
+  mode.
+- **Live-verified against the real running stack, through `node-bff`'s
+  real browser-facing proxy on `:3000`** - Docker Desktop was found not
+  running at the start of this phase (`docker compose ps` failed to reach
+  the daemon); started it, confirmed the whole stack came up healthy, and
+  rebuilt `spring-boot-api` - `V35` confirmed applied via
+  `flyway_schema_history` (version 35, description "insurance claims",
+  `success = t`). Testcontainers itself still hits the identical
+  pre-existing Windows npipe wall even with the daemon demonstrably
+  reachable via plain `docker compose` commands (confirmed by re-running
+  `InsurancePolicyControllerIntegrationTest` locally - same
+  `Could not find a valid Docker environment` failure) - not re-chased
+  further, a permanent, already-documented limitation of this dev
+  machine, not something to debug mid-phase.
+  - **No browser extension was connected this session either**, so full
+    login was driven by scripting the real Authorization Code + PKCE flow
+    directly against Keycloak with `curl` (a two-step "identifier first"
+    login form - username, then a separate password step) - genuinely
+    exercising the same flow a real browser does, not a shortcut. As a
+    real `demo-front-desk` login (`GET /auth/me` confirmed the correct
+    identity/role/org): found a real "Demo Patient" and one of their real
+    appointments, generated a real $50.00 invoice for it
+    (`POST /api/appointments/{id}/invoice`), created a real
+    `InsurancePolicy` ("Acme Health Insurance", primary), and filed a
+    real `Claim` against the invoice - `billedAmount: 50.00`, patient
+    correctly resolved through the appointment chain. Walked it through
+    the full lifecycle for real: `submit` (`CLM-LIVE-1`) -\> **re-submit
+    while already submitted, confirming the deliberate non-idempotent
+    correction precedent live** - `claimNumber` updated to
+    `CLM-LIVE-1-CORRECTED` with `submittedAt` genuinely unchanged -\>
+    `record-adjudication` (`paid`, allowed/paid $40, patient
+    responsibility $10) -\> `close`. Confirmed the final state via a
+    fresh `GET /api/claims/{id}` and via both list endpoints
+    (`GET /api/invoices/{id}/claims`, `GET /api/patients/{id}/claims`) -
+    all three returned the identical, correctly persisted row.
+  - As a real, separately-logged-in `demo-provider` session (confirmed via
+    `GET /auth/me`): a malformed-body `POST` to create a claim 400'd
+    first (request validation runs before `@PreAuthorize`, confirmed by
+    re-testing with a well-formed body) - with a valid body, got a
+    genuine `403`, and both `GET` endpoints also 403'd - the pinned
+    `front_desk`+`clinic_admin`-only, no-provider-access gate holding
+    live, not just documented. Cross-tenant isolation itself was not
+    re-exercised with a second live login this session (no second
+    tenant's staff credentials were on hand) - that invariant is covered
+    by the new `TenantIsolationIntegrationTest` case instead, the same
+    bar several smaller phases this project has already used when a
+    second live tenant login wasn't readily available.
+  - **A real lesson learned mid-verification, not a product bug**: the
+    first cross-tenant-login attempt (as `demo-provider`) failed with
+    "Invalid or expired login attempt" - caused by the verification
+    script itself dropping the `-b`/`-c` cookie-jar flags on the final
+    OIDC callback request, so node-bff's own pre-login session (which
+    holds the PKCE `code_verifier`/`state` server-side) never reached it.
+    Fixed by keeping the jar on every request in the chain, including the
+    callback - the identical "every hop in a multi-redirect flow needs
+    the same cookie jar" discipline a real browser handles invisibly.
+- **No frontend yet** - backend only, same "backend first" scope boundary
+  every new module in this project starts with (phase 7, phase 20, L1).
+  A `pages/front-desk/` or `pages/clinic-admin/` insurance/claims UI is a
+  natural next frontend phase, not built here.
 

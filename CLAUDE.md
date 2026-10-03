@@ -1524,6 +1524,22 @@ refill-request flow, and the staff review queue
 
 *Full design write-up and live-verification detail: see `CLAUDE-history.md`.*
 
+## Phase 40: insurance & claims billing
+
+Built 2026-10-03. The user asked what it would take to make this a "full
+clinic system"; the biggest real gap identified was that every existing
+billing path (`Payment`/`Invoice`, phases 15/16/31) models cash/self-pay
+only - `Payment.method` has allowed the literal string `"insurance"` since
+phase 1, but nothing ever tracked a claim's own lifecycle behind that
+label. Four direct scoping questions were put to the user before writing
+any code (matching this project's own "ask before building" convention) -
+real EDI/clearinghouse integration vs. a self-contained tracker, single
+vs. primary+secondary policies per patient, who manages claims, and
+whether to include eligibility verification this phase - all four answered
+with the recommended option. New migration `V35__insurance_claims.sql`.
+
+*Full design write-up: see `CLAUDE-history.md`.*
+
 ## Sidebar nav arrangement review (2026-10-01)
 
 The user asked for an evaluation of the menu arrangement for every
@@ -2148,6 +2164,33 @@ attributed to the patient's own account for a self-service cancel).
   live verification in "Phase 39" above (a real `demo-pharmacist`
   login seeing the actual resolved "Demo Patient"/"Penicillin V" names
   in the queue, not a raw UUID), not by a local test run.
+- `ClaimServiceTest` (phase 40, new, pure Mockito, genuinely runs locally
+  - **15/15 passing**) - billed-amount snapshotting, patient resolution
+  through all three invoice-owner branches, the guest-invoice/mismatched
+  -policy 400 rejections, `submit`'s deliberate non-idempotent re-call
+  (updates the claim number in place, same precedent `Specimen
+  .sendToReferenceLab` already set), `recordAdjudication`'s
+  outcome-dependent required-field validation and its idempotent re-call
+  once already adjudicated, `appeal`'s denied-\>appealed-\>re-adjudicated
+  path, `close`'s callable-from-any-status/idempotent-once-closed
+  behavior. `InsurancePolicyControllerIntegrationTest` (new, 5 cases) +
+  `ClaimControllerIntegrationTest` (new, 7 cases, including the full
+  draft-\>submitted-\>paid-\>closed lifecycle and the denied-\>appealed
+  -\>partially_paid path through the real endpoints) + one new
+  `TenantIsolationIntegrationTest` case. Same Testcontainers wall as every
+  other integration test on this machine - `mvn test` showed `Tests run:
+  514, Errors: 381, Failures: 0` (up from 486/368 - exactly the 28 new
+  test methods: 15 pure-unit + 13 Testcontainers-blocked), 133 pure-unit
+  tests now passing project-wide (up from 118); confirmed via computing
+  pass/fail per surefire report that every new Testcontainers-blocked
+  failure hits the identical pre-existing `Could not find a valid Docker
+  environment` wall, not a new failure mode. **Live-verified against the
+  real running stack** - Docker Desktop was started this session, the
+  real draft-\>submitted-\>paid-\>closed lifecycle (plus the deliberate
+  re-submit-corrects-the-claim-number precedent) was driven through a
+  genuinely scripted Authorization Code + PKCE login (no browser
+  extension connected either), and the role gate was confirmed live as a
+  real `demo-provider` session - see "Phase 40" above.
 
 ## Verified-session logs
 

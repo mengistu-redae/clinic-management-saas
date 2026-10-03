@@ -717,4 +717,45 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/patients").with(asClinicAdmin("admin", clinic.getKeycloakOrgId())))
                 .andExpect(status().isForbidden());
     }
+
+    /** Insurance & claims billing (2026-10-03) - policies and claims are both tenant-scoped the same way every other resource here is. */
+    @Test
+    void insurancePoliciesAndClaimsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("insurance");
+        Provider provider = createProvider(a.getId(), "Dr. A");
+        AppointmentType type = createAppointmentType(a.getId(), "Visit", 30, "150.00");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000099");
+        Slot slot = createSlot(a.getId(), provider.getId(), type.getId(), Instant.now().plusSeconds(3600), Instant.now().plusSeconds(5400));
+        Appointment appointment = createBookedAppointment(a.getId(), slot.getId(), patient.getId(), provider.getId(), type.getId(), null);
+        com.clinicops.invoice.Invoice invoice = createInvoiceForAppointment(a.getId(), appointment.getId(), new java.math.BigDecimal("150.00"));
+        com.clinicops.insurance.InsurancePolicy policy = createInsurancePolicy(a.getId(), patient.getId(), "Acme Health");
+
+        Clinic b = clinicB("insurance");
+        mockMvc.perform(get("/api/patients/" + patient.getId() + "/insurance-policies").with(asFrontDesk("fd", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/patients/" + patient.getId() + "/insurance-policies/" + policy.getId() + "/update").with(asFrontDesk("fd", b.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.insurance.UpdateInsurancePolicyRequest(
+                                null, null, null, null, null, null, null, "inactive"))))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/invoices/" + invoice.getId() + "/claims").with(asFrontDesk("fd", b.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.insurance.CreateClaimRequest(policy.getId(), null))))
+                .andExpect(status().isNotFound());
+
+        String body = mockMvc.perform(post("/api/invoices/" + invoice.getId() + "/claims").with(asFrontDesk("fd", a.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.insurance.CreateClaimRequest(policy.getId(), null))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID claimId = UUID.fromString(objectMapper.readTree(body).get("id").asText());
+
+        mockMvc.perform(get("/api/claims/" + claimId).with(asFrontDesk("fd", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/claims/" + claimId + "/submit").with(asFrontDesk("fd", b.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.insurance.SubmitClaimRequest(null))))
+                .andExpect(status().isNotFound());
+    }
 }
