@@ -18,6 +18,7 @@ import ErrorBanner from '../../components/ErrorBanner.jsx';
 import PatientChart from '../../components/PatientChart.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import VisitSummaryLink from '../../components/VisitSummaryLink.jsx';
+import Tabs from '../../components/Tabs.jsx';
 import Field, { inputClass as sharedInputClass } from '../../components/Field.jsx';
 import { formatDateTime } from '../../lib/format.js';
 
@@ -74,6 +75,7 @@ export default function Encounter() {
   const signEncounter = useSignEncounter(id);
   const addAddendum = useAddAddendum(id);
 
+  const [activeTab, setActiveTab] = useState('note');
   const [form, setForm] = useState({ chiefComplaint: '', assessment: '', plan: '', icd10Codes: '', ...emptyExamForm() });
   const [formError, setFormError] = useState(null);
   const [saved, setSaved] = useState(false);
@@ -217,9 +219,19 @@ export default function Encounter() {
 
       <VisitSummaryLink href={`/api/appointments/${id}/visit-summary/pdf`} />
 
-      <PatientChart patientId={appointment.patientId} appointmentId={id} />
+      <Tabs
+        tabs={[
+          { key: 'note', label: t('tabs.clinicalNote') },
+          { key: 'rx', label: t('tabs.prescriptions') },
+          { key: 'chart', label: t('tabs.patientChart') },
+        ]}
+        active={activeTab}
+        onChange={setActiveTab}
+      />
 
-      {!documentable ? (
+      {activeTab === 'chart' && <PatientChart patientId={appointment.patientId} appointmentId={id} />}
+
+      {activeTab !== 'chart' && !documentable && (
         <EmptyState
           title={t('encounterPage.notReadyTitle')}
           description={t('encounterPage.notReadyDescription', { status: appointment.status.replace(/_/g, ' ') })}
@@ -232,7 +244,9 @@ export default function Encounter() {
             </Link>
           }
         />
-      ) : (
+      )}
+
+      {activeTab === 'note' && documentable && (
         <>
           <form onSubmit={handleSaveEncounter} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-surface p-4">
             <div className="flex items-center justify-between">
@@ -357,8 +371,15 @@ export default function Encounter() {
               </form>
             </div>
           )}
+        </>
+      )}
 
-          <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-4">
+      {activeTab === 'rx' && !documentable && (
+        <p className="text-sm text-ink-muted">{t('encounterPage.notReadyDescription', { status: appointment.status.replace(/_/g, ' ') })}</p>
+      )}
+
+      {activeTab === 'rx' && documentable && (
+          <div className="rounded-xl border border-slate-200 bg-surface p-4">
             <p className="mb-3 text-sm font-semibold text-ink">{t('encounterPage.prescriptions')}</p>
             {encounterQuery.isLoading ? (
               <Skeleton className="h-24 w-full" />
@@ -432,7 +453,6 @@ export default function Encounter() {
               </form>
             )}
           </div>
-        </>
       )}
     </PageContainer>
   );

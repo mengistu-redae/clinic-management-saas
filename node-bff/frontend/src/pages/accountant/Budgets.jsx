@@ -13,6 +13,7 @@ import DataTable from '../../components/DataTable.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
 import Card from '../../components/Card.jsx';
+import Tabs from '../../components/Tabs.jsx';
 import ErrorBanner from '../../components/ErrorBanner.jsx';
 import Skeleton from '../../components/Skeleton.jsx';
 import Button from '../../components/Button.jsx';
@@ -33,6 +34,7 @@ const now = new Date();
 export default function AccountantBudgets() {
   const { t } = useTranslation();
   const [period, setPeriod] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
+  const [activeTab, setActiveTab] = useState('budgets');
 
   const accounts = useAccounts(true, 'active');
   const budgets = useBudgets(true, period.year, period.month);
@@ -93,66 +95,78 @@ export default function AccountantBudgets() {
         </Field>
       </Card>
 
-      <Card className="mb-8">
-        <h2 className="mb-4 text-lg font-bold text-ink">{t('accountantPage.budgetsForPeriod')}</h2>
+      <Tabs
+        tabs={[
+          { key: 'budgets', label: t('accountantPage.budgetsForPeriod') },
+          { key: 'pl', label: t('accountantPage.profitAndLoss') },
+          { key: 'bva', label: t('accountantPage.budgetVsActual') },
+        ]}
+        active={activeTab}
+        onChange={setActiveTab}
+      />
 
-        <form onSubmit={handleCreate} className="mb-4 flex flex-wrap items-end gap-3">
-          <Field label={t('accountantPage.account')}>
-            <select value={form.accountId} onChange={(e) => setForm({ ...form, accountId: e.target.value })} className={`${inputClass} w-56`}>
-              <option value="">{t('booking.select')}</option>
-              {(accounts.data || []).map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
-            </select>
-          </Field>
-          <Field label={t('accountantPage.budgetAmount')}>
-            <input type="number" min="0" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className={`${inputClass} w-32`} />
-          </Field>
-          <Button type="submit" variant="accent" disabled={createBudget.isPending}>
-            {createBudget.isPending ? t('common.adding') : t('accountantPage.addBudget')}
-          </Button>
-        </form>
-        {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
+      {activeTab === 'budgets' && (
+        <Card>
+          <form onSubmit={handleCreate} className="mb-4 flex flex-wrap items-end gap-3">
+            <Field label={t('accountantPage.account')}>
+              <select value={form.accountId} onChange={(e) => setForm({ ...form, accountId: e.target.value })} className={`${inputClass} w-56`}>
+                <option value="">{t('booking.select')}</option>
+                {(accounts.data || []).map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+              </select>
+            </Field>
+            <Field label={t('accountantPage.budgetAmount')}>
+              <input type="number" min="0" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className={`${inputClass} w-32`} />
+            </Field>
+            <Button type="submit" variant="accent" disabled={createBudget.isPending}>
+              {createBudget.isPending ? t('common.adding') : t('accountantPage.addBudget')}
+            </Button>
+          </form>
+          {formError && <div className="mb-4"><ErrorBanner message={formError} /></div>}
 
-        <DataTable
-          columns={budgetColumns}
-          rows={budgets.data || []}
-          rowKey="id"
-          defaultSortKey="account"
-          renderExpanded={(budget) => <BudgetEditPanel budget={budget} />}
-          isLoading={budgets.isLoading}
-          error={budgets.isError ? budgets.error : null}
-          onRetry={budgets.refetch}
-          emptyTitle={t('accountantPage.emptyBudgetsTitle')}
-          emptyDescription={t('accountantPage.emptyBudgetsDescription')}
-        />
-      </Card>
+          <DataTable
+            columns={budgetColumns}
+            rows={budgets.data || []}
+            rowKey="id"
+            defaultSortKey="account"
+            renderExpanded={(budget) => <BudgetEditPanel budget={budget} />}
+            isLoading={budgets.isLoading}
+            error={budgets.isError ? budgets.error : null}
+            onRetry={budgets.refetch}
+            emptyTitle={t('accountantPage.emptyBudgetsTitle')}
+            emptyDescription={t('accountantPage.emptyBudgetsDescription')}
+          />
+        </Card>
+      )}
 
-      <Card className="mb-8">
-        <h2 className="mb-4 text-lg font-bold text-ink">{t('accountantPage.profitAndLoss')}</h2>
-        {pl.isLoading && <Skeleton className="h-24 w-full" />}
-        {pl.isError && <ErrorBanner message={pl.error?.message} onRetry={pl.refetch} />}
-        {!pl.isLoading && !pl.isError && pl.data && (
-          <div className="grid gap-4 sm:grid-cols-3">
-            <SummaryStat label={t('accountantPage.totalRevenue')} value={formatCurrency(pl.data.totalRevenue)} />
-            <SummaryStat label={t('accountantPage.totalExpense')} value={formatCurrency(pl.data.totalExpense)} />
-            <SummaryStat label={t('accountantPage.netIncome')} value={formatCurrency(pl.data.netIncome)} />
-          </div>
-        )}
-      </Card>
+      {activeTab === 'pl' && (
+        <Card>
+          {pl.isLoading && <Skeleton className="h-24 w-full" />}
+          {pl.isError && <ErrorBanner message={pl.error?.message} onRetry={pl.refetch} />}
+          {!pl.isLoading && !pl.isError && pl.data && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <SummaryStat label={t('accountantPage.totalRevenue')} value={formatCurrency(pl.data.totalRevenue)} />
+              <SummaryStat label={t('accountantPage.totalExpense')} value={formatCurrency(pl.data.totalExpense)} />
+              <SummaryStat label={t('accountantPage.netIncome')} value={formatCurrency(pl.data.netIncome)} />
+            </div>
+          )}
+        </Card>
+      )}
 
-      <Card>
-        <h2 className="mb-4 text-lg font-bold text-ink">{t('accountantPage.budgetVsActual')}</h2>
-        <DataTable
-          columns={bvaColumns}
-          rows={budgetVsActual.data || []}
-          rowKey="accountId"
-          defaultSortKey="code"
-          isLoading={budgetVsActual.isLoading}
-          error={budgetVsActual.isError ? budgetVsActual.error : null}
-          onRetry={budgetVsActual.refetch}
-          emptyTitle={t('accountantPage.emptyBudgetVsActualTitle')}
-          emptyDescription={t('accountantPage.emptyBudgetVsActualDescription')}
-        />
-      </Card>
+      {activeTab === 'bva' && (
+        <Card>
+          <DataTable
+            columns={bvaColumns}
+            rows={budgetVsActual.data || []}
+            rowKey="accountId"
+            defaultSortKey="code"
+            isLoading={budgetVsActual.isLoading}
+            error={budgetVsActual.isError ? budgetVsActual.error : null}
+            onRetry={budgetVsActual.refetch}
+            emptyTitle={t('accountantPage.emptyBudgetVsActualTitle')}
+            emptyDescription={t('accountantPage.emptyBudgetVsActualDescription')}
+          />
+        </Card>
+      )}
     </PageContainer>
   );
 }

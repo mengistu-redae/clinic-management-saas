@@ -1296,5 +1296,13 @@
     "close": "ዝጋ",
     "closeNotesOptional": "የመዝጊያ ማስታወሻ (አማራጭ)",
     "errorClose": "ጥያቄ መዝጋት አልተቻለም።"
+  },
+  "tabs": {
+    "overview": "ጠቅላላ እይታ",
+    "patientChart": "የታካሚ ካርድ",
+    "billing": "ክፍያ",
+    "clinicalNote": "ክሊኒካዊ ማስታወሻ",
+    "prescriptions": "የመድሃኒት ማዘዣዎች",
+    "specimensResults": "ናሙናዎች እና ውጤቶች"
   }
 }

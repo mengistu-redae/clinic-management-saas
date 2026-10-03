@@ -1298,5 +1298,13 @@
     "close": "Close",
     "closeNotesOptional": "Closing notes (optional)",
     "errorClose": "Could not close claim."
+  },
+  "tabs": {
+    "overview": "Overview",
+    "patientChart": "Patient Chart",
+    "billing": "Billing",
+    "clinicalNote": "Clinical Note",
+    "prescriptions": "Prescriptions",
+    "specimensResults": "Specimens & Results"
   }
 }

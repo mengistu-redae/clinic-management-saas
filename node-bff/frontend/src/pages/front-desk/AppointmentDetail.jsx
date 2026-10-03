@@ -30,6 +30,7 @@ import VisitSummaryLink from '../../components/VisitSummaryLink.jsx';
 import PaymentsPanel from '../../components/PaymentsPanel.jsx';
 import ClaimsPanel from '../../components/ClaimsPanel.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import Tabs from '../../components/Tabs.jsx';
 import { formatDateTime } from '../../lib/format.js';
 
 const TERMINAL_STATUSES = new Set(['cancelled', 'checked_out', 'no_show']);
@@ -71,6 +72,7 @@ export default function AppointmentDetail() {
   const cancelAppointment = useCancelAppointment(id);
   const cancelSeries = useCancelSeries(id);
 
+  const [activeTab, setActiveTab] = useState('overview');
   const [presentedId, setPresentedId] = useState('');
   const [actionError, setActionError] = useState(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -172,145 +174,163 @@ export default function AppointmentDetail() {
         </dl>
       </div>
 
-      <PatientChart patientId={appointment.patientId} appointmentId={id} />
+      <Tabs
+        tabs={[
+          { key: 'overview', label: t('tabs.overview') },
+          { key: 'chart', label: t('tabs.patientChart') },
+          { key: 'billing', label: t('tabs.billing') },
+        ]}
+        active={activeTab}
+        onChange={setActiveTab}
+      />
 
-      {hasRole('clinic_admin') && DOCUMENTABLE_STATUSES.has(status) && (
-        <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-200 bg-surface p-4">
-          <p className="text-sm text-ink-muted">{t('fdAppointmentDetail.documentEncounterNote')}</p>
-          <Button as={Link} to={`/provider/appointments/${id}/encounter`} className="shrink-0">
-            {t('fdAppointmentDetail.documentEncounter')}
-          </Button>
-        </div>
-      )}
-
-      {!isTerminal && (
-        <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
-          <p className="mb-3 text-sm font-semibold text-ink">{t('fdAppointmentDetail.nextStep')}</p>
-          {status === 'booked' && (
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                  {t('fdAppointmentDetail.idPresentedOptional')}
-                </span>
-                <input value={presentedId} onChange={(e) => setPresentedId(e.target.value)} className={inputClass} />
-              </label>
-              <Button
-                type="button"
-                disabled={checkIn.isPending}
-                onClick={() => runAction(checkIn, presentedId.trim() ? { presentedIdNumber: presentedId.trim() } : undefined)}
-              >
-                {checkIn.isPending ? t('fdAppointmentDetail.checkingIn') : t('fdAppointmentDetail.checkIn')}
-              </Button>
-              <Button type="button" variant="secondary" disabled={markNoShow.isPending} onClick={() => runAction(markNoShow)}>
-                {t('fdAppointmentDetail.markNoShow')}
+      {activeTab === 'overview' && (
+        <>
+          {hasRole('clinic_admin') && DOCUMENTABLE_STATUSES.has(status) && (
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-surface p-4">
+              <p className="text-sm text-ink-muted">{t('fdAppointmentDetail.documentEncounterNote')}</p>
+              <Button as={Link} to={`/provider/appointments/${id}/encounter`} className="shrink-0">
+                {t('fdAppointmentDetail.documentEncounter')}
               </Button>
             </div>
           )}
-          {status === 'checked_in' && (
-            <Button type="button" disabled={room.isPending} onClick={() => runAction(room)}>
-              {room.isPending ? t('fdAppointmentDetail.rooming') : t('fdAppointmentDetail.room')}
-            </Button>
+
+          {!isTerminal && (
+            <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
+              <p className="mb-3 text-sm font-semibold text-ink">{t('fdAppointmentDetail.nextStep')}</p>
+              {status === 'booked' && (
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                      {t('fdAppointmentDetail.idPresentedOptional')}
+                    </span>
+                    <input value={presentedId} onChange={(e) => setPresentedId(e.target.value)} className={inputClass} />
+                  </label>
+                  <Button
+                    type="button"
+                    disabled={checkIn.isPending}
+                    onClick={() => runAction(checkIn, presentedId.trim() ? { presentedIdNumber: presentedId.trim() } : undefined)}
+                  >
+                    {checkIn.isPending ? t('fdAppointmentDetail.checkingIn') : t('fdAppointmentDetail.checkIn')}
+                  </Button>
+                  <Button type="button" variant="secondary" disabled={markNoShow.isPending} onClick={() => runAction(markNoShow)}>
+                    {t('fdAppointmentDetail.markNoShow')}
+                  </Button>
+                </div>
+              )}
+              {status === 'checked_in' && (
+                <Button type="button" disabled={room.isPending} onClick={() => runAction(room)}>
+                  {room.isPending ? t('fdAppointmentDetail.rooming') : t('fdAppointmentDetail.room')}
+                </Button>
+              )}
+              {status === 'roomed' && (
+                <Button type="button" disabled={start.isPending} onClick={() => runAction(start)}>
+                  {start.isPending ? t('fdAppointmentDetail.starting') : t('fdAppointmentDetail.startVisit')}
+                </Button>
+              )}
+              {status === 'with_provider' && (
+                <Button type="button" disabled={checkOut.isPending} onClick={() => runAction(checkOut)}>
+                  {checkOut.isPending ? t('fdAppointmentDetail.checkingOut') : t('fdAppointmentDetail.checkOut')}
+                </Button>
+              )}
+              {actionError && (
+                <div className="mt-3">
+                  <ErrorBanner message={actionError} />
+                </div>
+              )}
+            </div>
           )}
-          {status === 'roomed' && (
-            <Button type="button" disabled={start.isPending} onClick={() => runAction(start)}>
-              {start.isPending ? t('fdAppointmentDetail.starting') : t('fdAppointmentDetail.startVisit')}
-            </Button>
+
+          {cancelError && (
+            <div className="mt-4">
+              <ErrorBanner message={cancelError} />
+            </div>
           )}
-          {status === 'with_provider' && (
-            <Button type="button" disabled={checkOut.isPending} onClick={() => runAction(checkOut)}>
-              {checkOut.isPending ? t('fdAppointmentDetail.checkingOut') : t('fdAppointmentDetail.checkOut')}
-            </Button>
+
+          {!isTerminal && (
+            <div className="mt-5 flex items-center gap-3">
+              <Button as={Link} to={`/front-desk/appointments/${id}/reschedule`} variant="secondary">
+                {t('appointmentDetail.reschedule')}
+              </Button>
+              {!confirmingCancel ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => setConfirmingCancel(true)}
+                  className="border-danger/40 text-danger hover:bg-danger-light"
+                >
+                  {t('appointmentDetail.cancelAppointment')}
+                </Button>
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
+                  <p className="text-sm text-danger">{t('appointmentDetail.cancelConfirm')}</p>
+                  <Button variant="danger" size="sm" disabled={cancelAppointment.isPending} onClick={handleCancel}>
+                    {cancelAppointment.isPending ? t('appointmentDetail.cancelling') : t('appointmentDetail.yesCancel')}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmingCancel(false)}>
+                    {t('appointmentDetail.neverMind')}
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
-          {actionError && (
+
+          {cancelSeriesResult !== null && (
+            <div className="mt-4 flex items-center justify-between rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success">
+              <span>{t('fdAppointmentDetail.cancelSeriesSuccess', { count: cancelSeriesResult })}</span>
+              <button type="button" onClick={() => setCancelSeriesResult(null)} className="font-semibold hover:underline">
+                {t('common.dismiss')}
+              </button>
+            </div>
+          )}
+
+          {cancelSeriesError && (
+            <div className="mt-4">
+              <ErrorBanner message={cancelSeriesError} />
+            </div>
+          )}
+
+          {!isTerminal && appointment.seriesId && (
             <div className="mt-3">
-              <ErrorBanner message={actionError} />
+              {!confirmingCancelSeries ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingCancelSeries(true)}
+                  className="text-sm font-medium text-danger hover:underline"
+                >
+                  {t('fdAppointmentDetail.cancelSeries')}
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
+                  <p className="text-sm text-danger">{t('fdAppointmentDetail.cancelSeriesConfirm')}</p>
+                  <Button variant="danger" size="sm" disabled={cancelSeries.isPending} onClick={handleCancelSeries}>
+                    {cancelSeries.isPending ? t('fdAppointmentDetail.cancellingSeries') : t('fdAppointmentDetail.yesCancelSeries')}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmingCancelSeries(false)}>
+                    {t('appointmentDetail.neverMind')}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
       )}
 
-      {status !== 'cancelled' && <PaymentsPanel paymentsQuery={paymentsQuery} createPayment={createPayment} />}
+      {activeTab === 'chart' && <PatientChart patientId={appointment.patientId} appointmentId={id} />}
 
-      {status !== 'cancelled' && (
-        <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} pdfUrl={`/api/appointments/${id}/invoice/pdf`} />
-      )}
+      {activeTab === 'billing' && (
+        <>
+          {status !== 'cancelled' && <PaymentsPanel paymentsQuery={paymentsQuery} createPayment={createPayment} />}
 
-      {status !== 'cancelled' && invoiceQuery.data && appointment.patientId && (
-        <ClaimsPanel invoiceId={invoiceQuery.data.id} patientId={appointment.patientId} />
-      )}
-
-      {status !== 'cancelled' && <VisitSummaryLink href={`/api/appointments/${id}/visit-summary/pdf`} />}
-
-      {cancelError && (
-        <div className="mt-4">
-          <ErrorBanner message={cancelError} />
-        </div>
-      )}
-
-      {!isTerminal && (
-        <div className="mt-5 flex items-center gap-3">
-          <Button as={Link} to={`/front-desk/appointments/${id}/reschedule`} variant="secondary">
-            {t('appointmentDetail.reschedule')}
-          </Button>
-          {!confirmingCancel ? (
-            <Button
-              variant="secondary"
-              onClick={() => setConfirmingCancel(true)}
-              className="border-danger/40 text-danger hover:bg-danger-light"
-            >
-              {t('appointmentDetail.cancelAppointment')}
-            </Button>
-          ) : (
-            <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
-              <p className="text-sm text-danger">{t('appointmentDetail.cancelConfirm')}</p>
-              <Button variant="danger" size="sm" disabled={cancelAppointment.isPending} onClick={handleCancel}>
-                {cancelAppointment.isPending ? t('appointmentDetail.cancelling') : t('appointmentDetail.yesCancel')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setConfirmingCancel(false)}>
-                {t('appointmentDetail.neverMind')}
-              </Button>
-            </div>
+          {status !== 'cancelled' && (
+            <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} pdfUrl={`/api/appointments/${id}/invoice/pdf`} />
           )}
-        </div>
-      )}
 
-      {cancelSeriesResult !== null && (
-        <div className="mt-4 flex items-center justify-between rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success">
-          <span>{t('fdAppointmentDetail.cancelSeriesSuccess', { count: cancelSeriesResult })}</span>
-          <button type="button" onClick={() => setCancelSeriesResult(null)} className="font-semibold hover:underline">
-            {t('common.dismiss')}
-          </button>
-        </div>
-      )}
-
-      {cancelSeriesError && (
-        <div className="mt-4">
-          <ErrorBanner message={cancelSeriesError} />
-        </div>
-      )}
-
-      {!isTerminal && appointment.seriesId && (
-        <div className="mt-3">
-          {!confirmingCancelSeries ? (
-            <button
-              type="button"
-              onClick={() => setConfirmingCancelSeries(true)}
-              className="text-sm font-medium text-danger hover:underline"
-            >
-              {t('fdAppointmentDetail.cancelSeries')}
-            </button>
-          ) : (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
-              <p className="text-sm text-danger">{t('fdAppointmentDetail.cancelSeriesConfirm')}</p>
-              <Button variant="danger" size="sm" disabled={cancelSeries.isPending} onClick={handleCancelSeries}>
-                {cancelSeries.isPending ? t('fdAppointmentDetail.cancellingSeries') : t('fdAppointmentDetail.yesCancelSeries')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setConfirmingCancelSeries(false)}>
-                {t('appointmentDetail.neverMind')}
-              </Button>
-            </div>
+          {status !== 'cancelled' && invoiceQuery.data && appointment.patientId && (
+            <ClaimsPanel invoiceId={invoiceQuery.data.id} patientId={appointment.patientId} />
           )}
-        </div>
+
+          {status !== 'cancelled' && <VisitSummaryLink href={`/api/appointments/${id}/visit-summary/pdf`} />}
+        </>
       )}
     </PageContainer>
   );

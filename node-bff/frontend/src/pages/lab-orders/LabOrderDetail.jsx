@@ -31,6 +31,7 @@ import InvoicePanel from '../../components/InvoicePanel.jsx';
 import PaymentsPanel from '../../components/PaymentsPanel.jsx';
 import ClaimsPanel from '../../components/ClaimsPanel.jsx';
 import PageContainer from '../../components/PageContainer.jsx';
+import Tabs from '../../components/Tabs.jsx';
 import Button from '../../components/Button.jsx';
 import Field, { inputClass } from '../../components/Field.jsx';
 import { formatCurrency, formatDateTime } from '../../lib/format.js';
@@ -79,6 +80,7 @@ export default function LabOrderDetail() {
   const invoiceQuery = useLabOrderInvoice(id);
   const generateInvoice = useGenerateLabOrderInvoice(id);
 
+  const [activeTab, setActiveTab] = useState('overview');
   const [actionError, setActionError] = useState(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [presentedId, setPresentedId] = useState('');
@@ -346,138 +348,160 @@ export default function LabOrderDetail() {
         )}
       </div>
 
-      {status === 'requested' && confirmForm && (
-        <form onSubmit={handleConfirmAndOrder} className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
-          <h2 className="mb-3 text-sm font-semibold text-ink">{t('labOrderDetail.confirmAndOrderTitle')}</h2>
-          <p className="mb-4 text-sm text-ink-muted">{t('labOrderDetail.confirmAndOrderDescription')}</p>
-          <Field label={t('labOrdersPage.orderingProvider')}>
-            <select value={confirmForm.orderingProviderId} onChange={(e) => setConfirmForm({ ...confirmForm, orderingProviderId: e.target.value })} className={`${inputClass} max-w-md`}>
-              <option value="">{t('booking.select')}</option>
-              {(providers || []).map((p) => (
-                <option key={p.id} value={p.id}>{p.fullName}</option>
-              ))}
-            </select>
-          </Field>
-          <div className="mt-4">
-            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              {t('requestLabTest.tests')} {labRates && labRates.length > 0 && <span className="font-normal normal-case text-ink-muted">- {t('labOrdersPage.knownCodes', { codes: labRates.map((r) => r.testCode).join(', ') })}</span>}
-            </span>
-            <LabOrderTestsEditor lines={confirmLines} onChange={setConfirmLines} labRates={labRates} />
-          </div>
-          <label className="mt-4 flex items-start gap-2 text-sm text-ink">
-            <input type="checkbox" checked={confirmForm.consentAcknowledged} onChange={(e) => setConfirmForm({ ...confirmForm, consentAcknowledged: e.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
-            <span>{t('labOrdersPage.consentLabel')}</span>
-          </label>
-          <Button type="submit" variant="accent" className="mt-4" disabled={confirmAndOrder.isPending}>
-            {confirmAndOrder.isPending ? t('labOrderDetail.confirming') : t('labOrderDetail.confirmAndOrderBtn')}
-          </Button>
-        </form>
-      )}
-
-      {canActOnOrder && (status === 'ordered' || status === 'specimen_collected' || status === 'in_transit' || status === 'resulted') && (
-        <SpecimensPanel orderId={id} specimensQuery={specimensQuery} />
-      )}
-
-      {/* Read access matches AnalyteResultController's own widened gate (provider+clinic_admin+lab_technician) -
-          deliberately not canActOnOrder alone, or a provider could never see (let alone acknowledge) a critical
-          result on their own order. Entry stays lab_technician/clinic_admin-only, enforced inside the panel itself
-          via canEnterResults. */}
-      {(canActOnOrder || canManageOrder) && (status === 'in_transit' || status === 'resulted' || status === 'reviewed') && tests.length > 0 && (
-        <div className="mt-5 flex flex-col gap-4">
-          {tests.map((t2) => (
-            <AnalyteResultsPanel key={t2.id} orderId={id} test={t2} canEnterResults={canActOnOrder} canAcknowledgeCritical={canManageOrder} />
-          ))}
-        </div>
-      )}
-
-      {canActOnOrder && status === 'in_transit' && (
-        <form onSubmit={handleResult} className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
-          <h2 className="mb-3 text-sm font-semibold text-ink">{t('labOrderDetail.enterResultsTitle')}</h2>
-          <p className="mb-3 text-xs text-ink-muted">{t('labOrderDetail.flatResultsHint')}</p>
-          <div className="flex flex-col gap-4">
-            {tests.map((t2) => (
-              <div key={t2.id} className="rounded-lg border border-slate-100 p-3">
-                <p className="mb-2 text-sm font-semibold text-ink">{t2.testName}</p>
-                <div className="flex flex-wrap items-end gap-3">
-                  <Field label={t('labOrderDetail.value')}>
-                    <input value={resultRows[t2.id]?.value || ''} onChange={(e) => setResultRows({ ...resultRows, [t2.id]: { ...resultRows[t2.id], value: e.target.value } })} className={`${inputClass} w-32`} />
-                  </Field>
-                  <Field label={t('labOrderDetail.unit')}>
-                    <input value={resultRows[t2.id]?.unit || ''} onChange={(e) => setResultRows({ ...resultRows, [t2.id]: { ...resultRows[t2.id], unit: e.target.value } })} className={`${inputClass} w-24`} />
-                  </Field>
-                  <Field label={t('labOrderDetail.referenceRange')}>
-                    <input value={resultRows[t2.id]?.referenceRange || ''} onChange={(e) => setResultRows({ ...resultRows, [t2.id]: { ...resultRows[t2.id], referenceRange: e.target.value } })} className={`${inputClass} w-32`} />
-                  </Field>
-                  <label className="flex items-center gap-2 pb-2 text-sm text-ink">
-                    <input type="checkbox" checked={Boolean(resultRows[t2.id]?.abnormalFlag)} onChange={(e) => setResultRows({ ...resultRows, [t2.id]: { ...resultRows[t2.id], abnormalFlag: e.target.checked } })} className="h-4 w-4 rounded border-slate-300" />
-                    {t('labOrderDetail.abnormalLabel')}
-                  </label>
-                </div>
-              </div>
-            ))}
-          </div>
-          <Button type="submit" variant="accent" className="mt-4" disabled={resultOrder.isPending}>
-            {resultOrder.isPending ? t('settingsPage.saving') : t('labOrderDetail.saveResults')}
-          </Button>
-        </form>
-      )}
-
-      {status !== 'requested' && status !== 'cancelled' && (
-        <PaymentsPanel paymentsQuery={paymentsQuery} createPayment={createPayment} totalOwed={order.totalCost} />
-      )}
-
-      {status !== 'requested' && status !== 'cancelled' && (
-        <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} pdfUrl={`/api/lab-orders/${id}/invoice/pdf`} />
-      )}
-
-      {status !== 'requested' && status !== 'cancelled' && invoiceQuery.data && order.patientId && (
-        <ClaimsPanel invoiceId={invoiceQuery.data.id} patientId={order.patientId} />
-      )}
-
       {actionError && <div className="mt-4"><ErrorBanner message={actionError} /></div>}
 
-      {!isTerminal && status !== 'requested' && (
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          {canActOnOrder && status === 'ordered' && (
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 p-2">
-              <input
-                value={presentedId}
-                onChange={(e) => setPresentedId(e.target.value)}
-                placeholder={t('labOrderDetail.idPresentedPlaceholder')}
-                aria-label={t('labOrderDetail.idPresentedPlaceholder')}
-                className={`${inputClass} w-40`}
-              />
-              <Button type="button" onClick={handleCollect} disabled={collectSpecimen.isPending}>
-                {collectSpecimen.isPending ? t('labOrderDetail.collecting') : t('labOrderDetail.collectSpecimen')}
+      <Tabs
+        tabs={[
+          { key: 'overview', label: t('tabs.overview') },
+          { key: 'specimens', label: t('tabs.specimensResults') },
+          { key: 'billing', label: t('tabs.billing') },
+        ]}
+        active={activeTab}
+        onChange={setActiveTab}
+      />
+
+      {activeTab === 'overview' && (
+        <>
+          {status === 'requested' && confirmForm && (
+            <form onSubmit={handleConfirmAndOrder} className="rounded-xl border border-slate-200 bg-surface p-5">
+              <h2 className="mb-3 text-sm font-semibold text-ink">{t('labOrderDetail.confirmAndOrderTitle')}</h2>
+              <p className="mb-4 text-sm text-ink-muted">{t('labOrderDetail.confirmAndOrderDescription')}</p>
+              <Field label={t('labOrdersPage.orderingProvider')}>
+                <select value={confirmForm.orderingProviderId} onChange={(e) => setConfirmForm({ ...confirmForm, orderingProviderId: e.target.value })} className={`${inputClass} max-w-md`}>
+                  <option value="">{t('booking.select')}</option>
+                  {(providers || []).map((p) => (
+                    <option key={p.id} value={p.id}>{p.fullName}</option>
+                  ))}
+                </select>
+              </Field>
+              <div className="mt-4">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  {t('requestLabTest.tests')} {labRates && labRates.length > 0 && <span className="font-normal normal-case text-ink-muted">- {t('labOrdersPage.knownCodes', { codes: labRates.map((r) => r.testCode).join(', ') })}</span>}
+                </span>
+                <LabOrderTestsEditor lines={confirmLines} onChange={setConfirmLines} labRates={labRates} />
+              </div>
+              <label className="mt-4 flex items-start gap-2 text-sm text-ink">
+                <input type="checkbox" checked={confirmForm.consentAcknowledged} onChange={(e) => setConfirmForm({ ...confirmForm, consentAcknowledged: e.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
+                <span>{t('labOrdersPage.consentLabel')}</span>
+              </label>
+              <Button type="submit" variant="accent" className="mt-4" disabled={confirmAndOrder.isPending}>
+                {confirmAndOrder.isPending ? t('labOrderDetail.confirming') : t('labOrderDetail.confirmAndOrderBtn')}
               </Button>
-            </div>
-          )}
-          {canActOnOrder && status === 'specimen_collected' && (
-            <Button type="button" onClick={handleSend} disabled={sendOrder.isPending}>
-              {sendOrder.isPending ? t('labOrderDetail.marking') : t('labOrderDetail.markSent')}
-            </Button>
-          )}
-          {canManageOrder && status === 'resulted' && (
-            <Button type="button" onClick={handleReview} disabled={reviewOrder.isPending}>
-              {reviewOrder.isPending ? t('labOrderDetail.marking') : t('labOrderDetail.markReviewed')}
-            </Button>
+            </form>
           )}
 
-          {canManageOrder && status === 'ordered' && !confirmingCancel && (
-            <button type="button" onClick={() => setConfirmingCancel(true)} className="rounded-lg border border-danger/40 px-4 py-2 text-sm font-medium text-danger hover:bg-danger-light">
-              {t('labOrderDetail.cancelOrder')}
-            </button>
-          )}
-          {confirmingCancel && (
-            <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
-              <p className="text-sm text-danger">{t('labOrderDetail.cancelConfirm')}</p>
-              <button type="button" disabled={cancelOrder.isPending} onClick={handleCancel} className="shrink-0 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger/90 disabled:opacity-50">
-                {cancelOrder.isPending ? t('appointmentDetail.cancelling') : t('appointmentDetail.yesCancel')}
-              </button>
-              <button type="button" onClick={() => setConfirmingCancel(false)} className="shrink-0 text-sm text-ink-muted hover:underline">{t('appointmentDetail.neverMind')}</button>
+          {!isTerminal && status !== 'requested' && (
+            <div className="flex flex-wrap items-center gap-3">
+              {canActOnOrder && status === 'ordered' && (
+                <div className="flex items-center gap-2 rounded-lg border border-slate-200 p-2">
+                  <input
+                    value={presentedId}
+                    onChange={(e) => setPresentedId(e.target.value)}
+                    placeholder={t('labOrderDetail.idPresentedPlaceholder')}
+                    aria-label={t('labOrderDetail.idPresentedPlaceholder')}
+                    className={`${inputClass} w-40`}
+                  />
+                  <Button type="button" onClick={handleCollect} disabled={collectSpecimen.isPending}>
+                    {collectSpecimen.isPending ? t('labOrderDetail.collecting') : t('labOrderDetail.collectSpecimen')}
+                  </Button>
+                </div>
+              )}
+              {canActOnOrder && status === 'specimen_collected' && (
+                <Button type="button" onClick={handleSend} disabled={sendOrder.isPending}>
+                  {sendOrder.isPending ? t('labOrderDetail.marking') : t('labOrderDetail.markSent')}
+                </Button>
+              )}
+              {canManageOrder && status === 'resulted' && (
+                <Button type="button" onClick={handleReview} disabled={reviewOrder.isPending}>
+                  {reviewOrder.isPending ? t('labOrderDetail.marking') : t('labOrderDetail.markReviewed')}
+                </Button>
+              )}
+
+              {canManageOrder && status === 'ordered' && !confirmingCancel && (
+                <button type="button" onClick={() => setConfirmingCancel(true)} className="rounded-lg border border-danger/40 px-4 py-2 text-sm font-medium text-danger hover:bg-danger-light">
+                  {t('labOrderDetail.cancelOrder')}
+                </button>
+              )}
+              {confirmingCancel && (
+                <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger-light p-3">
+                  <p className="text-sm text-danger">{t('labOrderDetail.cancelConfirm')}</p>
+                  <button type="button" disabled={cancelOrder.isPending} onClick={handleCancel} className="shrink-0 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger/90 disabled:opacity-50">
+                    {cancelOrder.isPending ? t('appointmentDetail.cancelling') : t('appointmentDetail.yesCancel')}
+                  </button>
+                  <button type="button" onClick={() => setConfirmingCancel(false)} className="shrink-0 text-sm text-ink-muted hover:underline">{t('appointmentDetail.neverMind')}</button>
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
+      )}
+
+      {activeTab === 'specimens' && (
+        <>
+          {canActOnOrder && (status === 'ordered' || status === 'specimen_collected' || status === 'in_transit' || status === 'resulted') && (
+            <SpecimensPanel orderId={id} specimensQuery={specimensQuery} />
+          )}
+
+          {/* Read access matches AnalyteResultController's own widened gate (provider+clinic_admin+lab_technician) -
+              deliberately not canActOnOrder alone, or a provider could never see (let alone acknowledge) a critical
+              result on their own order. Entry stays lab_technician/clinic_admin-only, enforced inside the panel itself
+              via canEnterResults. */}
+          {(canActOnOrder || canManageOrder) && (status === 'in_transit' || status === 'resulted' || status === 'reviewed') && tests.length > 0 && (
+            <div className="mt-5 flex flex-col gap-4">
+              {tests.map((t2) => (
+                <AnalyteResultsPanel key={t2.id} orderId={id} test={t2} canEnterResults={canActOnOrder} canAcknowledgeCritical={canManageOrder} />
+              ))}
+            </div>
+          )}
+
+          {canActOnOrder && status === 'in_transit' && (
+            <form onSubmit={handleResult} className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
+              <h2 className="mb-3 text-sm font-semibold text-ink">{t('labOrderDetail.enterResultsTitle')}</h2>
+              <p className="mb-3 text-xs text-ink-muted">{t('labOrderDetail.flatResultsHint')}</p>
+              <div className="flex flex-col gap-4">
+                {tests.map((t2) => (
+                  <div key={t2.id} className="rounded-lg border border-slate-100 p-3">
+                    <p className="mb-2 text-sm font-semibold text-ink">{t2.testName}</p>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <Field label={t('labOrderDetail.value')}>
+                        <input value={resultRows[t2.id]?.value || ''} onChange={(e) => setResultRows({ ...resultRows, [t2.id]: { ...resultRows[t2.id], value: e.target.value } })} className={`${inputClass} w-32`} />
+                      </Field>
+                      <Field label={t('labOrderDetail.unit')}>
+                        <input value={resultRows[t2.id]?.unit || ''} onChange={(e) => setResultRows({ ...resultRows, [t2.id]: { ...resultRows[t2.id], unit: e.target.value } })} className={`${inputClass} w-24`} />
+                      </Field>
+                      <Field label={t('labOrderDetail.referenceRange')}>
+                        <input value={resultRows[t2.id]?.referenceRange || ''} onChange={(e) => setResultRows({ ...resultRows, [t2.id]: { ...resultRows[t2.id], referenceRange: e.target.value } })} className={`${inputClass} w-32`} />
+                      </Field>
+                      <label className="flex items-center gap-2 pb-2 text-sm text-ink">
+                        <input type="checkbox" checked={Boolean(resultRows[t2.id]?.abnormalFlag)} onChange={(e) => setResultRows({ ...resultRows, [t2.id]: { ...resultRows[t2.id], abnormalFlag: e.target.checked } })} className="h-4 w-4 rounded border-slate-300" />
+                        {t('labOrderDetail.abnormalLabel')}
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Button type="submit" variant="accent" className="mt-4" disabled={resultOrder.isPending}>
+                {resultOrder.isPending ? t('settingsPage.saving') : t('labOrderDetail.saveResults')}
+              </Button>
+            </form>
+          )}
+        </>
+      )}
+
+      {activeTab === 'billing' && (
+        <>
+          {status !== 'requested' && status !== 'cancelled' && (
+            <PaymentsPanel paymentsQuery={paymentsQuery} createPayment={createPayment} totalOwed={order.totalCost} />
+          )}
+
+          {status !== 'requested' && status !== 'cancelled' && (
+            <InvoicePanel invoiceQuery={invoiceQuery} generateInvoice={generateInvoice} pdfUrl={`/api/lab-orders/${id}/invoice/pdf`} />
+          )}
+
+          {status !== 'requested' && status !== 'cancelled' && invoiceQuery.data && order.patientId && (
+            <ClaimsPanel invoiceId={invoiceQuery.data.id} patientId={order.patientId} />
+          )}
+        </>
       )}
     </PageContainer>
   );
