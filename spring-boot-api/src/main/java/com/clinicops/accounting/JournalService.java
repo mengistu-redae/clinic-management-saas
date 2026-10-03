@@ -62,7 +62,8 @@ public class JournalService {
         Account revenue = requireAccount(tenantId, REVENUE_CODE);
         String sourceType = payment.getAppointmentId() != null ? "appointment_payment"
                 : payment.getLabOrderId() != null ? "lab_order_payment"
-                : "dispense_payment";
+                : payment.getDispenseRecordId() != null ? "dispense_payment"
+                : "imaging_order_payment";
         post(tenantId, "Payment received (" + payment.getMethod() + ")", sourceType, payment.getId(),
                 payment.getRecordedBy(), cash, revenue, payment.getAmount());
     }

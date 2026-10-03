@@ -758,4 +758,22 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(new com.clinicops.insurance.SubmitClaimRequest(null))))
                 .andExpect(status().isNotFound());
     }
+
+    /** Imaging/radiology orders (2026-10-04) - tenant-scoped the same way every other resource here is, including its own billing endpoints. */
+    @Test
+    void imagingOrdersAndTheirBillingAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("imaging");
+        Provider provider = createProvider(a.getId(), "Dr. A");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000098");
+        com.clinicops.imaging.ImagingOrder order = createImagingOrder(a.getId(), patient.getId(), provider.getId(), "completed");
+
+        Clinic b = clinicB("imaging");
+        mockMvc.perform(get("/api/imaging-orders/" + order.getId()).with(asProvider("prov", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/imaging-orders/" + order.getId() + "/schedule").with(asImagingTechnologist("tech", b.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/imaging-orders/" + order.getId() + "/invoice").with(asFrontDesk("fd", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+    }
 }

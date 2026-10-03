@@ -5,6 +5,8 @@ import com.clinicops.appointment.AppointmentRepository;
 import com.clinicops.appointmenttype.AppointmentType;
 import com.clinicops.appointmenttype.AppointmentTypeRepository;
 import com.clinicops.clinicsettings.ClinicSettingsService;
+import com.clinicops.imaging.ImagingOrder;
+import com.clinicops.imaging.ImagingOrderRepository;
 import com.clinicops.laborder.LabOrder;
 import com.clinicops.laborder.LabOrderRepository;
 import com.clinicops.pharmacy.DispenseRecord;
@@ -45,6 +47,7 @@ public class InvoiceService {
     private final DispenseRecordRepository dispenseRecordRepository;
     private final MedicationRepository medicationRepository;
     private final ClinicSettingsService clinicSettingsService;
+    private final ImagingOrderRepository imagingOrderRepository;
 
     public InvoiceService(
             InvoiceRepository invoiceRepository,
@@ -53,7 +56,8 @@ public class InvoiceService {
             LabOrderRepository labOrderRepository,
             DispenseRecordRepository dispenseRecordRepository,
             MedicationRepository medicationRepository,
-            ClinicSettingsService clinicSettingsService) {
+            ClinicSettingsService clinicSettingsService,
+            ImagingOrderRepository imagingOrderRepository) {
         this.invoiceRepository = invoiceRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentTypeRepository = appointmentTypeRepository;
@@ -61,6 +65,7 @@ public class InvoiceService {
         this.dispenseRecordRepository = dispenseRecordRepository;
         this.medicationRepository = medicationRepository;
         this.clinicSettingsService = clinicSettingsService;
+        this.imagingOrderRepository = imagingOrderRepository;
     }
 
     @Transactional
@@ -110,6 +115,19 @@ public class InvoiceService {
         BigDecimal subtotal = medication.getUnitPrice().multiply(BigDecimal.valueOf(record.getQuantityDispensed()));
         Invoice invoice = build(tenantId, subtotal);
         invoice.setDispenseRecordId(dispenseRecordId);
+        return invoiceRepository.save(invoice);
+    }
+
+    @Transactional
+    public Invoice generateForImagingOrder(UUID imagingOrderId, UUID tenantId) {
+        if (invoiceRepository.findByImagingOrderIdAndTenantId(imagingOrderId, tenantId).isPresent()) {
+            throw new InvoiceAlreadyExistsException("An invoice already exists for imaging order " + imagingOrderId);
+        }
+        ImagingOrder order = imagingOrderRepository.findByIdAndTenantId(imagingOrderId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Imaging order not found: " + imagingOrderId));
+
+        Invoice invoice = build(tenantId, order.getTotalCost() != null ? order.getTotalCost() : BigDecimal.ZERO);
+        invoice.setImagingOrderId(imagingOrderId);
         return invoiceRepository.save(invoice);
     }
 

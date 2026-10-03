@@ -37,9 +37,10 @@ class ClaimServiceTest {
     private final DispenseRecordRepository dispenseRecordRepository = mock(DispenseRecordRepository.class);
     private final PrescriptionRepository prescriptionRepository = mock(PrescriptionRepository.class);
     private final EncounterRepository encounterRepository = mock(EncounterRepository.class);
+    private final com.clinicops.imaging.ImagingOrderRepository imagingOrderRepository = mock(com.clinicops.imaging.ImagingOrderRepository.class);
     private final ClaimService service = new ClaimService(
             claimRepository, invoiceRepository, insurancePolicyRepository, appointmentRepository,
-            labOrderRepository, dispenseRecordRepository, prescriptionRepository, encounterRepository);
+            labOrderRepository, dispenseRecordRepository, prescriptionRepository, encounterRepository, imagingOrderRepository);
 
     private final UUID tenantId = UUID.randomUUID();
 

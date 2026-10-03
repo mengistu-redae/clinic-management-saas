@@ -31,7 +31,7 @@ class PaymentServiceTest {
         when(gatewayClient.charge(new BigDecimal("50.00"), "card")).thenReturn(new ChargeResult("mock_chg_abc", "succeeded"));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Payment result = service.recordPayment(tenantId, appointmentId, null, null, invoiceId, request, recordedBy);
+        Payment result = service.recordPayment(tenantId, appointmentId, null, null, null, invoiceId, request, recordedBy);
 
         assertThat(result.getTenantId()).isEqualTo(tenantId);
         assertThat(result.getAppointmentId()).isEqualTo(appointmentId);
@@ -49,7 +49,7 @@ class PaymentServiceTest {
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Payment result = service.recordPayment(
-                UUID.randomUUID(), null, UUID.randomUUID(), null, null,
+                UUID.randomUUID(), null, UUID.randomUUID(), null, null, null,
                 new CreatePaymentRequest(new BigDecimal("10.00"), "cash", null, null), UUID.randomUUID());
 
         assertThat(result.getInvoiceId()).isNull();
@@ -62,7 +62,7 @@ class PaymentServiceTest {
         when(gatewayClient.charge(any(), any())).thenReturn(new ChargeResult("mock_chg_dsp", "succeeded"));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Payment result = service.recordPayment(tenantId, null, null, dispenseRecordId, null,
+        Payment result = service.recordPayment(tenantId, null, null, dispenseRecordId, null, null,
                 new CreatePaymentRequest(new BigDecimal("25.00"), "cash", null, null), UUID.randomUUID());
 
         assertThat(result.getDispenseRecordId()).isEqualTo(dispenseRecordId);

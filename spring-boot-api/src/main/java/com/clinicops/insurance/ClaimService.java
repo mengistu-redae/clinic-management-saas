@@ -6,6 +6,8 @@ import com.clinicops.encounter.Encounter;
 import com.clinicops.encounter.EncounterRepository;
 import com.clinicops.encounter.Prescription;
 import com.clinicops.encounter.PrescriptionRepository;
+import com.clinicops.imaging.ImagingOrder;
+import com.clinicops.imaging.ImagingOrderRepository;
 import com.clinicops.invoice.Invoice;
 import com.clinicops.invoice.InvoiceRepository;
 import com.clinicops.laborder.LabOrder;
@@ -54,6 +56,7 @@ public class ClaimService {
     private final DispenseRecordRepository dispenseRecordRepository;
     private final PrescriptionRepository prescriptionRepository;
     private final EncounterRepository encounterRepository;
+    private final ImagingOrderRepository imagingOrderRepository;
 
     public ClaimService(
             ClaimRepository claimRepository,
@@ -63,7 +66,8 @@ public class ClaimService {
             LabOrderRepository labOrderRepository,
             DispenseRecordRepository dispenseRecordRepository,
             PrescriptionRepository prescriptionRepository,
-            EncounterRepository encounterRepository) {
+            EncounterRepository encounterRepository,
+            ImagingOrderRepository imagingOrderRepository) {
         this.claimRepository = claimRepository;
         this.invoiceRepository = invoiceRepository;
         this.insurancePolicyRepository = insurancePolicyRepository;
@@ -72,6 +76,7 @@ public class ClaimService {
         this.dispenseRecordRepository = dispenseRecordRepository;
         this.prescriptionRepository = prescriptionRepository;
         this.encounterRepository = encounterRepository;
+        this.imagingOrderRepository = imagingOrderRepository;
     }
 
     @Transactional
@@ -223,6 +228,10 @@ public class ClaimService {
             }
             Appointment appointment = appointmentRepository.findById(encounter.getAppointmentId()).orElse(null);
             return appointment != null ? appointment.getPatientId() : null;
+        }
+        if (invoice.getImagingOrderId() != null) {
+            return imagingOrderRepository.findByIdAndTenantId(invoice.getImagingOrderId(), tenantId)
+                    .map(ImagingOrder::getPatientId).orElse(null);
         }
         return null;
     }

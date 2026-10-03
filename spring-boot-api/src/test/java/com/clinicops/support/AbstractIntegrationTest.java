@@ -300,6 +300,12 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected com.clinicops.insurance.ClaimRepository claimRepository;
 
+    @Autowired
+    protected com.clinicops.imaging.ImagingOrderRepository imagingOrderRepository;
+
+    @Autowired
+    protected com.clinicops.imaging.ImagingStudyRateRepository imagingStudyRateRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----
@@ -687,6 +693,29 @@ public abstract class AbstractIntegrationTest {
         return invoiceRepository.save(invoice);
     }
 
+    protected com.clinicops.imaging.ImagingStudyRate createImagingStudyRate(UUID tenantId, String studyCode, String studyName, String modality, String baseCharge) {
+        com.clinicops.imaging.ImagingStudyRate rate = new com.clinicops.imaging.ImagingStudyRate();
+        rate.setTenantId(tenantId);
+        rate.setStudyCode(studyCode);
+        rate.setStudyName(studyName);
+        rate.setModality(modality);
+        rate.setBaseCharge(new java.math.BigDecimal(baseCharge));
+        return imagingStudyRateRepository.save(rate);
+    }
+
+    protected com.clinicops.imaging.ImagingOrder createImagingOrder(UUID tenantId, UUID patientId, UUID orderingProviderId, String status) {
+        com.clinicops.imaging.ImagingOrder order = new com.clinicops.imaging.ImagingOrder();
+        order.setTenantId(tenantId);
+        order.setPatientId(patientId);
+        order.setOrderingProviderId(orderingProviderId);
+        order.setOrderRef("IMG" + UUID.randomUUID().toString().substring(0, 6).toUpperCase(java.util.Locale.ROOT));
+        order.setModality("xray");
+        order.setStudyType("Chest X-ray");
+        order.setStatus(status);
+        order.setTotalCost(new java.math.BigDecimal("75.00"));
+        return imagingOrderRepository.save(order);
+    }
+
     protected com.clinicops.insurance.InsurancePolicy createInsurancePolicy(UUID tenantId, UUID patientId, String payerName) {
         com.clinicops.insurance.InsurancePolicy policy = new com.clinicops.insurance.InsurancePolicy();
         policy.setTenantId(tenantId);
@@ -731,6 +760,11 @@ public abstract class AbstractIntegrationTest {
     /** Lab module L1 (2026-10-02) - new realm role, same staff-JWT shape. */
     protected RequestPostProcessor asLabTechnician(String subject, String orgAlias) {
         return jwtRequest(subject, "lab_technician", orgAlias);
+    }
+
+    /** Imaging/radiology orders (2026-10-04) - new realm role, same staff-JWT shape. */
+    protected RequestPostProcessor asImagingTechnologist(String subject, String orgAlias) {
+        return jwtRequest(subject, "imaging_technologist", orgAlias);
     }
 
     private RequestPostProcessor jwtRequest(String subject, String realmRole, String orgAlias) {

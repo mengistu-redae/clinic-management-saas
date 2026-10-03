@@ -69,7 +69,7 @@ public class DispensePaymentController {
         requireOwnedDispenseRecord(id, tenantId);
         UUID invoiceId = resolveInvoiceId(id, tenantId, request.invoiceId());
         UUID recordedBy = currentUserService.resolveInternalUserId(jwt);
-        return paymentService.recordPayment(tenantId, null, null, id, invoiceId, request, recordedBy);
+        return paymentService.recordPayment(tenantId, null, null, id, null, invoiceId, request, recordedBy);
     }
 
     /** Only this dispense record's own already-issued invoice may be linked - never an arbitrary id from another owner/tenant. */

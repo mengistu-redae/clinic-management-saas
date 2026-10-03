@@ -75,4 +75,8 @@ public class Appointment extends BaseTenantEntity {
 
     @Column(name = "series_occurrence_index")
     private Integer seriesOccurrenceIndex;
+
+    /** Set once AppointmentReminderScheduler writes a reminder outbox row for this appointment - prevents re-sending on every poll. */
+    @Column(name = "reminder_sent_at")
+    private Instant reminderSentAt;
 }

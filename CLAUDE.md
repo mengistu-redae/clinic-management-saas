@@ -1540,6 +1540,214 @@ with the recommended option. New migration `V35__insurance_claims.sql`.
 
 *Full design write-up: see `CLAUDE-history.md`.*
 
+## Phase 41: patient engagement - SMS reminders
+
+Built 2026-10-04. First of three sequential patient-engagement phases
+(SMS reminders, then secure patient-provider messaging, then satisfaction
+surveys) the user asked for alongside imaging/radiology orders -
+telemedicine was explicitly declined. Two direct questions were put to
+the user first: build all three sequentially (yes) or just one, and how
+SMS delivery should work given no real gateway (Twilio etc.) exists in
+this dev environment - answered **skip real delivery entirely**, track
+-only, the recommended option (the identical blocker phase 17 hit for
+email before Mailpit was introduced). New migration
+`V36__appointment_reminders.sql`.
+
+- **`AppointmentReminderScheduler`** (`com.clinicops.appointment`, new) -
+  a `@Scheduled` poller mirroring `NoShowScheduler`'s own shape exactly
+  (a one-sided query, not a tight poll-interval slice, so a delayed run
+  never skips an appointment - the new `appointments.reminder_sent_at`
+  column is what actually gates the re-send). Every still-`booked`
+  appointment whose slot start time has crossed into a 24-hour lead
+  window gets a `channel = "sms"` row written to the existing
+  `notifications` outbox - but **written with `status =
+  "skipped_no_gateway"`, never `"pending"`**, so `NotificationWorker`'s
+  own poll query (`findTop50ByStatusOrderByCreatedAtAsc("pending")`)
+  never picks it up and never hands it to `SmtpEmailSender` (which would
+  otherwise try to email a phone number). Swapping in a real SmsSender
+  later means writing these rows as `"pending"` instead and registering
+  a second `NotificationSender` bean - no change needed anywhere else.
+  Falls back to the appointment's own `contactPhone` for a guest booking
+  with no patient on file; skipped silently (but still marked reminded,
+  so it's never retried forever) when neither phone exists.
+- **`AppointmentRepository.findReminderCandidates`** (new native query) -
+  LEFT JOINs `patients` for a portal/front-desk booking's own phone,
+  backed by a new `AppointmentReminderCandidate` projection.
+- **Tests**: `AppointmentReminderSchedulerTest` (new, pure Mockito,
+  genuinely runs locally - **4/4 passing**) - writes a correctly
+  -skipped-not-pending SMS row for a patient-portal booking; falls back
+  to `contactPhone` for a guest booking; skips silently but still marks
+  reminded when neither phone is on file; processes every candidate in
+  one run. `AppointmentReminderIntegrationTest` (new, 2 Testcontainers
+  -blocked cases exercising the real native query against real Postgres -
+  a booking inside the window gets exactly one reminder and a second run
+  never duplicates it; a booking outside the window gets none yet).
+  Confirmed via a clean `mvn clean test-compile` and a full `mvn test`
+  run - the 2 new integration cases hit the identical pre-existing
+  `Could not find a valid Docker environment` wall every other
+  integration test on this machine already hits, not a new failure mode.
+- **Live-verified against the real running stack** - after rebuilding
+  `spring-boot-api`, the real scheduler bean fired on its own schedule
+  inside the live container (confirmed via the container's own logs:
+  `"Wrote 1 SMS reminder outbox row(s)"`) against real pre-existing
+  appointment data, and a direct Postgres query confirmed the resulting
+  row really does carry `channel = 'sms'`, `type = 'appointment_reminder'`,
+  `status = 'skipped_no_gateway'` - genuinely never picked up alongside
+  the real `sent` email rows sitting right next to it in the same table.
+
+## Phase 42: imaging/radiology orders
+
+Built 2026-10-04, same session as phase 41. A **full structured module**
+per the user's own direct answer (not a minimal first pass) - mirroring
+the in-house lab module's own role-split/critical-alerting/billing
+-integration depth, with two further scoping questions pinning the
+remaining real forks: a new `imaging_technologist` realm role performs
+the study (purely mechanical - schedule/start/complete, no clinical
+content) while `provider`+`clinic_admin` order it and write the actual
+report; and imaging orders join the existing Invoice/Payment machinery
+as a **4th owner type** (the recommended option, matching how phase 31
+already added a 3rd for pharmacy dispenses - the alternative, no billing
+integration this pass, was declined). New migrations
+`V37__imaging_orders.sql` and `V38__imaging_orders_created_at_fix.sql`
+(see "a real bug" below).
+
+- **`com.clinicops.imaging`** (new package) - `ImagingOrder` is
+  deliberately simpler than `LabOrder` in two real ways, not oversights:
+  **one study per order**, no `LabOrderTest`-style line items (a
+  radiology order is typically one study, unlike a lab panel's many
+  individual tests), and **no patient-initiated "requested" flow** (lab's
+  own request-\>confirm-and-order path isn't mirrored here - every
+  imaging order starts staff/provider-created). `ImagingStudyRate`
+  mirrors `LabTestRate` exactly, including its "missing rate blocks
+  order creation entirely" convention (`studyCode` is `@NotBlank`
+  -required at creation, not optional).
+- **Status machine**: `ordered -> scheduled -> in_progress -> completed
+  -> reviewed`, or `cancelled` (pre-study only, from `ordered`/`scheduled`).
+  `imaging_technologist`+`clinic_admin` own `schedule`/`start`/`complete`
+  (purely mechanical); `provider`+`clinic_admin` own create/update/cancel
+  and **`review` - the one deliberately combined action that both writes
+  the report (findings/impression/criticalFinding) and signs off in a
+  single call**, rather than splitting result-entry from review the way
+  lab does - there's no good role split for narrative clinical content
+  the way lab splits numeric result-entry (a technologist) from clinical
+  review (a provider); the actual finding *is* the clinical judgment.
+  `InvalidImagingOrderStatusException` mirrors `InvalidLabOrderStatusException`
+  exactly - idempotent re-call, 409 on an out-of-order transition.
+- **Critical-finding alerting mirrors lab module L3 exactly, just
+  manually flagged instead of range-computed** - imaging findings are
+  narrative, not numeric, so there's no range to auto-compute a flag
+  from; `criticalFinding` is a plain boolean the reviewing provider sets
+  directly. Fires a `critical_imaging_finding` email to the *ordering*
+  provider's own linked login (skipped gracefully, no exception, when
+  there's no linked login or email - the identical precedent
+  `AnalyteResultService.notifyCriticalValue` already established), and a
+  new `POST /api/imaging-orders/{id}/acknowledge-critical` action
+  (`provider`+`clinic_admin` only, not `imaging_technologist`) mirrors
+  `AnalyteResultService.acknowledgeCritical`'s own idempotent-once
+  -acknowledged shape.
+- **Billing: imaging orders as a 4th `Invoice`/`Payment` owner type** -
+  `payments.imaging_order_id`/`invoices.imaging_order_id` (the latter
+  `UNIQUE`, same "generate once" DB-level enforcement every other owner
+  column already carries), both exactly-one-owner CHECK constraints
+  widened from 3-way to 4-way, the identical shape phase 31 already used
+  going from 2-way to 3-way. `PaymentService.recordPayment` gained a 6th
+  parameter (`imagingOrderId`) - every one of its three existing call
+  sites (appointment/lab-order/dispense) updated to pass `null`.
+  `JournalService.postForPayment`'s `sourceType` branching grew a 4th
+  arm (`"imaging_order_payment"`), same unconditional debit-Cash/credit
+  -Revenue posting every other source type already gets.
+  `InvoiceService.generateForImagingOrder`/`InvoicePdfService
+  .renderForImagingOrder` mirror `generateForLabOrder`/`renderForLabOrder`
+  exactly (snapshot pricing from `ImagingStudyRate`, `patientId` directly
+  on the order, no multi-hop chain needed). New
+  `ImagingOrderPaymentController`/`ImagingOrderInvoiceController` mirror
+  `AppointmentPaymentController`/`AppointmentInvoiceController` exactly -
+  `front_desk`+`clinic_admin` write, `+provider` read, **deliberately no
+  `imaging_technologist` access at all** - billing isn't their job,
+  matching `lab_technician`'s own identical exclusion.
+- **`ClaimService.resolvePatientId` gained a 4th branch** - an imaging
+  -order-owned invoice resolves `patientId` directly off `ImagingOrder`
+  (no multi-hop chain needed, unlike the dispense-record branch) - an
+  insurance claim can now be filed against an imaging-order invoice with
+  zero special-casing anywhere else in the claims module.
+- **A real bug found live, not caught by `mvn test`** (Testcontainers
+  -blocked locally, same standing limitation every phase on this machine
+  carries) - the first container rebuild crashed on startup:
+  `Schema-validation: missing column [created_at] in table
+  [imaging_orders]`. `V37`'s own migration had simply forgotten the
+  column every `BaseTenantEntity` subclass requires. Since `V37` had
+  already applied (its checksum fixed), this was fixed with a new
+  `V38__imaging_orders_created_at_fix.sql` rather than editing `V37` -
+  the same "migrations are immutable once applied" convention every
+  other phase in this project already holds to - not a silent
+  work-around.
+- **A real Keycloak gotcha hit live while creating the `demo-imaging
+  -technologist` account via the admin API** - the first login attempt
+  got stuck on a `VERIFY_PROFILE` required action instead of reaching
+  the app, because a user created via the bare admin API (unlike one
+  imported from `realm-export.json`) has no `firstName`/`lastName` by
+  default and Keycloak's own default flow demands a complete profile.
+  Fixed by `PUT`-ing `firstName`/`lastName` and clearing
+  `requiredActions` directly on the user before retrying - saved to the
+  `scripted-curl-oidc-login` memory for next time.
+- **Tests**: `ImagingOrderStatusServiceTest` (new, pure Mockito,
+  genuinely runs locally - **12/12 passing**) - every status transition
+  (including the idempotent re-calls and the out-of-order 409s), the
+  combined review-writes-and-signs-off behavior, the critical-finding
+  notification (fired when the provider has a linked login, skipped
+  gracefully when not), and `acknowledgeCritical`'s own reject
+  -non-critical/idempotent-once-acknowledged shape.
+  `ImagingOrderControllerIntegrationTest` (4 cases: full CRUD,
+  unconfigured-study-code 400, role gate, cross-tenant 404),
+  `ImagingOrderStatusControllerIntegrationTest` (5 cases: the full
+  schedule-\>start-\>complete-\>review lifecycle, the critical-finding
+  acknowledge role split, cancel-rejected-once-in-progress, the
+  mechanical-step role gate, cross-tenant 404),
+  `ImagingOrderBillingIntegrationTest` (3 cases: invoice/PDF/payment
+  round trip, a real claim filed against an imaging-order invoice, the
+  provider-read-only billing gate), `ImagingStudyRateControllerIntegrationTest`
+  (3 cases: CRUD + hard delete, duplicate-code 409/invalid-modality 400,
+  role gate). One new `TenantIsolationIntegrationTest` case covering both
+  the order itself and its billing endpoints. Confirmed via a clean `mvn
+  clean test-compile` and a full `mvn test` run showing `Tests run: 548,
+  Errors: 399, Failures: 0` (up from 514/381 before phases 41+42
+  combined - exactly the 34 new test methods: 16 pure-unit + 18
+  Testcontainers-blocked), 149 pure-unit tests now passing project-wide
+  (up from 133); confirmed via computing pass/fail per surefire report
+  that every new Testcontainers-blocked failure hits the identical
+  pre-existing `Could not find a valid Docker environment` wall, not a
+  new failure mode.
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`), via the same scripted Authorization Code + PKCE
+  login technique phase 40 established (no browser extension connected
+  this session either)** - the full chain, each step as a genuinely
+  different login: as `demo-clinic-admin`, created a real
+  `ImagingStudyRate` ($85.00 chest X-ray); as `demo-provider`, created a
+  real `ImagingOrder` (correctly snapshot-priced at $85.00); as the real,
+  freshly-created `demo-imaging-technologist` (role + org membership
+  confirmed via `GET /auth/me`), drove it through
+  schedule-\>start-\>complete; as `demo-provider` again, reviewed it with
+  a genuine critical finding ("3cm mass in right upper lobe... suspicious
+  for malignancy") and confirmed a real email landed in Mailpit's own web
+  UI (`:8025`) - "URGENT: critical imaging finding - BE8F7C" - then
+  acknowledged it (confirming `demo-imaging-technologist` genuinely
+  403s on that same action). As `demo-front-desk`: generated a real
+  invoice, downloaded a real PDF (confirmed the `%PDF` magic header), and
+  recorded a real $85.00 gateway-routed card payment
+  (`gatewayStatus: "succeeded"`). Filed a real insurance claim against
+  that same imaging-order invoice (correctly resolving the patient
+  directly off `ImagingOrder`, no guest-invoice 400 this time since a
+  real patient was on file). As `demo-accountant`: confirmed
+  `GET /api/clinic/journal-entries` showed a genuine new entry with
+  `sourceType: "imaging_order_payment"` and two balanced $85.00
+  debit-Cash/credit-Revenue lines. Confirmed the full billing role gate
+  live - `demo-provider` read-only (200 on read, 403 on generate),
+  `demo-imaging-technologist` fully locked out (403).
+- **No frontend yet** - backend only, same "backend first" scope
+  boundary every new module in this project starts with. A
+  `pages/imaging/` section (a technologist worklist + a provider
+  report-writing view) is a natural next frontend phase, not built here.
+
 ## Sidebar nav arrangement review (2026-10-01)
 
 The user asked for an evaluation of the menu arrangement for every

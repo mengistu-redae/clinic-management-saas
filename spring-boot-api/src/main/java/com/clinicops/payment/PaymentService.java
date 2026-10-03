@@ -34,18 +34,21 @@ public class PaymentService {
     }
 
     /**
-     * Exactly one of appointmentId/labOrderId/dispenseRecordId must be set
-     * by the caller (mirrors Payment's own exactly-one-owner shape);
-     * invoiceId is whatever the caller already validated belongs to that
-     * same owner, or null.
+     * Exactly one of appointmentId/labOrderId/dispenseRecordId/imagingOrderId
+     * must be set by the caller (mirrors Payment's own exactly-one-owner
+     * shape); invoiceId is whatever the caller already validated belongs
+     * to that same owner, or null.
      */
     @Transactional
-    public Payment recordPayment(UUID tenantId, UUID appointmentId, UUID labOrderId, UUID dispenseRecordId, UUID invoiceId, CreatePaymentRequest request, UUID recordedBy) {
+    public Payment recordPayment(
+            UUID tenantId, UUID appointmentId, UUID labOrderId, UUID dispenseRecordId, UUID imagingOrderId,
+            UUID invoiceId, CreatePaymentRequest request, UUID recordedBy) {
         Payment payment = new Payment();
         payment.setTenantId(tenantId);
         payment.setAppointmentId(appointmentId);
         payment.setLabOrderId(labOrderId);
         payment.setDispenseRecordId(dispenseRecordId);
+        payment.setImagingOrderId(imagingOrderId);
         payment.setInvoiceId(invoiceId);
         payment.setAmount(request.amount());
         payment.setMethod(request.method());

@@ -65,7 +65,7 @@ echo "Using organization: $ORG_ID"
 # demo-patient (patients aren't Organization members at all) or
 # demo-platform-admin (acts across every tenant, deliberately not scoped to
 # one org).
-CLINIC_STAFF_USERS=(demo-clinic-admin demo-provider demo-front-desk demo-pharmacist demo-accountant demo-lab-technician)
+CLINIC_STAFF_USERS=(demo-clinic-admin demo-provider demo-front-desk demo-pharmacist demo-accountant demo-lab-technician demo-imaging-technologist)
 
 for USERNAME in "${CLINIC_STAFF_USERS[@]}"; do
   echo "Looking up $USERNAME user id..."

@@ -26,6 +26,10 @@ public class Invoice extends BaseTenantEntity {
     @Column(name = "dispense_record_id")
     private UUID dispenseRecordId;
 
+    /** Imaging/radiology orders as a fourth owner type (2026-10-04) - the CHECK is now four-way. */
+    @Column(name = "imaging_order_id")
+    private UUID imagingOrderId;
+
     @Column(name = "subtotal_amount", nullable = false)
     private BigDecimal subtotalAmount;
 

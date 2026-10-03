@@ -14,7 +14,8 @@
       { "name": "patient", "description": "Self-service patient, not tied to any single clinic" },
       { "name": "pharmacist", "description": "Manages the medication catalog/stock and dispenses against prescriptions" },
       { "name": "accountant", "description": "Manages the clinic's ledger, budgets, and payroll (accounting + finance modules)" },
-      { "name": "lab_technician", "description": "Collects/processes lab specimens and enters results; provider keeps the final clinical review" }
+      { "name": "lab_technician", "description": "Collects/processes lab specimens and enters results; provider keeps the final clinical review" },
+      { "name": "imaging_technologist", "description": "Schedules/performs imaging studies; provider writes the report and keeps the final clinical review" }
     ]
   },
   "clients": [
@@ -119,6 +120,16 @@
         { "type": "password", "value": "DemoPass123!", "temporary": false }
       ],
       "realmRoles": ["lab_technician"]
+    },
+    {
+      "username": "demo-imaging-technologist",
+      "email": "imagingtech@democlinic.example",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "DemoPass123!", "temporary": false }
+      ],
+      "realmRoles": ["imaging_technologist"]
     }
   ]
 }

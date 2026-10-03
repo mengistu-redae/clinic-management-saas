@@ -62,7 +62,7 @@ public class LabOrderPaymentController {
         requireOwnedLabOrder(orderId, tenantId);
         UUID invoiceId = resolveInvoiceId(orderId, tenantId, request.invoiceId());
         UUID recordedBy = currentUserService.resolveInternalUserId(jwt);
-        return paymentService.recordPayment(tenantId, null, orderId, null, invoiceId, request, recordedBy);
+        return paymentService.recordPayment(tenantId, null, orderId, null, null, invoiceId, request, recordedBy);
     }
 
     /** Only this lab order's own already-issued invoice may be linked - never an arbitrary id from another owner/tenant. */

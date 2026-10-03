@@ -9,6 +9,8 @@ import com.clinicops.encounter.Encounter;
 import com.clinicops.encounter.EncounterRepository;
 import com.clinicops.encounter.Prescription;
 import com.clinicops.encounter.PrescriptionRepository;
+import com.clinicops.imaging.ImagingOrder;
+import com.clinicops.imaging.ImagingOrderRepository;
 import com.clinicops.laborder.LabOrder;
 import com.clinicops.laborder.LabOrderRepository;
 import com.clinicops.patient.PatientRepository;
@@ -56,6 +58,7 @@ public class InvoicePdfService {
     private final MedicationRepository medicationRepository;
     private final PrescriptionRepository prescriptionRepository;
     private final EncounterRepository encounterRepository;
+    private final ImagingOrderRepository imagingOrderRepository;
 
     public InvoicePdfService(
             ClinicSettingsService clinicSettingsService,
@@ -65,7 +68,8 @@ public class InvoicePdfService {
             DispenseRecordRepository dispenseRecordRepository,
             MedicationRepository medicationRepository,
             PrescriptionRepository prescriptionRepository,
-            EncounterRepository encounterRepository) {
+            EncounterRepository encounterRepository,
+            ImagingOrderRepository imagingOrderRepository) {
         this.clinicSettingsService = clinicSettingsService;
         this.appointmentRepository = appointmentRepository;
         this.labOrderRepository = labOrderRepository;
@@ -74,6 +78,7 @@ public class InvoicePdfService {
         this.medicationRepository = medicationRepository;
         this.prescriptionRepository = prescriptionRepository;
         this.encounterRepository = encounterRepository;
+        this.imagingOrderRepository = imagingOrderRepository;
     }
 
     public byte[] renderForAppointment(Invoice invoice) {
@@ -106,6 +111,13 @@ public class InvoicePdfService {
                 ? "Dispense of " + medication.getName() + " ×" + record.getQuantityDispensed()
                 : null;
         String patientName = record != null ? resolveDispensePatientName(record, invoice.getTenantId()) : null;
+        return render(invoice, ownerReference, patientName);
+    }
+
+    public byte[] renderForImagingOrder(Invoice invoice) {
+        ImagingOrder order = imagingOrderRepository.findByIdAndTenantId(invoice.getImagingOrderId(), invoice.getTenantId()).orElse(null);
+        String ownerReference = order != null ? "Imaging Order " + order.getOrderRef() : null;
+        String patientName = order != null ? resolvePatientName(order.getPatientId(), invoice.getTenantId(), null) : null;
         return render(invoice, ownerReference, patientName);
     }
 

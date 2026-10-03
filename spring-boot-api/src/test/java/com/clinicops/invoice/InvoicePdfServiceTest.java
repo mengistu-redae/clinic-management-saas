@@ -43,9 +43,10 @@ class InvoicePdfServiceTest {
     private final MedicationRepository medicationRepository = mock(MedicationRepository.class);
     private final PrescriptionRepository prescriptionRepository = mock(PrescriptionRepository.class);
     private final EncounterRepository encounterRepository = mock(EncounterRepository.class);
+    private final com.clinicops.imaging.ImagingOrderRepository imagingOrderRepository = mock(com.clinicops.imaging.ImagingOrderRepository.class);
     private final InvoicePdfService service = new InvoicePdfService(
             clinicSettingsService, appointmentRepository, labOrderRepository, patientRepository,
-            dispenseRecordRepository, medicationRepository, prescriptionRepository, encounterRepository);
+            dispenseRecordRepository, medicationRepository, prescriptionRepository, encounterRepository, imagingOrderRepository);
 
     private static final byte[] PDF_MAGIC = {'%', 'P', 'D', 'F'};
 

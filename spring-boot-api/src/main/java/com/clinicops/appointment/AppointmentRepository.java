@@ -116,6 +116,30 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
     int flipStaleBookedToNoShow(@Param("now") Instant now);
 
     /**
+     * Patient-engagement SMS reminders (sketched 2026-10-04) - every still
+     * -`booked` appointment whose slot starts within the reminder window
+     * and hasn't been reminded yet. One-sided (`start_time > :now AND
+     * start_time <= :cutoff`), not a tight poll-interval slice, so a
+     * delayed run or a missed cycle never skips an appointment -
+     * `reminder_sent_at` is what actually prevents a duplicate, the same
+     * "a flag gates the real invariant, the query window is just a net"
+     * reasoning `flipStaleBookedToNoShow`'s own one-sided `< :now` already
+     * uses. LEFT JOIN to patients for a portal/front-desk booking's own
+     * phone - a guest booking has no patients row at all, falls back to
+     * the appointment's own contact_phone in AppointmentReminderScheduler.
+     */
+    @Query(value = """
+            SELECT a.id as id, a.tenant_id as tenantId, a.appointment_ref as appointmentRef,
+                   a.contact_phone as contactPhone, p.phone as patientPhone, s.start_time as startTime
+            FROM appointments a
+            JOIN slots s ON a.slot_id = s.id
+            LEFT JOIN patients p ON a.patient_id = p.id
+            WHERE a.status = 'booked' AND a.reminder_sent_at IS NULL
+              AND s.start_time > :now AND s.start_time <= :cutoff
+            """, nativeQuery = true)
+    List<AppointmentReminderCandidate> findReminderCandidates(@Param("now") Instant now, @Param("cutoff") Instant cutoff);
+
+    /**
      * A provider's own worklist for one day - see GET /api/my-schedule.
      * Returns AppointmentWorklistView (not bare Appointment) so the
      * dashboard can show a real startTime and a guest's contactName

@@ -13,6 +13,8 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
 
     Optional<Invoice> findByDispenseRecordIdAndTenantId(UUID dispenseRecordId, UUID tenantId);
 
+    Optional<Invoice> findByImagingOrderIdAndTenantId(UUID imagingOrderId, UUID tenantId);
+
     /** Added for phase 40 (insurance claims) - a claim is filed against an invoice by its own id, not looked up by owner. */
     Optional<Invoice> findByIdAndTenantId(UUID id, UUID tenantId);
 }

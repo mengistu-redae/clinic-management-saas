@@ -1,6 +1,6 @@
 package com.clinicops.payment;
 
-import com.clinicops.appointment.AppointmentRepository;
+import com.clinicops.imaging.ImagingOrderRepository;
 import com.clinicops.invoice.Invoice;
 import com.clinicops.invoice.InvoiceRepository;
 import com.clinicops.paymentgateway.PaymentGatewayException;
@@ -24,63 +24,62 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
-/** Recording a payment is a deliberate, separate staff action - booking/cancelling an appointment never creates or voids one. No delete. */
+/** Mirrors AppointmentPaymentController exactly - recording a payment is a deliberate, separate staff action; no imaging_technologist access (billing isn't their job). */
 @RestController
-public class AppointmentPaymentController {
+public class ImagingOrderPaymentController {
 
-    private final AppointmentRepository appointmentRepository;
+    private final ImagingOrderRepository imagingOrderRepository;
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentService paymentService;
     private final CurrentUserService currentUserService;
 
-    public AppointmentPaymentController(
-            AppointmentRepository appointmentRepository,
+    public ImagingOrderPaymentController(
+            ImagingOrderRepository imagingOrderRepository,
             InvoiceRepository invoiceRepository,
             PaymentRepository paymentRepository,
             PaymentService paymentService,
             CurrentUserService currentUserService) {
-        this.appointmentRepository = appointmentRepository;
+        this.imagingOrderRepository = imagingOrderRepository;
         this.invoiceRepository = invoiceRepository;
         this.paymentRepository = paymentRepository;
         this.paymentService = paymentService;
         this.currentUserService = currentUserService;
     }
 
-    @GetMapping("/api/appointments/{id}/payments")
+    @GetMapping("/api/imaging-orders/{id}/payments")
     @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PROVIDER')")
     public List<Payment> payments(@PathVariable UUID id) {
         UUID tenantId = TenantContext.require();
-        requireOwnedAppointment(id, tenantId);
-        return paymentRepository.findAllByAppointmentIdAndTenantId(id, tenantId);
+        requireOwnedOrder(id, tenantId);
+        return paymentRepository.findAllByImagingOrderIdAndTenantId(id, tenantId);
     }
 
-    @PostMapping("/api/appointments/{id}/payments")
+    @PostMapping("/api/imaging-orders/{id}/payments")
     @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN')")
     public Payment recordPayment(@PathVariable UUID id, @Valid @RequestBody CreatePaymentRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
-        requireOwnedAppointment(id, tenantId);
+        requireOwnedOrder(id, tenantId);
         UUID invoiceId = resolveInvoiceId(id, tenantId, request.invoiceId());
         UUID recordedBy = currentUserService.resolveInternalUserId(jwt);
-        return paymentService.recordPayment(tenantId, id, null, null, null, invoiceId, request, recordedBy);
+        return paymentService.recordPayment(tenantId, null, null, null, id, invoiceId, request, recordedBy);
     }
 
-    /** Only this appointment's own already-issued invoice may be linked - never an arbitrary id from another owner/tenant. */
-    private UUID resolveInvoiceId(UUID appointmentId, UUID tenantId, UUID requestedInvoiceId) {
+    private UUID resolveInvoiceId(UUID imagingOrderId, UUID tenantId, UUID requestedInvoiceId) {
         if (requestedInvoiceId == null) {
             return null;
         }
-        Invoice invoice = invoiceRepository.findByAppointmentIdAndTenantId(appointmentId, tenantId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "No invoice exists for this appointment"));
+        Invoice invoice = invoiceRepository.findByImagingOrderIdAndTenantId(imagingOrderId, tenantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "No invoice exists for this imaging order"));
         if (!invoice.getId().equals(requestedInvoiceId)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invoiceId does not match this appointment's own invoice");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invoiceId does not match this imaging order's own invoice");
         }
         return invoice.getId();
     }
 
-    private void requireOwnedAppointment(UUID appointmentId, UUID tenantId) {
-        appointmentRepository.findByIdAndTenantId(appointmentId, tenantId)
-                .orElseThrow(() -> new NoSuchElementException("Appointment not found: " + appointmentId));
+    private void requireOwnedOrder(UUID id, UUID tenantId) {
+        imagingOrderRepository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Imaging order not found: " + id));
     }
 
     @ExceptionHandler(NoSuchElementException.class)

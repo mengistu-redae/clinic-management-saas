@@ -23,11 +23,17 @@ import java.time.format.FormatStyle;
  * for one needing auth, {@code spring.mail.username}/{@code password})
  * at it; this class itself doesn't change.
  *
- * SMS is deliberately out of scope this phase (the user's own call when
- * this was picked up) - {@link Notification#getChannel()} stays
+ * SMS was deliberately out of scope this phase (the user's own call when
+ * this was picked up) - {@link Notification#getChannel()} stayed
  * {@code "email"} everywhere, so no channel-routing dispatch was added to
- * {@link NotificationWorker}; introduce one if/when a second channel
- * actually exists; today it would just be forwarded dead code.
+ * {@link NotificationWorker}. Patient engagement's own SMS-reminder phase
+ * (2026-10-04) introduced real {@code channel = "sms"} rows, but still
+ * never routes here - see {@code AppointmentReminderScheduler}'s own
+ * javadoc for why those rows are written already-terminal, never
+ * {@code "pending"}, so {@link NotificationWorker} still never hands one
+ * to this sender (which would otherwise try to email a phone number).
+ * Introduce real channel-routing dispatch if/when a real SMS gateway
+ * exists; today it would just be forwarded dead code.
  */
 @Component
 public class SmtpEmailSender implements NotificationSender {
@@ -84,6 +90,12 @@ public class SmtpEmailSender implements NotificationSender {
                 var payload = objectMapper.readValue(notification.getPayload(), CriticalLabValueAlertPayload.class);
                 subject = "URGENT: critical lab value - " + payload.orderRef();
                 body = "A critical result has been entered for " + payload.testName() + " on lab order "
+                        + payload.orderRef() + ". Please review and acknowledge it in the app as soon as possible.";
+            }
+            case "critical_imaging_finding" -> {
+                var payload = objectMapper.readValue(notification.getPayload(), CriticalImagingFindingAlertPayload.class);
+                subject = "URGENT: critical imaging finding - " + payload.orderRef();
+                body = "A critical finding has been recorded for the " + payload.studyType() + " study on imaging order "
                         + payload.orderRef() + ". Please review and acknowledge it in the app as soon as possible.";
             }
             case "refill_ready" -> {
