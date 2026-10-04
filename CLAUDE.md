@@ -1748,6 +1748,99 @@ integration this pass, was declined). New migrations
   `pages/imaging/` section (a technologist worklist + a provider
   report-writing view) is a natural next frontend phase, not built here.
 
+## Phase 43: secure patient-provider messaging
+
+Built 2026-10-04, same session as phases 41/42 - the second of the three
+sequential patient-engagement phases (SMS reminders done, satisfaction
+surveys still open). Four scoping questions were put to the user before
+writing any code; three took the recommended option (a shared clinic
+inbox rather than per-provider inboxes; `provider`+`clinic_admin` staff
+access, no `front_desk`; text-only for v1, no attachments) and one did
+not - the user explicitly chose **one ongoing thread per patient**
+over the recommended per-topic-thread model. New migration
+`V39__patient_messaging.sql`.
+
+- **`com.clinicops.messaging`** (new package) - `PatientMessage`
+  (`patientId`/`senderType` ("patient"/"staff")/`senderUserId`/`body`/
+  `readAt`) is the entire thread for one patient at one clinic - the
+  pinned "one ongoing thread" decision means there's no separate thread
+  entity at all, just a flat, time-ordered list of messages scoped to
+  `(tenantId, patientId)`. `readAt` is set on the *opposite* party's own
+  messages whenever a side opens the thread - `PatientMessageRepository`
+  has two dedicated `@Modifying` bulk-update queries
+  (`markStaffMessagesReadByPatient`/`markPatientMessagesReadByStaff`)
+  rather than a per-row toggle, since "opening the thread" is the one
+  real read-marking event this app needs.
+- **A shared inbox, not per-provider** - the pinned decision means
+  `GET /api/clinic/message-inbox` (a new native-query projection,
+  `MessageInboxEntry`) lists every patient with a thread, each with its
+  own `lastMessageAt`/`unreadCount` (patient-sent, unread by staff) -
+  **any** `provider`/`clinic_admin` at the clinic can open and reply to
+  **any** patient's thread, with no ownership check at all, the direct
+  consequence of "shared inbox" over "per-provider inbox." Matches
+  `DispenseController`'s own "no ownership check within a role" shape,
+  just applied to clinical messaging instead of pharmacy.
+- **Patient-side tenant resolution follows the established
+  patient-portal pattern, not `TenantContext`** - a patient JWT carries
+  no `organization` claim, so every patient-facing endpoint
+  (`PatientMessagingController`) takes an explicit `clinicId` and
+  resolves the caller's own `Patient` row via
+  `PatientProvisioningService.resolveForPortalUser(clinicId, jwt)` (the
+  same lookup-or-auto-provision call `PatientPrescriptionService`/
+  `PatientLabRequestController` already use) - never `TenantContext
+  .require()`, which would throw for a patient token. Sending a first
+  message at a clinic silently auto-provisions a `Patient` row exactly
+  like a first booking does; no separate "register" step.
+- **`StaffMessagingController`** (`provider`+`clinic_admin` only,
+  deliberately no `front_desk`) - the user's own pinned answer,
+  reasoned the same way `Encounter`'s clinical-content exclusion of
+  `front_desk` already is: message content can carry clinical
+  substance, not pure logistics. PHI-audited (`patient_message_inbox`/
+  `patient_message_list`/`patient_message` resource types) exactly like
+  every other clinically-sensitive resource in this app.
+- **No attachments, text-only** - `SendStaffMessageRequest`/
+  `CreatePatientMessageRequest` are both a single `@NotBlank body`
+  string, nothing else; a richer message shape (attachments, read
+  receipts beyond the one bulk timestamp) is a later call if ever
+  needed, not built speculatively now.
+- **Tests**: `PatientMessagingServiceTest` (new, pure Mockito,
+  genuinely runs locally - **7/7 passing**) - send-as-patient resolves
+  the portal patient and saves correctly; listing marks staff messages
+  read as a side effect; reply-as-staff rejects an unowned patient and
+  saves correctly when owned; staff thread view marks patient messages
+  read as a side effect and rejects an unowned patient; inbox delegates
+  straight to the repository. `PatientMessagingControllerIntegrationTest`
+  (3 cases: send+list round trip with auto-provisioning, the same
+  portal login's messages at two different clinics staying fully
+  separate, a non-patient token 403s), `StaffMessagingControllerIntegrationTest`
+  (3 cases: the full inbox-\>thread-read-\>reply-\>patient-sees-it
+  round trip, `front_desk` 403s while `clinic_admin` succeeds,
+  cross-tenant reply/read 404), one new `TenantIsolationIntegrationTest`
+  case. Confirmed via a clean `mvn clean test-compile` and a full `mvn
+  test` run showing `Tests run: 562, Errors: 406, Failures: 0` (up from
+  548/399 - exactly the 14 new test methods: 7 pure-unit + 7
+  Testcontainers-blocked), 156 pure-unit tests now passing project-wide
+  (up from 149); confirmed via the surefire reports that every new
+  Testcontainers-blocked case hits the identical pre-existing `Could not
+  find a valid Docker environment` wall, not a new failure mode.
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`), via the same scripted Authorization Code + PKCE
+  login technique phases 40-42 established** - as a real `demo-patient`
+  login, sent a genuine message to the Demo Clinic (auto-provisioning a
+  real `Patient` row); as `demo-provider`, confirmed the real shared
+  inbox showed "Demo Patient" with `unreadCount: 1`, opened the thread
+  (confirmed the inbox's own `unreadCount` genuinely dropped to `0` on
+  the very next fetch) and sent a real reply; back as `demo-patient`,
+  confirmed the reply appeared in the thread, and that a second read
+  correctly marked the staff reply's own `readAt` too. Confirmed
+  `demo-front-desk` gets a genuine `403` on `GET /api/clinic/
+  message-inbox` - the one non-recommended role-gate decision this
+  phase made, holding live.
+- **No frontend yet** - backend only, same "backend first" scope
+  boundary phase 42 just used. A patient-facing message thread view and
+  a staff shared-inbox page are natural next frontend items, not built
+  here.
+
 ## Sidebar nav arrangement review (2026-10-01)
 
 The user asked for an evaluation of the menu arrangement for every

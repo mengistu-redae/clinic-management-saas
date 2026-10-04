@@ -278,6 +278,30 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
+    /** Phase 43 (2026-10-04) - patient-provider messaging is tenant-scoped the same way. */
+    @Test
+    void patientMessagesAreNotReadableOrReplyableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("messaging");
+        String bodyJson = mockMvc.perform(post("/api/my-messages").with(asPatient("patient-iso"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.messaging.CreatePatientMessageRequest(a.getId(), "Hello"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID patientId = UUID.fromString(objectMapper.readTree(bodyJson).get("patientId").asText());
+
+        Clinic b = clinicB("messaging");
+        mockMvc.perform(get("/api/patients/" + patientId + "/messages").with(asProvider("prov", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/patients/" + patientId + "/messages").with(asProvider("prov", b.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.messaging.SendStaffMessageRequest("Should not work"))))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/clinic/message-inbox").with(asProvider("prov", b.getKeycloakOrgId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
     @Test
     void appointmentAndLabOrderPaymentsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
         Clinic a = clinicA("payment");
