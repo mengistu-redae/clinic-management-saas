@@ -4,6 +4,7 @@ import com.clinicops.patient.Patient;
 import com.clinicops.patient.PatientRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
+import com.clinicops.survey.SatisfactionSurveyService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,14 +26,17 @@ public class CheckInService {
     private final AppointmentRepository appointmentRepository;
     private final SlotRepository slotRepository;
     private final PatientRepository patientRepository;
+    private final SatisfactionSurveyService satisfactionSurveyService;
 
     public CheckInService(
             AppointmentRepository appointmentRepository,
             SlotRepository slotRepository,
-            PatientRepository patientRepository) {
+            PatientRepository patientRepository,
+            SatisfactionSurveyService satisfactionSurveyService) {
         this.appointmentRepository = appointmentRepository;
         this.slotRepository = slotRepository;
         this.patientRepository = patientRepository;
+        this.satisfactionSurveyService = satisfactionSurveyService;
     }
 
     /**
@@ -88,9 +92,12 @@ public class CheckInService {
         return applyTransition(appointmentId, tenantId, "roomed", "with_provider", "start");
     }
 
+    /** Phase 44 - auto-creates a pending satisfaction survey the moment checkout is reached; createPendingForAppointment is itself a no-op on a repeat call, so this stays safe on checkOut's own idempotent re-call too. */
     @Transactional
     public Appointment checkOut(UUID appointmentId, UUID tenantId) {
-        return applyTransition(appointmentId, tenantId, "with_provider", "checked_out", "check out");
+        Appointment appointment = applyTransition(appointmentId, tenantId, "with_provider", "checked_out", "check out");
+        satisfactionSurveyService.createPendingForAppointment(appointmentId, tenantId);
+        return appointment;
     }
 
     @Transactional

@@ -1553,47 +1553,7 @@ this dev environment - answered **skip real delivery entirely**, track
 email before Mailpit was introduced). New migration
 `V36__appointment_reminders.sql`.
 
-- **`AppointmentReminderScheduler`** (`com.clinicops.appointment`, new) -
-  a `@Scheduled` poller mirroring `NoShowScheduler`'s own shape exactly
-  (a one-sided query, not a tight poll-interval slice, so a delayed run
-  never skips an appointment - the new `appointments.reminder_sent_at`
-  column is what actually gates the re-send). Every still-`booked`
-  appointment whose slot start time has crossed into a 24-hour lead
-  window gets a `channel = "sms"` row written to the existing
-  `notifications` outbox - but **written with `status =
-  "skipped_no_gateway"`, never `"pending"`**, so `NotificationWorker`'s
-  own poll query (`findTop50ByStatusOrderByCreatedAtAsc("pending")`)
-  never picks it up and never hands it to `SmtpEmailSender` (which would
-  otherwise try to email a phone number). Swapping in a real SmsSender
-  later means writing these rows as `"pending"` instead and registering
-  a second `NotificationSender` bean - no change needed anywhere else.
-  Falls back to the appointment's own `contactPhone` for a guest booking
-  with no patient on file; skipped silently (but still marked reminded,
-  so it's never retried forever) when neither phone exists.
-- **`AppointmentRepository.findReminderCandidates`** (new native query) -
-  LEFT JOINs `patients` for a portal/front-desk booking's own phone,
-  backed by a new `AppointmentReminderCandidate` projection.
-- **Tests**: `AppointmentReminderSchedulerTest` (new, pure Mockito,
-  genuinely runs locally - **4/4 passing**) - writes a correctly
-  -skipped-not-pending SMS row for a patient-portal booking; falls back
-  to `contactPhone` for a guest booking; skips silently but still marks
-  reminded when neither phone is on file; processes every candidate in
-  one run. `AppointmentReminderIntegrationTest` (new, 2 Testcontainers
-  -blocked cases exercising the real native query against real Postgres -
-  a booking inside the window gets exactly one reminder and a second run
-  never duplicates it; a booking outside the window gets none yet).
-  Confirmed via a clean `mvn clean test-compile` and a full `mvn test`
-  run - the 2 new integration cases hit the identical pre-existing
-  `Could not find a valid Docker environment` wall every other
-  integration test on this machine already hits, not a new failure mode.
-- **Live-verified against the real running stack** - after rebuilding
-  `spring-boot-api`, the real scheduler bean fired on its own schedule
-  inside the live container (confirmed via the container's own logs:
-  `"Wrote 1 SMS reminder outbox row(s)"`) against real pre-existing
-  appointment data, and a direct Postgres query confirmed the resulting
-  row really does carry `channel = 'sms'`, `type = 'appointment_reminder'`,
-  `status = 'skipped_no_gateway'` - genuinely never picked up alongside
-  the real `sent` email rows sitting right next to it in the same table.
+*Full design write-up and live-verification detail: see `CLAUDE-history.md`.*
 
 ## Phase 42: imaging/radiology orders
 
@@ -1840,6 +1800,100 @@ over the recommended per-topic-thread model. New migration
   boundary phase 42 just used. A patient-facing message thread view and
   a staff shared-inbox page are natural next frontend items, not built
   here.
+
+## Phase 44: patient satisfaction surveys
+
+Built 2026-10-04, same session as phases 41-43 - third and last of the
+three sequential patient-engagement phases, closing that whole set.
+Four scoping questions were put to the user before writing any code, all
+answered with the recommended option: auto-create on checkout, a simple
+1-5 rating + optional comment, in-portal only (no email), and a
+clinic_admin-only aggregate view. New migration
+`V40__satisfaction_surveys.sql`.
+
+- **`com.clinicops.survey`** (new package) - `SatisfactionSurvey`
+  (`appointmentId` unique, same "exactly one per visit" shape as
+  `Vitals.appointmentId`) is auto-created, pending (`rating`/`comment`/
+  `submittedAt` all null), directly from **`CheckInService.checkOut`**
+  the moment that transition is reached - not a scheduled poller like
+  phase 41's reminders, since this is tied to a single real event with
+  an obvious call site, not a time-window sweep. `createPendingForAppointment`
+  is itself a no-op when a row already exists, so it stays safe to call
+  on `checkOut`'s own pre-existing idempotent re-call too - confirmed
+  live and by a dedicated `CheckInIntegrationTest` case.
+- **Submission is genuinely one-shot** - a design call made without an
+  explicit question to the user (flagged as revisitable, same treatment
+  Allergy's own gate got in phase 8): once `submittedAt` is set, a second
+  `POST` 409s ("This survey has already been submitted") rather than
+  silently overwriting feedback already on record, reusing the plain
+  `ResponseStatusException(HttpStatus.CONFLICT, ...)` convention
+  `DispenseService`/`PurchaseOrderController` already use rather than a
+  new exception type.
+- **`PatientSatisfactionSurveyController`** (`GET`/`POST /api/my
+  -appointments/{id}/survey`, `hasRole('PATIENT')`) - ownership resolved
+  via `AppointmentRepository.findByIdAndCustomerUserIdWithSlot`, the
+  identical pattern `VisitSummaryController`'s own patient endpoint
+  already established (never `TenantContext`, patient JWTs carry no org
+  claim). Not PHI-audited - feedback data isn't clinical PHI, matching
+  `PhiAccessAuditService`'s own staff-initiated-access-only scope.
+- **`ClinicSatisfactionSurveyController`** (`GET /api/clinic/
+  satisfaction-surveys/summary`, `hasRole('CLINIC_ADMIN')` only - the
+  user's own pinned scope, deliberately not `provider` too) - a plain
+  average + count over submitted-only rows plus a newest-first recent
+  -feedback feed (20 most recent), the patient's display name resolved
+  directly in the native query's own `COALESCE(first+last, contactName,
+  'Guest')` expression, the same "embed what the caller needs" pattern
+  `AppointmentReminderScheduler`/`InvoicePdfService` already use for the
+  identical lookup - no per-provider breakdown anywhere, by design.
+- **Tests**: `SatisfactionSurveyServiceTest` (new, pure Mockito,
+  genuinely runs locally - **5/5 passing**) - create-pending both the
+  fresh-row and already-exists-no-op paths, `get` 404s when nothing
+  exists yet, submit fills in all three fields when pending, submit
+  409s on a second call. `PatientSatisfactionSurveyControllerIntegrationTest`
+  (3 cases: fetch+submit+reject-a-second-submit round trip, a non-owned
+  appointment 404s, an out-of-range rating 400s),
+  `ClinicSatisfactionSurveyControllerIntegrationTest` (2 cases: the
+  average/count/recent-feedback shape correctly excludes a still-pending
+  survey from the average, the role gate holds for both `front_desk` and
+  `provider`), one new `CheckInIntegrationTest` case (checkout
+  auto-creates exactly one pending row, a re-call doesn't duplicate it),
+  one new `TenantIsolationIntegrationTest` case (the list/aggregate-only
+  shape `qcRunsAreNotReadableFromAnotherTenant` already established -
+  clinic B's own summary never reflects clinic A's survey). Confirmed
+  via a clean `mvn clean test-compile` and a full `mvn test` run showing
+  `Tests run: 574, Errors: 413, Failures: 0` (up from 562/406 - exactly
+  the 12 new test methods: 5 pure-unit + 7 Testcontainers-blocked), 161
+  pure-unit tests now passing project-wide (up from 156); confirmed via
+  the surefire reports that every new Testcontainers-blocked case hits
+  the identical pre-existing `Could not find a valid Docker environment`
+  wall, not a new failure mode.
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`), via the same scripted Authorization Code + PKCE
+  login technique phases 40-43 established** - seeded a real
+  `with_provider` appointment owned by `demo-patient`'s own portal login
+  directly in Postgres (a clean fixture, same precedent phase 25's own
+  write-up already used, rather than re-driving the full booking flow
+  for a fixture this phase didn't need to re-prove), then drove the
+  genuinely real event: as `demo-front-desk`, called the real
+  `POST .../check-out` endpoint and confirmed via a direct Postgres
+  query that a pending survey row was really auto-created. As
+  `demo-patient`: fetched the pending survey, submitted a real 5-star
+  rating with a comment, and confirmed an immediate second submission
+  attempt genuinely `409`'d. As `demo-clinic-admin`: confirmed
+  `GET /api/clinic/satisfaction-surveys/summary` showed
+  `averageRating: 5.00`, `totalSubmitted: 1`, and the recent-feedback
+  entry correctly resolved to "Demo Patient" with the real comment text.
+  Confirmed `demo-front-desk` gets a genuine `403` on that same summary
+  endpoint - the pinned clinic_admin-only scope holding live.
+- **No frontend yet** - backend only, same "backend first" scope
+  boundary phases 42/43 just used. A pending-survey prompt on the
+  patient's own appointment view and a simple summary panel on the
+  clinic-admin dashboard are natural next frontend items, not built
+  here.
+
+This closes the three-phase patient-engagement set (SMS reminders,
+secure messaging, satisfaction surveys) the user asked for alongside
+imaging/radiology orders - all three now built.
 
 ## Sidebar nav arrangement review (2026-10-01)
 

@@ -8174,3 +8174,58 @@ live-verified server-side in phase 40 itself.
   genuinely scripted Authorization Code + PKCE login (no browser
   extension connected either), and the role gate was confirmed live as a
   real `demo-provider` session - see "Phase 40" above.
+
+## Phase 41: patient engagement - SMS reminders (full write-up)
+
+Built 2026-10-04. First of three sequential patient-engagement phases
+(SMS reminders, then secure patient-provider messaging, then satisfaction
+surveys) the user asked for alongside imaging/radiology orders -
+telemedicine was explicitly declined. Two direct questions were put to
+the user first: build all three sequentially (yes) or just one, and how
+SMS delivery should work given no real gateway (Twilio etc.) exists in
+this dev environment - answered **skip real delivery entirely**, track
+-only, the recommended option (the identical blocker phase 17 hit for
+email before Mailpit was introduced). New migration
+`V36__appointment_reminders.sql`.
+
+- **`AppointmentReminderScheduler`** (`com.clinicops.appointment`, new) -
+  a `@Scheduled` poller mirroring `NoShowScheduler`'s own shape exactly
+  (a one-sided query, not a tight poll-interval slice, so a delayed run
+  never skips an appointment - the new `appointments.reminder_sent_at`
+  column is what actually gates the re-send). Every still-`booked`
+  appointment whose slot start time has crossed into a 24-hour lead
+  window gets a `channel = "sms"` row written to the existing
+  `notifications` outbox - but **written with `status =
+  "skipped_no_gateway"`, never `"pending"`**, so `NotificationWorker`'s
+  own poll query (`findTop50ByStatusOrderByCreatedAtAsc("pending")`)
+  never picks it up and never hands it to `SmtpEmailSender` (which would
+  otherwise try to email a phone number). Swapping in a real SmsSender
+  later means writing these rows as `"pending"` instead and registering
+  a second `NotificationSender` bean - no change needed anywhere else.
+  Falls back to the appointment's own `contactPhone` for a guest booking
+  with no patient on file; skipped silently (but still marked reminded,
+  so it's never retried forever) when neither phone exists.
+- **`AppointmentRepository.findReminderCandidates`** (new native query) -
+  LEFT JOINs `patients` for a portal/front-desk booking's own phone,
+  backed by a new `AppointmentReminderCandidate` projection.
+- **Tests**: `AppointmentReminderSchedulerTest` (new, pure Mockito,
+  genuinely runs locally - **4/4 passing**) - writes a correctly
+  -skipped-not-pending SMS row for a patient-portal booking; falls back
+  to `contactPhone` for a guest booking; skips silently but still marks
+  reminded when neither phone is on file; processes every candidate in
+  one run. `AppointmentReminderIntegrationTest` (new, 2 Testcontainers
+  -blocked cases exercising the real native query against real Postgres -
+  a booking inside the window gets exactly one reminder and a second run
+  never duplicates it; a booking outside the window gets none yet).
+  Confirmed via a clean `mvn clean test-compile` and a full `mvn test`
+  run - the 2 new integration cases hit the identical pre-existing
+  `Could not find a valid Docker environment` wall every other
+  integration test on this machine already hits, not a new failure mode.
+- **Live-verified against the real running stack** - after rebuilding
+  `spring-boot-api`, the real scheduler bean fired on its own schedule
+  inside the live container (confirmed via the container's own logs:
+  `"Wrote 1 SMS reminder outbox row(s)"`) against real pre-existing
+  appointment data, and a direct Postgres query confirmed the resulting
+  row really does carry `channel = 'sms'`, `type = 'appointment_reminder'`,
+  `status = 'skipped_no_gateway'` - genuinely never picked up alongside
+  the real `sent` email rows sitting right next to it in the same table.

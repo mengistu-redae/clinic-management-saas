@@ -306,6 +306,9 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected com.clinicops.imaging.ImagingStudyRateRepository imagingStudyRateRepository;
 
+    @Autowired
+    protected com.clinicops.survey.SatisfactionSurveyRepository satisfactionSurveyRepository;
+
     // ---- fixture builders: seed just enough of the tenant-scoped schema
     // for a test's own scenario, letting Flyway/Postgres enforce the same
     // FKs and NOT NULLs production does. ----

@@ -4,6 +4,7 @@ import com.clinicops.clinic.Clinic;
 import com.clinicops.patient.Patient;
 import com.clinicops.provider.Provider;
 import com.clinicops.support.AbstractIntegrationTest;
+import com.clinicops.survey.SatisfactionSurveyRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -20,6 +21,9 @@ class CheckInIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private NoShowScheduler noShowScheduler;
+
+    @Autowired
+    private SatisfactionSurveyRepository satisfactionSurveyRepository;
 
     private record Fixture(Clinic clinic, Provider provider, Patient patient, Appointment appointment) {
     }
@@ -53,6 +57,27 @@ class CheckInIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("with_provider"));
         mockMvc.perform(post("/api/appointments/" + id + "/check-out").with(asProvider("prov", orgAlias)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("checked_out"));
+    }
+
+    @Test
+    void checkOutAutoCreatesAPendingSatisfactionSurveyAndRecallingDoesNotDuplicateIt() throws Exception {
+        Fixture f = seedBookedAppointment("checkin-survey-" + UUID.randomUUID(), "Survey Clinic",
+                Instant.now().minusSeconds(60), Instant.now().plusSeconds(1800), null);
+        String orgAlias = f.clinic().getKeycloakOrgId();
+        String id = f.appointment().getId().toString();
+
+        mockMvc.perform(post("/api/appointments/" + id + "/check-in").with(asFrontDesk("fd", orgAlias))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/appointments/" + id + "/room").with(asFrontDesk("fd", orgAlias))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/appointments/" + id + "/start").with(asProvider("prov", orgAlias))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/appointments/" + id + "/check-out").with(asProvider("prov", orgAlias))).andExpect(status().isOk());
+
+        var surveys = satisfactionSurveyRepository.findByAppointmentIdAndTenantId(f.appointment().getId(), f.clinic().getId());
+        assertThat(surveys).isPresent();
+        assertThat(surveys.get().getSubmittedAt()).isNull();
+
+        // Idempotent re-call must not create a second row (appointment_id is UNIQUE at the DB level too).
+        mockMvc.perform(post("/api/appointments/" + id + "/check-out").with(asProvider("prov", orgAlias))).andExpect(status().isOk());
+        assertThat(satisfactionSurveyRepository.findByAppointmentIdAndTenantId(f.appointment().getId(), f.clinic().getId())).isPresent();
     }
 
     @Test

@@ -302,6 +302,39 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
+    /**
+     * Phase 44 (2026-10-04) - satisfaction surveys have no single-resource
+     * staff-side GET (the only staff endpoint is the aggregate summary), so
+     * the isolation check here is "clinic B's own summary never reflects
+     * clinic A's survey" - the same list/aggregate-only shape the QC-run
+     * case above already uses, plus a direct 404 check on the patient-side
+     * endpoint addressed by appointment id.
+     */
+    @Test
+    void satisfactionSurveysAreNotReadableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("survey");
+        Provider provider = createProvider(a.getId(), "Dr. A");
+        AppointmentType type = createAppointmentType(a.getId(), "Visit", 30, "50.00");
+        Patient patient = createPatient(a.getId(), "A", "Patient", "+15550000066");
+        Slot slot = createSlot(a.getId(), provider.getId(), type.getId(), Instant.now().minusSeconds(3600), Instant.now().minusSeconds(1800));
+        Appointment appointment = createBookedAppointment(a.getId(), slot.getId(), patient.getId(), provider.getId(), type.getId(), null);
+        appointment.setStatus("checked_out");
+        appointmentRepository.save(appointment);
+        com.clinicops.survey.SatisfactionSurvey survey = new com.clinicops.survey.SatisfactionSurvey();
+        survey.setTenantId(a.getId());
+        survey.setAppointmentId(appointment.getId());
+        survey.setRating(5);
+        survey.setComment("Great");
+        survey.setSubmittedAt(Instant.now());
+        satisfactionSurveyRepository.save(survey);
+
+        Clinic b = clinicB("survey");
+        mockMvc.perform(get("/api/clinic/satisfaction-surveys/summary").with(asClinicAdmin("admin", b.getKeycloakOrgId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalSubmitted").value(0))
+                .andExpect(jsonPath("$.recentFeedback.length()").value(0));
+    }
+
     @Test
     void appointmentAndLabOrderPaymentsAreNotReadableOrWritableFromAnotherTenant() throws Exception {
         Clinic a = clinicA("payment");
