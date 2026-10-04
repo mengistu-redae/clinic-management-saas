@@ -16,7 +16,8 @@
     },
     "provider": {
       "labOrders": "የላብራቶሪ ትዕዛዞች",
-      "referrals": "ሪፈራሎች"
+      "referrals": "ሪፈራሎች",
+      "imagingOrders": "የምስል ትዕዛዞች"
     },
     "clinicAdmin": {
       "appointments": "ቀጠሮዎች",
@@ -24,6 +25,7 @@
       "rooms": "ክፍሎች",
       "appointmentTypes": "የቀጠሮ ዓይነቶች",
       "labOrders": "የላብራቶሪ ትዕዛዞች",
+      "imagingOrders": "የምስል ትዕዛዞች",
       "referrals": "ሪፈራሎች",
       "settings": "ቅንብሮች"
     },
@@ -52,6 +54,9 @@
     "lab": {
       "labOrders": "የላብራቶሪ ትዕዛዞች",
       "qcLog": "የጥራት ቁጥጥር መዝገብ"
+    },
+    "imaging": {
+      "imagingOrders": "የምስል ትዕዛዞች"
     }
   },
   "publicNav": {
@@ -597,6 +602,9 @@
     "cancelled": "ተሰርዟል",
     "requested": "ተጠይቋል",
     "ordered": "ታዟል",
+    "scheduled": "ቀጠሮ ተይዟል",
+    "in_progress": "በሂደት ላይ",
+    "completed": "ተጠናቅቋል",
     "specimen_collected": "ናሙና ተሰብስቧል",
     "in_transit": "በመጓጓዝ ላይ",
     "resulted": "ውጤት ተገኝቷል",
@@ -662,7 +670,8 @@
     "general": "አጠቃላይ",
     "branding": "ብራንዲንግ",
     "feePolicies": "የክፍያ ፖሊሲዎች",
-    "labRates": "የላብራቶሪ ዋጋዎች"
+    "labRates": "የላብራቶሪ ዋጋዎች",
+    "imagingRates": "የምስል ዋጋዎች"
   },
   "clinicPicker": {
     "subtitle": "ለመጀመር ክሊኒክ ይምረጡ።",
@@ -1198,6 +1207,66 @@
     "qcRunsToday": "ዛሬ የተከናወኑ የጥራት ቁጥጥር ምርመራዎች",
     "failedQcToday": "ዛሬ ያልተሳኩ የጥራት ቁጥጥር ምርመራዎች"
   },
+  "imagingOrdersPage": {
+    "allStatuses": "ሁሉም ሁኔታዎች",
+    "filterByStatus": "በሁኔታ ማጣራት",
+    "close": "ዝጋ",
+    "newImagingOrder": "+ አዲስ የምስል ትዕዛዝ",
+    "patient": "ታካሚ",
+    "orderingProvider": "የሚያዝዝ ሐኪም",
+    "priority": "ቅድሚያ",
+    "modality": "የምስል ዘዴ",
+    "modalityXray": "ኤክስሬይ",
+    "modalityUltrasound": "አልትራሳውንድ",
+    "modalityCt": "ሲቲ",
+    "modalityMri": "ኤምአርአይ",
+    "modalityOther": "ሌላ",
+    "studyType": "የምስል ዓይነት",
+    "studyTypePlaceholder": "ለምሳሌ የደረት ኤክስሬይ",
+    "studyCode": "የምስል ኮድ",
+    "notesOptional": "ማስታወሻ (አማራጭ)",
+    "creating": "በመፍጠር ላይ…",
+    "createImagingOrder": "የምስል ትዕዛዝ ይፍጠሩ",
+    "errorFields": "ታካሚ፣ የሚያዝዝ ሐኪም፣ የምስል ዓይነት እና የምስል ኮድ ያስፈልጋሉ።",
+    "errorCreate": "ይህን የምስል ትዕዛዝ መፍጠር አልተቻለም - ለዚህ የምስል ኮድ ዋጋ መዋቀሩን ያረጋግጡ።",
+    "emptyTitle": "እስካሁን የምስል ትዕዛዞች የለም",
+    "emptyDescription": "ከላይ ያለውን “+ አዲስ የምስል ትዕዛዝ” ይጠቀሙ - ለምስል ኮዱ የተዋቀረ ዋጋ ያስፈልግዎታል።"
+  },
+  "imagingOrderDetail": {
+    "title": "የምስል ትዕዛዝ",
+    "scheduledAtOptional": "የተያዘለት ጊዜ (አማራጭ)",
+    "markScheduled": "ቀጠሮ ያዝ",
+    "markStarted": "ምስል ጀምር",
+    "markCompleted": "እንደተጠናቀቀ ምልክት አድርግ",
+    "markReviewed": "ግምገማ አስገባ",
+    "reviewTitle": "ሪፖርት",
+    "findings": "ግኝቶች",
+    "impression": "ድምዳሜ",
+    "flagCriticalFinding": "ይህ ግኝት አደገኛ ነው - ያዘዘውን ሐኪም አሳውቅ",
+    "criticalFindingBanner": "ይህ ትዕዛዝ አደገኛ ግኝት አለው።",
+    "acknowledging": "በማረጋገጥ ላይ…",
+    "acknowledgeCritical": "አደገኛ ግኝት ማረጋገጥ",
+    "acknowledgedAt": "በ {{date}} ተረጋግጧል",
+    "studyTabEmpty": "ምስሉ ከተጠናቀቀ በኋላ ሪፖርቱ እዚህ ይታያል።",
+    "errorSchedule": "ይህን ምስል መያዝ አልተቻለም።",
+    "errorStart": "ይህን ምስል መጀመር አልተቻለም።",
+    "errorComplete": "ይህን ምስል እንደተጠናቀቀ ምልክት ማድረግ አልተቻለም።",
+    "errorReview": "ይህን ግምገማ ማስገባት አልተቻለም።",
+    "errorAcknowledgeCritical": "ይህን አደገኛ ግኝት ማረጋገጥ አልተቻለም።"
+  },
+  "imagingStudyRatesPage": {
+    "intro": "የምስል ጥናት ለኮዱ ዋጋ ካልተዋቀረ በስተቀር ማዘዝ አይቻልም - የተለየ ቋሚ የጥናት ዝርዝር የለም።",
+    "addRate": "ዋጋ ጨምር",
+    "emptyTitle": "ምንም የምስል ጥናት ዋጋዎች አልተዋቀሩም",
+    "emptyDescription": "የመጀመሪያዎን ዋጋ ከላይ ይጨምሩ።",
+    "errorFields": "የምስል ኮድ፣ የምስል ዓይነት እና አሉታዊ ያልሆነ መሠረታዊ ክፍያ ያስፈልጋሉ።",
+    "errorCreate": "ይህን ዋጋ መፍጠር አልተቻለም - ለዚህ የምስል ኮድ ዋጋ አስቀድሞ ሊኖር ይችላል።",
+    "errorDelete": "ይህን ዋጋ መሰረዝ አልተቻለም።"
+  },
+  "imagingDashboardPage": {
+    "subtitle": "የእርስዎ የምስል ትዕዛዞች የስራ ዝርዝር።",
+    "needsAction": "የምስል ትኩረት ይፈልጋል"
+  },
   "specimensPanel": {
     "title": "ናሙናዎች",
     "collect": "ሰብስብ",
@@ -1303,6 +1372,7 @@
     "billing": "ክፍያ",
     "clinicalNote": "ክሊኒካዊ ማስታወሻ",
     "prescriptions": "የመድሃኒት ማዘዣዎች",
-    "specimensResults": "ናሙናዎች እና ውጤቶች"
+    "specimensResults": "ናሙናዎች እና ውጤቶች",
+    "study": "ጥናት"
   }
 }

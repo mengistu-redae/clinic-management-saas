@@ -28,11 +28,15 @@ import ClinicAdminSettings from './pages/clinic-admin/Settings.jsx';
 import ClinicAdminBranding from './pages/clinic-admin/Branding.jsx';
 import ClinicAdminFeePolicies from './pages/clinic-admin/FeePolicies.jsx';
 import ClinicAdminLabRates from './pages/clinic-admin/LabRates.jsx';
+import ClinicAdminImagingStudyRates from './pages/clinic-admin/ImagingStudyRates.jsx';
 import ProviderEncounter from './pages/provider/Encounter.jsx';
 import LabOrders from './pages/lab-orders/LabOrders.jsx';
 import LabOrderDetail from './pages/lab-orders/LabOrderDetail.jsx';
 import LabDashboard from './pages/lab/Dashboard.jsx';
 import LabQcRuns from './pages/lab/QcRuns.jsx';
+import ImagingOrders from './pages/imaging-orders/ImagingOrders.jsx';
+import ImagingOrderDetail from './pages/imaging-orders/ImagingOrderDetail.jsx';
+import ImagingDashboard from './pages/imaging/Dashboard.jsx';
 import Referrals from './pages/referrals/Referrals.jsx';
 import RequestLabTest from './pages/patient/RequestLabTest.jsx';
 import MyLabOrders from './pages/patient/MyLabOrders.jsx';
@@ -361,6 +365,7 @@ export default function App() {
           <Route path="branding" element={<ClinicAdminBranding />} />
           <Route path="fee-policies" element={<ClinicAdminFeePolicies />} />
           <Route path="lab-rates" element={<ClinicAdminLabRates />} />
+          <Route path="imaging-study-rates" element={<ClinicAdminImagingStudyRates />} />
         </Route>
         {/* Lab orders - shared by provider/clinic_admin/lab_technician, one route
             tree instead of duplicating it per role. **Not** identical backend
@@ -399,6 +404,34 @@ export default function App() {
           element={
             <RequireRole roles={['lab_technician', 'clinic_admin']}>
               <LabQcRuns />
+            </RequireRole>
+          }
+        />
+        {/* Imaging orders (phase 42 backend) - same shared-route-tree reasoning
+            as lab orders above: provider/clinic_admin/imaging_technologist all
+            reach one page, ImagingOrderDetail.jsx's own canActOnOrder/
+            canManageOrder split handles the real role gate, not this route. */}
+        <Route
+          path="/imaging-orders"
+          element={
+            <RequireRole roles={['provider', 'clinic_admin', 'imaging_technologist']}>
+              <ImagingOrders />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/imaging-orders/:id"
+          element={
+            <RequireRole roles={['provider', 'clinic_admin', 'imaging_technologist']}>
+              <ImagingOrderDetail />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/imaging"
+          element={
+            <RequireRole role="imaging_technologist">
+              <ImagingDashboard />
             </RequireRole>
           }
         />

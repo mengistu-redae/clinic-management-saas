@@ -613,6 +613,44 @@ export function useDeleteLabRate(id) {
   });
 }
 
+// ---- imaging study rates (clinic-admin config; see ImagingStudyRateController, phase 42 backend) ----
+
+export function useImagingStudyRates(enabled) {
+  return useQuery({
+    queryKey: ['clinic', 'imaging-study-rates'],
+    queryFn: () => apiGet('/api/clinic/imaging-study-rates'),
+    enabled,
+  });
+}
+
+function invalidateImagingStudyRates(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['clinic', 'imaging-study-rates'] });
+}
+
+export function useCreateImagingStudyRate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/clinic/imaging-study-rates', body),
+    onSuccess: () => invalidateImagingStudyRates(queryClient),
+  });
+}
+
+export function useUpdateImagingStudyRate(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/clinic/imaging-study-rates/${id}/update`, body),
+    onSuccess: () => invalidateImagingStudyRates(queryClient),
+  });
+}
+
+export function useDeleteImagingStudyRate(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/clinic/imaging-study-rates/${id}/delete`),
+    onSuccess: () => invalidateImagingStudyRates(queryClient),
+  });
+}
+
 // ---- patient chart: allergies/vitals/medical history/consent (phase
 // 8/9/10 backend, frontend phases H/I) - shared by
 // front-desk/AppointmentDetail.jsx and provider/Encounter.jsx via
@@ -871,6 +909,100 @@ export function useGenerateLabOrderInvoice(id) {
   return useMutation({
     mutationFn: () => apiPost(`/api/lab-orders/${id}/invoice`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lab-order-invoice', id] }),
+  });
+}
+
+// ---- imaging orders (staff - provider/clinic_admin/imaging_technologist;
+// phase 42 backend - see ImagingOrderController/ImagingOrderStatusController/
+// payment.ImagingOrderPaymentController/invoice.ImagingOrderInvoiceController) ----
+
+export function useImagingOrders(enabled) {
+  return useQuery({
+    queryKey: ['imaging-orders'],
+    queryFn: () => apiGet('/api/imaging-orders'),
+    enabled,
+  });
+}
+
+export function useImagingOrder(id) {
+  return useQuery({
+    queryKey: ['imaging-order', id],
+    queryFn: () => apiGet(`/api/imaging-orders/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateImagingOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/imaging-orders', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['imaging-orders'] }),
+  });
+}
+
+function invalidateImagingOrder(queryClient, id) {
+  queryClient.invalidateQueries({ queryKey: ['imaging-orders'] });
+  queryClient.invalidateQueries({ queryKey: ['imaging-order', id] });
+}
+
+/** Partial update - clinical fields only while status = "ordered", per ImagingOrderService.update. */
+export function useUpdateImagingOrder(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/imaging-orders/${id}/update`, body),
+    onSuccess: () => invalidateImagingOrder(queryClient, id),
+  });
+}
+
+function useImagingOrderAction(path) {
+  return function useAction(id) {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: (body) => apiPost(`/api/imaging-orders/${id}/${path}`, body),
+      onSuccess: () => invalidateImagingOrder(queryClient, id),
+    });
+  };
+}
+
+/** Each mirrors ImagingOrderStatusService's own sequence - ordered -> scheduled -> in_progress -> completed -> reviewed, or cancelled. */
+export const useScheduleImagingOrder = useImagingOrderAction('schedule');
+export const useStartImagingOrder = useImagingOrderAction('start');
+export const useCompleteImagingOrder = useImagingOrderAction('complete');
+/** Writes findings/impression/criticalFinding and signs off in one call - see ImagingOrder's own javadoc for why this isn't split like lab's result/review. */
+export const useReviewImagingOrder = useImagingOrderAction('review');
+export const useAcknowledgeCriticalImagingFinding = useImagingOrderAction('acknowledge-critical');
+export const useCancelImagingOrder = useImagingOrderAction('cancel');
+
+export function useImagingOrderPayments(id) {
+  return useQuery({
+    queryKey: ['imaging-order-payments', id],
+    queryFn: () => apiGet(`/api/imaging-orders/${id}/payments`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateImagingOrderPayment(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/imaging-orders/${id}/payments`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['imaging-order-payments', id] }),
+  });
+}
+
+export function useImagingOrderInvoice(id) {
+  return useQuery({
+    queryKey: ['imaging-order-invoice', id],
+    queryFn: () => apiGet(`/api/imaging-orders/${id}/invoice`),
+    enabled: Boolean(id),
+    retry: false,
+  });
+}
+
+export function useGenerateImagingOrderInvoice(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/imaging-orders/${id}/invoice`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['imaging-order-invoice', id] }),
   });
 }
 

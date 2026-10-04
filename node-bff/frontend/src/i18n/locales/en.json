@@ -16,7 +16,8 @@
     },
     "provider": {
       "labOrders": "Lab Orders",
-      "referrals": "Referrals"
+      "referrals": "Referrals",
+      "imagingOrders": "Imaging Orders"
     },
     "clinicAdmin": {
       "appointments": "Appointments",
@@ -24,6 +25,7 @@
       "rooms": "Rooms",
       "appointmentTypes": "Appointment Types",
       "labOrders": "Lab Orders",
+      "imagingOrders": "Imaging Orders",
       "referrals": "Referrals",
       "settings": "Settings"
     },
@@ -52,6 +54,9 @@
     "lab": {
       "labOrders": "Lab Orders",
       "qcLog": "QC Log"
+    },
+    "imaging": {
+      "imagingOrders": "Imaging Orders"
     }
   },
   "publicNav": {
@@ -598,6 +603,9 @@
     "cancelled": "Cancelled",
     "requested": "Requested",
     "ordered": "Ordered",
+    "scheduled": "Scheduled",
+    "in_progress": "In Progress",
+    "completed": "Completed",
     "specimen_collected": "Specimen Collected",
     "in_transit": "In Transit",
     "resulted": "Resulted",
@@ -663,7 +671,8 @@
     "general": "General",
     "branding": "Branding",
     "feePolicies": "Fee Policies",
-    "labRates": "Lab Rates"
+    "labRates": "Lab Rates",
+    "imagingRates": "Imaging Rates"
   },
   "clinicPicker": {
     "subtitle": "Choose a clinic to get started.",
@@ -1200,6 +1209,66 @@
     "qcRunsToday": "QC runs today",
     "failedQcToday": "Failed QC today"
   },
+  "imagingOrdersPage": {
+    "allStatuses": "All statuses",
+    "filterByStatus": "Filter by status",
+    "close": "Close",
+    "newImagingOrder": "+ New imaging order",
+    "patient": "Patient",
+    "orderingProvider": "Ordering provider",
+    "priority": "Priority",
+    "modality": "Modality",
+    "modalityXray": "X-ray",
+    "modalityUltrasound": "Ultrasound",
+    "modalityCt": "CT",
+    "modalityMri": "MRI",
+    "modalityOther": "Other",
+    "studyType": "Study type",
+    "studyTypePlaceholder": "e.g. Chest X-ray",
+    "studyCode": "Study code",
+    "notesOptional": "Notes (optional)",
+    "creating": "Creating…",
+    "createImagingOrder": "Create imaging order",
+    "errorFields": "Patient, ordering provider, study type, and study code are required.",
+    "errorCreate": "Could not create this imaging order - check a rate is configured for this study code.",
+    "emptyTitle": "No imaging orders yet",
+    "emptyDescription": "Use “+ New imaging order” above to create one - you'll need a rate configured for the study code."
+  },
+  "imagingOrderDetail": {
+    "title": "Imaging order",
+    "scheduledAtOptional": "Scheduled time (optional)",
+    "markScheduled": "Schedule",
+    "markStarted": "Start study",
+    "markCompleted": "Mark completed",
+    "markReviewed": "Submit review",
+    "reviewTitle": "Report",
+    "findings": "Findings",
+    "impression": "Impression",
+    "flagCriticalFinding": "This finding is critical - notify the ordering provider",
+    "criticalFindingBanner": "This order has a critical finding.",
+    "acknowledging": "Acknowledging…",
+    "acknowledgeCritical": "Acknowledge critical finding",
+    "acknowledgedAt": "Acknowledged {{date}}",
+    "studyTabEmpty": "The report appears here once the study is completed.",
+    "errorSchedule": "Could not schedule this study.",
+    "errorStart": "Could not start this study.",
+    "errorComplete": "Could not mark this study completed.",
+    "errorReview": "Could not submit this review.",
+    "errorAcknowledgeCritical": "Could not acknowledge this critical finding."
+  },
+  "imagingStudyRatesPage": {
+    "intro": "An imaging study can only be ordered once a rate exists for its study code - there's no separate fixed study catalog.",
+    "addRate": "Add rate",
+    "emptyTitle": "No imaging study rates configured",
+    "emptyDescription": "Add your first rate above.",
+    "errorFields": "A study code, study name, and non-negative base charge are required.",
+    "errorCreate": "Could not create this rate - a rate for this study code may already exist.",
+    "errorDelete": "Could not delete this rate."
+  },
+  "imagingDashboardPage": {
+    "subtitle": "Your imaging orders worklist.",
+    "needsAction": "Needs imaging action"
+  },
   "specimensPanel": {
     "title": "Specimens",
     "collect": "Collect",
@@ -1305,6 +1374,7 @@
     "billing": "Billing",
     "clinicalNote": "Clinical Note",
     "prescriptions": "Prescriptions",
-    "specimensResults": "Specimens & Results"
+    "specimensResults": "Specimens & Results",
+    "study": "Study"
   }
 }

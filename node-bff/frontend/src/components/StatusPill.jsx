@@ -23,6 +23,9 @@ const STYLES = {
   // lab orders
   requested: 'bg-slate-100 text-ink-muted',
   ordered: 'bg-brand-light text-brand-text',
+  // imaging orders (phase 42 backend, frontend phase W)
+  scheduled: 'bg-warning-light text-warning',
+  in_progress: 'bg-warning-light text-warning',
   specimen_collected: 'bg-warning-light text-warning',
   in_transit: 'bg-warning-light text-warning',
   resulted: 'bg-accent-light text-accent',

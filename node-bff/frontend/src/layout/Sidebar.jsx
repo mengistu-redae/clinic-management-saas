@@ -19,6 +19,7 @@ import {
   AlertTriangleIcon,
   ShieldIcon,
   RefreshIcon,
+  ScanIcon,
   ChevronDownIcon,
   ChevronRightIcon,
 } from '../components/icons.jsx';
@@ -80,6 +81,7 @@ function navGroups(t, hasRole) {
       items: [
         { to: '/provider', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
         { to: '/lab-orders', label: t('nav.provider.labOrders'), icon: FlaskIcon },
+        { to: '/imaging-orders', label: t('nav.provider.imagingOrders'), icon: ScanIcon },
         { to: '/referrals', label: t('nav.provider.referrals'), icon: ClipboardIcon },
       ],
     });
@@ -94,6 +96,7 @@ function navGroups(t, hasRole) {
         { to: '/clinic-admin/appointment-types', label: t('nav.clinicAdmin.appointmentTypes'), icon: ClipboardIcon },
         { to: '/lab-orders', label: t('nav.clinicAdmin.labOrders'), icon: FlaskIcon },
         { to: '/lab/qc-runs', label: t('nav.lab.qcLog'), icon: ClipboardIcon },
+        { to: '/imaging-orders', label: t('nav.clinicAdmin.imagingOrders'), icon: ScanIcon },
         { to: '/referrals', label: t('nav.clinicAdmin.referrals'), icon: ClipboardIcon },
       ],
     });
@@ -176,6 +179,14 @@ function navGroups(t, hasRole) {
         { to: '/lab', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
         { to: '/lab-orders', label: t('nav.lab.labOrders'), icon: FlaskIcon },
         { to: '/lab/qc-runs', label: t('nav.lab.qcLog'), icon: ClipboardIcon },
+      ],
+    });
+  }
+  if (hasRole('imaging_technologist')) {
+    groups.push({
+      items: [
+        { to: '/imaging', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
+        { to: '/imaging-orders', label: t('nav.imaging.imagingOrders'), icon: ScanIcon },
       ],
     });
   }

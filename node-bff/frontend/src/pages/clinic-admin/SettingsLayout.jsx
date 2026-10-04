@@ -31,6 +31,9 @@ export default function ClinicAdminSettingsLayout() {
         <NavLink to="/clinic-admin/settings/lab-rates" className={tabClass}>
           {t('clinicAdminSettingsTabs.labRates')}
         </NavLink>
+        <NavLink to="/clinic-admin/settings/imaging-study-rates" className={tabClass}>
+          {t('clinicAdminSettingsTabs.imagingRates')}
+        </NavLink>
       </nav>
       <Outlet />
     </div>
