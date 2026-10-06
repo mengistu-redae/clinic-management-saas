@@ -1,11 +1,15 @@
 package com.clinicops.payment;
 
 import com.clinicops.accounting.JournalService;
+import com.clinicops.invoice.Invoice;
+import com.clinicops.invoice.InvoiceRepository;
 import com.clinicops.paymentgateway.ChargeResult;
 import com.clinicops.paymentgateway.PaymentGatewayClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.util.NoSuchElementException;
 import java.util.UUID;
 
 /**
@@ -26,23 +30,31 @@ public class PaymentService {
     private final PaymentGatewayClient gatewayClient;
     private final PaymentRepository paymentRepository;
     private final JournalService journalService;
+    private final InvoiceRepository invoiceRepository;
 
-    public PaymentService(PaymentGatewayClient gatewayClient, PaymentRepository paymentRepository, JournalService journalService) {
+    public PaymentService(
+            PaymentGatewayClient gatewayClient, PaymentRepository paymentRepository, JournalService journalService,
+            InvoiceRepository invoiceRepository) {
         this.gatewayClient = gatewayClient;
         this.paymentRepository = paymentRepository;
         this.journalService = journalService;
+        this.invoiceRepository = invoiceRepository;
     }
 
     /**
      * Exactly one of appointmentId/labOrderId/dispenseRecordId/imagingOrderId
      * must be set by the caller (mirrors Payment's own exactly-one-owner
      * shape); invoiceId is whatever the caller already validated belongs
-     * to that same owner, or null.
+     * to that same owner, or null (a deposit recorded before any invoice
+     * exists yet - phase 46).
      */
     @Transactional
     public Payment recordPayment(
             UUID tenantId, UUID appointmentId, UUID labOrderId, UUID dispenseRecordId, UUID imagingOrderId,
             UUID invoiceId, CreatePaymentRequest request, UUID recordedBy) {
+        if (invoiceId != null) {
+            requireWithinBalance(tenantId, invoiceId, request.amount());
+        }
         Payment payment = new Payment();
         payment.setTenantId(tenantId);
         payment.setAppointmentId(appointmentId);
@@ -62,5 +74,17 @@ public class PaymentService {
         Payment saved = paymentRepository.save(payment);
         journalService.postForPayment(saved);
         return saved;
+    }
+
+    /** Overpayment is a hard block (phase 46) - a running-sum check, not expressible as a plain DB CHECK, same reasoning RefundService's own cap against a payment's amount already documents. */
+    private void requireWithinBalance(UUID tenantId, UUID invoiceId, BigDecimal amount) {
+        Invoice invoice = invoiceRepository.findByIdAndTenantId(invoiceId, tenantId)
+                .orElseThrow(() -> new NoSuchElementException("Invoice not found: " + invoiceId));
+        BigDecimal alreadyPaid = paymentRepository.sumAmountByInvoiceIdAndTenantId(invoiceId, tenantId);
+        BigDecimal newTotal = alreadyPaid.add(amount);
+        if (newTotal.compareTo(invoice.getTotalAmount()) > 0) {
+            throw new PaymentExceedsInvoiceBalanceException(
+                    "Payment total " + newTotal + " would exceed this invoice's own total " + invoice.getTotalAmount());
+        }
     }
 }

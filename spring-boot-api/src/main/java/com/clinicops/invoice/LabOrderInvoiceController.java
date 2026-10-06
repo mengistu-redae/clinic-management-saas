@@ -1,6 +1,7 @@
 package com.clinicops.invoice;
 
 import com.clinicops.laborder.LabOrderRepository;
+import com.clinicops.payment.PaymentRepository;
 import com.clinicops.tenant.TenantContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,33 +26,42 @@ public class LabOrderInvoiceController {
     private final InvoiceRepository invoiceRepository;
     private final InvoiceService invoiceService;
     private final InvoicePdfService invoicePdfService;
+    private final PaymentRepository paymentRepository;
 
     public LabOrderInvoiceController(
             LabOrderRepository labOrderRepository,
             InvoiceRepository invoiceRepository,
             InvoiceService invoiceService,
-            InvoicePdfService invoicePdfService) {
+            InvoicePdfService invoicePdfService,
+            PaymentRepository paymentRepository) {
         this.labOrderRepository = labOrderRepository;
         this.invoiceRepository = invoiceRepository;
         this.invoiceService = invoiceService;
         this.invoicePdfService = invoicePdfService;
+        this.paymentRepository = paymentRepository;
     }
 
     @GetMapping("/api/lab-orders/{orderId}/invoice")
     @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PROVIDER')")
-    public Invoice invoice(@PathVariable UUID orderId) {
+    public InvoiceWithBalance invoice(@PathVariable UUID orderId) {
         UUID tenantId = TenantContext.require();
         requireOwnedLabOrder(orderId, tenantId);
-        return invoiceRepository.findByLabOrderIdAndTenantId(orderId, tenantId)
+        Invoice invoice = invoiceRepository.findByLabOrderIdAndTenantId(orderId, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("No invoice generated yet for lab order " + orderId));
+        return withBalance(invoice, tenantId);
     }
 
     @PostMapping("/api/lab-orders/{orderId}/invoice")
     @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN')")
-    public Invoice generateInvoice(@PathVariable UUID orderId) {
+    public InvoiceWithBalance generateInvoice(@PathVariable UUID orderId, @RequestBody(required = false) GenerateInvoiceRequest request) {
         UUID tenantId = TenantContext.require();
         requireOwnedLabOrder(orderId, tenantId);
-        return invoiceService.generateForLabOrder(orderId, tenantId);
+        Invoice invoice = invoiceService.generateForLabOrder(orderId, tenantId, request);
+        return withBalance(invoice, tenantId);
+    }
+
+    private InvoiceWithBalance withBalance(Invoice invoice, UUID tenantId) {
+        return InvoiceWithBalance.of(invoice, paymentRepository.sumAmountByInvoiceIdAndTenantId(invoice.getId(), tenantId));
     }
 
     /** Rendered on demand, never persisted - see InvoicePdfService's own javadoc for why. */

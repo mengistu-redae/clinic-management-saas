@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useActiveClinic } from '../auth/ActiveClinicContext.jsx';
 import { useClinicBranding } from '../api/queries.js';
 import { themeVars } from '../lib/color.js';
 import { useTheme } from './ThemeProvider.jsx';
@@ -30,7 +31,13 @@ export function BrandingProvider({ children }) {
   const { authenticated, hasRole } = useAuth();
   const isStaff = authenticated && (hasRole('clinic_admin') || hasRole('front_desk') || hasRole('provider') || hasRole('pharmacist') || hasRole('accountant'));
 
-  const { data } = useClinicBranding(isStaff);
+  // activeClinicId (phase 45) is only non-null for a staff member who
+  // belongs to more than one branch - it's part of useClinicBranding's own
+  // query key purely so switching branches triggers a refetch of THIS
+  // clinic's own branding/timezone, closing the "a signed-in staff member
+  // only ever has one clinic" assumption this used to hard-code.
+  const { activeClinicId } = useActiveClinic();
+  const { data } = useClinicBranding(isStaff, activeClinicId);
   // ThemeProvider must wrap this in main.jsx - resolvedTheme feeds
   // themeVars() below so a clinic's own brand/accent -light badge tint
   // mixes toward black (dark theme) or white (light theme) to match
@@ -38,10 +45,9 @@ export function BrandingProvider({ children }) {
   // switch, not just on branding load - see lib/color.js's deriveShades.
   const { resolvedTheme } = useTheme();
 
-  // A signed-in staff member only ever has one clinic - registers it as the
-  // ambient "current clinic" for the timezone preference's "clinic" mode
-  // (theme/TimezoneProvider.jsx), the same timezone this branding response
-  // already carries (phase 18).
+  // Registers the active clinic's own timezone as the ambient "current
+  // clinic" for the timezone preference's "clinic" mode
+  // (theme/TimezoneProvider.jsx) - re-registers on every branch switch too.
   useActiveClinicZone(isStaff ? data?.timezone : null);
 
   useEffect(() => {

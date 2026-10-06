@@ -71,9 +71,11 @@
     "closeMenu": "ማውጫ ዝጋ",
     "collapse": "የጎን ማውጫ አሳንስ",
     "expand": "የጎን ማውጫ ዘርጋ",
+    "groupClinical": "ክሊኒካል",
     "groupPharmacy": "ፋርማሲ",
     "groupFinance": "ፋይናንስ",
-    "groupInventory": "ክምችት"
+    "groupInventory": "ክምችት",
+    "switchClinic": "ክሊኒክ ቀይር"
   },
   "userMenu": {
     "account": "መለያ"
@@ -640,9 +642,30 @@
     "generate": "ደረሰኝ ይፍጠሩ",
     "downloadPdf": "ፒዲኤፍ አውርድ",
     "subtotal": "ንዑስ ድምር",
+    "discount": "ቅናሽ",
     "tax": "ግብር",
     "total": "ጠቅላላ ድምር",
-    "notGenerated": "እስካሁን ደረሰኝ አልተፈጠረም።"
+    "amountPaid": "የተከፈለ",
+    "balanceDue": "የሚቀር ቀሪ ሂሳብ",
+    "statusLabel": "ሁኔታ",
+    "notGenerated": "እስካሁን ደረሰኝ አልተፈጠረም።",
+    "discountPercentPlaceholder": "ቅናሽ %",
+    "discountReasonPlaceholder": "የቅናሽ ምክንያት (አማራጭ)",
+    "status": {
+      "unpaid": "ያልተከፈለ",
+      "partially_paid": "በከፊል የተከፈለ",
+      "paid": "ተከፍሏል"
+    }
+  },
+  "patientInvoicePay": {
+    "title": "ደረሰኝ",
+    "balanceDue": "የሚቀር ቀሪ ሂሳብ",
+    "payNow": "አሁን ክፈል",
+    "paying": "በመክፈል ላይ…",
+    "paidInFull": "ሙሉ በሙሉ ተከፍሏል",
+    "methodLabel": "የክፍያ ዘዴ",
+    "methodCard": "ካርድ",
+    "methodMobileMoney": "ሞባይል ገንዘብ"
   },
   "paymentsPanel": {
     "refund": "ተመላሽ",

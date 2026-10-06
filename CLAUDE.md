@@ -125,10 +125,15 @@ directly on `:3000`, Keycloak admin console on `:8080`, spring-boot-api on
 
 ## Domain decisions pinned so far
 
-- **Patient scope: per-clinic** (decided 2026-09-12, in plan mode before any
-  code was written). Each clinic's patients are entirely its own - a person
-  seen at two different clinics gets a separate `patients` row at each, with
-  no cross-clinic linking/dedup. `patients.tenant_id` is `NOT NULL`.
+- **Patient scope: per-clinic by default, opt-in shared across a
+  `ClinicGroup`** (decided 2026-09-12; **revised 2026-10-03**, see "Phase
+  45" below). Originally: each clinic's patients are entirely its own, no
+  cross-clinic linking/dedup, `patients.tenant_id NOT NULL`. Phase 45 added
+  an optional `clinic_group_id` on both `clinics` and `patients` - a
+  standalone clinic (still the default) behaves exactly as originally
+  decided; a clinic explicitly linked into a group shares patient identity
+  + allergies/medical-history/immunizations/consent with its sibling
+  branches.
 - **PHI-access audit: deferred** (decided 2026-09-12; **superseded 2026-09-20**,
   see "Post-phase-7 backend additions") - `com.clinicops.phiaudit` now logs
   staff access to patient/encounter/lab-order data, reviewable by
@@ -1583,190 +1588,91 @@ billing/invoice/claim, the accounting ledger entry). Frontend built as
 
 ## Phase 43: secure patient-provider messaging
 
-Built 2026-10-04, same session as phases 41/42 - the second of the three
-sequential patient-engagement phases (SMS reminders done, satisfaction
-surveys still open). Four scoping questions were put to the user before
-writing any code; three took the recommended option (a shared clinic
-inbox rather than per-provider inboxes; `provider`+`clinic_admin` staff
-access, no `front_desk`; text-only for v1, no attachments) and one did
-not - the user explicitly chose **one ongoing thread per patient**
-over the recommended per-topic-thread model. New migration
-`V39__patient_messaging.sql`.
-
-- **`com.clinicops.messaging`** (new package) - `PatientMessage`
-  (`patientId`/`senderType` ("patient"/"staff")/`senderUserId`/`body`/
-  `readAt`) is the entire thread for one patient at one clinic - the
-  pinned "one ongoing thread" decision means there's no separate thread
-  entity at all, just a flat, time-ordered list of messages scoped to
-  `(tenantId, patientId)`. `readAt` is set on the *opposite* party's own
-  messages whenever a side opens the thread - `PatientMessageRepository`
-  has two dedicated `@Modifying` bulk-update queries
-  (`markStaffMessagesReadByPatient`/`markPatientMessagesReadByStaff`)
-  rather than a per-row toggle, since "opening the thread" is the one
-  real read-marking event this app needs.
-- **A shared inbox, not per-provider** - the pinned decision means
-  `GET /api/clinic/message-inbox` (a new native-query projection,
-  `MessageInboxEntry`) lists every patient with a thread, each with its
-  own `lastMessageAt`/`unreadCount` (patient-sent, unread by staff) -
-  **any** `provider`/`clinic_admin` at the clinic can open and reply to
-  **any** patient's thread, with no ownership check at all, the direct
-  consequence of "shared inbox" over "per-provider inbox." Matches
-  `DispenseController`'s own "no ownership check within a role" shape,
-  just applied to clinical messaging instead of pharmacy.
-- **Patient-side tenant resolution follows the established
-  patient-portal pattern, not `TenantContext`** - a patient JWT carries
-  no `organization` claim, so every patient-facing endpoint
-  (`PatientMessagingController`) takes an explicit `clinicId` and
-  resolves the caller's own `Patient` row via
-  `PatientProvisioningService.resolveForPortalUser(clinicId, jwt)` (the
-  same lookup-or-auto-provision call `PatientPrescriptionService`/
-  `PatientLabRequestController` already use) - never `TenantContext
-  .require()`, which would throw for a patient token. Sending a first
-  message at a clinic silently auto-provisions a `Patient` row exactly
-  like a first booking does; no separate "register" step.
-- **`StaffMessagingController`** (`provider`+`clinic_admin` only,
-  deliberately no `front_desk`) - the user's own pinned answer,
-  reasoned the same way `Encounter`'s clinical-content exclusion of
-  `front_desk` already is: message content can carry clinical
-  substance, not pure logistics. PHI-audited (`patient_message_inbox`/
-  `patient_message_list`/`patient_message` resource types) exactly like
-  every other clinically-sensitive resource in this app.
-- **No attachments, text-only** - `SendStaffMessageRequest`/
-  `CreatePatientMessageRequest` are both a single `@NotBlank body`
-  string, nothing else; a richer message shape (attachments, read
-  receipts beyond the one bulk timestamp) is a later call if ever
-  needed, not built speculatively now.
-- **Tests**: `PatientMessagingServiceTest` (new, pure Mockito,
-  genuinely runs locally - **7/7 passing**) - send-as-patient resolves
-  the portal patient and saves correctly; listing marks staff messages
-  read as a side effect; reply-as-staff rejects an unowned patient and
-  saves correctly when owned; staff thread view marks patient messages
-  read as a side effect and rejects an unowned patient; inbox delegates
-  straight to the repository. `PatientMessagingControllerIntegrationTest`
-  (3 cases: send+list round trip with auto-provisioning, the same
-  portal login's messages at two different clinics staying fully
-  separate, a non-patient token 403s), `StaffMessagingControllerIntegrationTest`
-  (3 cases: the full inbox-\>thread-read-\>reply-\>patient-sees-it
-  round trip, `front_desk` 403s while `clinic_admin` succeeds,
-  cross-tenant reply/read 404), one new `TenantIsolationIntegrationTest`
-  case. Confirmed via a clean `mvn clean test-compile` and a full `mvn
-  test` run showing `Tests run: 562, Errors: 406, Failures: 0` (up from
-  548/399 - exactly the 14 new test methods: 7 pure-unit + 7
-  Testcontainers-blocked), 156 pure-unit tests now passing project-wide
-  (up from 149); confirmed via the surefire reports that every new
-  Testcontainers-blocked case hits the identical pre-existing `Could not
-  find a valid Docker environment` wall, not a new failure mode.
-- **Live-verified against the real running stack, through `node-bff`
-  directly (`:3000`), via the same scripted Authorization Code + PKCE
-  login technique phases 40-42 established** - as a real `demo-patient`
-  login, sent a genuine message to the Demo Clinic (auto-provisioning a
-  real `Patient` row); as `demo-provider`, confirmed the real shared
-  inbox showed "Demo Patient" with `unreadCount: 1`, opened the thread
-  (confirmed the inbox's own `unreadCount` genuinely dropped to `0` on
-  the very next fetch) and sent a real reply; back as `demo-patient`,
-  confirmed the reply appeared in the thread, and that a second read
-  correctly marked the staff reply's own `readAt` too. Confirmed
-  `demo-front-desk` gets a genuine `403` on `GET /api/clinic/
-  message-inbox` - the one non-recommended role-gate decision this
-  phase made, holding live.
-- **No frontend yet** - backend only, same "backend first" scope
-  boundary phase 42 just used. A patient-facing message thread view and
-  a staff shared-inbox page are natural next frontend items, not built
-  here.
+Built 2026-10-04, same session as phases 41/42 - the second of three
+sequential patient-engagement phases. Three of four scoping questions
+took the recommended option (a shared clinic inbox, not per-provider;
+`provider`+`clinic_admin` staff access, no `front_desk`; text-only, no
+attachments); the user explicitly chose **one ongoing thread per
+patient** over the recommended per-topic-thread model. New
+`com.clinicops.messaging` package, migration `V39__patient_messaging.sql`.
+Live-verified end to end (demo-patient send, demo-provider shared-inbox
+reply, read-receipt flip, demo-front-desk's 403). No frontend yet.
+*Full design write-up and live-verification detail: see
+`CLAUDE-history.md`.*
 
 ## Phase 44: patient satisfaction surveys
 
 Built 2026-10-04, same session as phases 41-43 - third and last of the
-three sequential patient-engagement phases, closing that whole set.
-Four scoping questions were put to the user before writing any code, all
-answered with the recommended option: auto-create on checkout, a simple
-1-5 rating + optional comment, in-portal only (no email), and a
-clinic_admin-only aggregate view. New migration
-`V40__satisfaction_surveys.sql`.
-
-- **`com.clinicops.survey`** (new package) - `SatisfactionSurvey`
-  (`appointmentId` unique, same "exactly one per visit" shape as
-  `Vitals.appointmentId`) is auto-created, pending (`rating`/`comment`/
-  `submittedAt` all null), directly from **`CheckInService.checkOut`**
-  the moment that transition is reached - not a scheduled poller like
-  phase 41's reminders, since this is tied to a single real event with
-  an obvious call site, not a time-window sweep. `createPendingForAppointment`
-  is itself a no-op when a row already exists, so it stays safe to call
-  on `checkOut`'s own pre-existing idempotent re-call too - confirmed
-  live and by a dedicated `CheckInIntegrationTest` case.
-- **Submission is genuinely one-shot** - a design call made without an
-  explicit question to the user (flagged as revisitable, same treatment
-  Allergy's own gate got in phase 8): once `submittedAt` is set, a second
-  `POST` 409s ("This survey has already been submitted") rather than
-  silently overwriting feedback already on record, reusing the plain
-  `ResponseStatusException(HttpStatus.CONFLICT, ...)` convention
-  `DispenseService`/`PurchaseOrderController` already use rather than a
-  new exception type.
-- **`PatientSatisfactionSurveyController`** (`GET`/`POST /api/my
-  -appointments/{id}/survey`, `hasRole('PATIENT')`) - ownership resolved
-  via `AppointmentRepository.findByIdAndCustomerUserIdWithSlot`, the
-  identical pattern `VisitSummaryController`'s own patient endpoint
-  already established (never `TenantContext`, patient JWTs carry no org
-  claim). Not PHI-audited - feedback data isn't clinical PHI, matching
-  `PhiAccessAuditService`'s own staff-initiated-access-only scope.
-- **`ClinicSatisfactionSurveyController`** (`GET /api/clinic/
-  satisfaction-surveys/summary`, `hasRole('CLINIC_ADMIN')` only - the
-  user's own pinned scope, deliberately not `provider` too) - a plain
-  average + count over submitted-only rows plus a newest-first recent
-  -feedback feed (20 most recent), the patient's display name resolved
-  directly in the native query's own `COALESCE(first+last, contactName,
-  'Guest')` expression, the same "embed what the caller needs" pattern
-  `AppointmentReminderScheduler`/`InvoicePdfService` already use for the
-  identical lookup - no per-provider breakdown anywhere, by design.
-- **Tests**: `SatisfactionSurveyServiceTest` (new, pure Mockito,
-  genuinely runs locally - **5/5 passing**) - create-pending both the
-  fresh-row and already-exists-no-op paths, `get` 404s when nothing
-  exists yet, submit fills in all three fields when pending, submit
-  409s on a second call. `PatientSatisfactionSurveyControllerIntegrationTest`
-  (3 cases: fetch+submit+reject-a-second-submit round trip, a non-owned
-  appointment 404s, an out-of-range rating 400s),
-  `ClinicSatisfactionSurveyControllerIntegrationTest` (2 cases: the
-  average/count/recent-feedback shape correctly excludes a still-pending
-  survey from the average, the role gate holds for both `front_desk` and
-  `provider`), one new `CheckInIntegrationTest` case (checkout
-  auto-creates exactly one pending row, a re-call doesn't duplicate it),
-  one new `TenantIsolationIntegrationTest` case (the list/aggregate-only
-  shape `qcRunsAreNotReadableFromAnotherTenant` already established -
-  clinic B's own summary never reflects clinic A's survey). Confirmed
-  via a clean `mvn clean test-compile` and a full `mvn test` run showing
-  `Tests run: 574, Errors: 413, Failures: 0` (up from 562/406 - exactly
-  the 12 new test methods: 5 pure-unit + 7 Testcontainers-blocked), 161
-  pure-unit tests now passing project-wide (up from 156); confirmed via
-  the surefire reports that every new Testcontainers-blocked case hits
-  the identical pre-existing `Could not find a valid Docker environment`
-  wall, not a new failure mode.
-- **Live-verified against the real running stack, through `node-bff`
-  directly (`:3000`), via the same scripted Authorization Code + PKCE
-  login technique phases 40-43 established** - seeded a real
-  `with_provider` appointment owned by `demo-patient`'s own portal login
-  directly in Postgres (a clean fixture, same precedent phase 25's own
-  write-up already used, rather than re-driving the full booking flow
-  for a fixture this phase didn't need to re-prove), then drove the
-  genuinely real event: as `demo-front-desk`, called the real
-  `POST .../check-out` endpoint and confirmed via a direct Postgres
-  query that a pending survey row was really auto-created. As
-  `demo-patient`: fetched the pending survey, submitted a real 5-star
-  rating with a comment, and confirmed an immediate second submission
-  attempt genuinely `409`'d. As `demo-clinic-admin`: confirmed
-  `GET /api/clinic/satisfaction-surveys/summary` showed
-  `averageRating: 5.00`, `totalSubmitted: 1`, and the recent-feedback
-  entry correctly resolved to "Demo Patient" with the real comment text.
-  Confirmed `demo-front-desk` gets a genuine `403` on that same summary
-  endpoint - the pinned clinic_admin-only scope holding live.
-- **No frontend yet** - backend only, same "backend first" scope
-  boundary phases 42/43 just used. A pending-survey prompt on the
-  patient's own appointment view and a simple summary panel on the
-  clinic-admin dashboard are natural next frontend items, not built
-  here.
+patient-engagement set, closing it. Four scoping questions, all answered
+with the recommended option: auto-create on checkout
+(`CheckInService.checkOut`), a simple 1-5 rating + optional comment,
+in-portal only, clinic_admin-only aggregate view. Submission is
+genuinely one-shot (a second `POST` 409s) - a design call made without
+an explicit question, flagged as revisitable. New `com.clinicops.survey`
+package, migration `V40__satisfaction_surveys.sql`. Live-verified end to
+end (checkout auto-creates a pending survey, a real 5-star submission,
+the second-submit 409, the clinic-admin aggregate view). No frontend
+yet. *Full design write-up and live-verification detail: see
+`CLAUDE-history.md`.*
 
 This closes the three-phase patient-engagement set (SMS reminders,
 secure messaging, satisfaction surveys) the user asked for alongside
 imaging/radiology orders - all three now built.
+
+## Phase 45: shared patient records across branches (ClinicGroup)
+
+Built 2026-10-06, at the user's direct request for cross-branch patient
+sharing - revises the phase-1 "per-clinic, no linking" decision, now
+opt-in via a new `ClinicGroup` entity. Research into the real
+`TenantContext`/`TenantContextFilter` mechanism before coding surfaced
+that Keycloak already supports multi-org membership natively (the JWT's
+`organization` claim already arrives as a list, just discarded down to
+`list.get(0)`), which let the user's own first choice ("Organization as
+the primary tenant everywhere") be replaced with a much smaller design
+once that trade-off was made concrete and re-confirmed with them: Clinic
+stays the tenant for everything operational; `ClinicGroup` carries only
+Patient identity + allergies/medical-history/immunizations/consent across
+branches. New migration `V41__clinic_groups.sql`; new
+`com.clinicops.clinicgroup` package; `TenantContextFilter` now resolves
+every org alias a caller belongs to (not just the first) and a new
+`X-Active-Clinic-Id` header (fail-closed, validated against real
+membership) picks which is active per request; a new frontend branch
+switcher in `Sidebar.jsx`. Cross-branch visit-history (encounters/vitals/
+prescriptions) is explicitly deferred to a later phase - `Encounter`/
+`Vitals` have no `patient_id` column at all, only `appointment_id`, so
+that needs a different join-path change. *Full design write-up and test
+detail: see `CLAUDE-history.md`.*
+
+## Phase 46: billing realism (discounts, balance tracking, deposits, patient self-pay)
+
+Built 2026-10-06, same session as phase 45. Closed the top-priority gap
+from the earlier "complete clinic management system" checklist review:
+no discount concept, no balance/paid-status tracking at all (`Payment`
+already allowed multiple rows per invoice with zero reconciliation), and
+no patient self-pay. Four forks confirmed with the user before coding, all
+the recommended option: a flat discount field entered at invoice
+-generation time (not a FeePolicy-style tiered table); overpayment is a
+hard block; a deposit is just an ordinary `Payment` recorded against the
+appointment before any invoice exists, retroactively linked once the
+invoice is generated (no new entity, no booking-flow change); patient
+self-pay covers appointment invoices only, full balance in one payment.
+New migration `V42__invoice_discounts.sql`. `Invoice` gained
+`discountAmount`/`discountReason` (discount applied to the subtotal
+before tax); a new `InvoiceWithBalance` projection adds `amountPaid`/
+`balanceDue`/`status` to every `*InvoiceController` GET, computed via a
+new `PaymentRepository.sumAmountByInvoiceIdAndTenantId` query - the one
+new query this whole phase hinges on. `PaymentService.recordPayment`
+blocks a payment that would exceed the invoice total
+(`PaymentExceedsInvoiceBalanceException`, mirrors
+`RefundExceedsPaymentException`'s own shape). New
+`PatientInvoicePaymentController` (`GET`/`POST .../invoice` +
+`.../invoice/pay`) reuses `VisitSummaryController`'s own ownership
+-resolution pattern (`findByIdAndCustomerUserIdWithSlot`) - no
+`TenantContext`, a patient JWT carries none. `InvoicePanel.jsx` gained a
+discount-entry form and the new balance fields; a new inline
+`PatientInvoicePayPanel` on the patient's own `AppointmentDetail.jsx`
+shows balance due and a "Pay now" action. *Full design write-up and test
+detail: see `CLAUDE-history.md`.*
 
 ## Sidebar nav arrangement review (2026-10-01)
 
@@ -1780,6 +1686,21 @@ whole). Three real, concrete problems were found and fixed, all in
 `layout/Sidebar.jsx`:
 
 *Full design write-up and live-verification detail: see `CLAUDE-history.md`.*
+
+## Sidebar nav arrangement review, continued (2026-10-04)
+
+The user asked for the same kind of real arrangement review again, after
+phases 42-44 (imaging, messaging, surveys) added more links on top of the
+2026-10-01 pass. Three more concrete, real problems found and fixed in
+`layout/Sidebar.jsx`: a 3-way `ClipboardIcon` collision in
+`clinic_admin`'s core group (split into a new foldable "Clinical" group);
+a 2-way `ClipboardIcon` collision between Journal and Budgets (a new
+`ChartIcon`); the Inventory dashboard tile's `BoxIcon` not matching every
+other role's `DashboardIcon` convention. No browser-automation tool was
+connected this session - `npm run build`/`npm test` (40/40) confirmed
+clean and every route reachable, but a real visual confirmation of the
+new grouping/icons in both themes is still owed. *Full design write-up:
+see `CLAUDE-history.md`.*
 
 ## Phase 19: clinic-admin analytics dashboard
 
@@ -2145,6 +2066,12 @@ attributed to the patient's own account for a self-service cancel).
   `CLAUDE-history.md` verbatim as part of a 2026-10-03 size-reduction pass,
   same precedent as the phases-1-17 bullet above; nothing summarized or
   dropped, just relocated. See there for the full phase-by-phase list.
+- Phases 43/44's own full write-ups (`PatientMessagingServiceTest`/
+  `StaffMessagingControllerIntegrationTest` and
+  `SatisfactionSurveyServiceTest`/`ClinicSatisfactionSurveyControllerIntegrationTest`)
+  and the "Sidebar nav arrangement review, continued" section - moved to
+  `CLAUDE-history.md` verbatim as part of a 2026-10-06 size-reduction pass,
+  same precedent as the two bullets above.
 
 ## Verified-session logs
 
@@ -2156,6 +2083,32 @@ dropped, a verbatim split. Check there for the phase-by-phase evidence log;
 append new ones there too, not here.
 ## Known gaps (don't pretend these are done)
 
+- ~~This file had crossed its own 150K-char budget again (phases 40-44's
+  own write-ups still full-length, not condensed like phases 1-39)~~
+  **closed 2026-10-06** - phases 43/44 and the "Sidebar nav arrangement
+  review, continued" section were moved verbatim to `CLAUDE-history.md`
+  and replaced with short pointers, same precedent as the
+  2026-09-28/2026-10-03 passes already recorded in the Testing section
+  below (phase 42 and the first sidebar review were already condensed).
+  Back under budget (142.6K).
+- **Phase 46 (billing realism) has no live verification yet**, same reason
+  as phase 45 below - the dev stack was down this session. `mvn test`
+  (591 run, 0 failures) and `npm run build`/`npm test` (40/40) are clean,
+  including new `InvoiceServiceTest` (discount math + validation) and
+  extended `PaymentServiceTest` (overpayment block) coverage, but the
+  actual discount-on-a-real-invoice, deposit-then-generate-invoice
+  linking, and patient self-pay flows have only been exercised by mocked
+  unit tests, not against the real running stack.
+- **Phase 45 (ClinicGroup) has no live verification yet** - the dev stack
+  was down when this phase was built; compile + full pure-unit suite
+  (583 run, 0 failures) and `npm run build`/`npm test` (40/40) are clean,
+  but the actual branch-switcher header flow, cross-branch allergy
+  visibility, and the 403 fail-closed case have only been exercised by
+  the new `TenantIsolationIntegrationTest` cases, which are themselves
+  Testcontainers-blocked on this Windows machine (CI-only, same standing
+  limitation every phase here has had since phase 1). Also still open:
+  cross-branch visibility into past encounters/vitals/prescriptions -
+  deliberately deferred, see "Phase 45" above.
 - ~~No initial `clinic_admin` user provisioning as part of clinic
   onboarding~~ **closed 2026-09-19** - see "Post-phase-7 backend
   additions". `POST /api/platform/clinics` now optionally creates a real

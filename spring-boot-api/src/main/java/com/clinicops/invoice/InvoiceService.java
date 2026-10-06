@@ -13,8 +13,11 @@ import com.clinicops.pharmacy.DispenseRecord;
 import com.clinicops.pharmacy.DispenseRecordRepository;
 import com.clinicops.pharmacy.Medication;
 import com.clinicops.pharmacy.MedicationRepository;
+import com.clinicops.payment.PaymentRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -48,6 +51,7 @@ public class InvoiceService {
     private final MedicationRepository medicationRepository;
     private final ClinicSettingsService clinicSettingsService;
     private final ImagingOrderRepository imagingOrderRepository;
+    private final PaymentRepository paymentRepository;
 
     public InvoiceService(
             InvoiceRepository invoiceRepository,
@@ -57,7 +61,8 @@ public class InvoiceService {
             DispenseRecordRepository dispenseRecordRepository,
             MedicationRepository medicationRepository,
             ClinicSettingsService clinicSettingsService,
-            ImagingOrderRepository imagingOrderRepository) {
+            ImagingOrderRepository imagingOrderRepository,
+            PaymentRepository paymentRepository) {
         this.invoiceRepository = invoiceRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentTypeRepository = appointmentTypeRepository;
@@ -66,10 +71,11 @@ public class InvoiceService {
         this.medicationRepository = medicationRepository;
         this.clinicSettingsService = clinicSettingsService;
         this.imagingOrderRepository = imagingOrderRepository;
+        this.paymentRepository = paymentRepository;
     }
 
     @Transactional
-    public Invoice generateForAppointment(UUID appointmentId, UUID tenantId) {
+    public Invoice generateForAppointment(UUID appointmentId, UUID tenantId, GenerateInvoiceRequest request) {
         if (invoiceRepository.findByAppointmentIdAndTenantId(appointmentId, tenantId).isPresent()) {
             throw new InvoiceAlreadyExistsException("An invoice already exists for appointment " + appointmentId);
         }
@@ -78,22 +84,26 @@ public class InvoiceService {
         AppointmentType type = appointmentTypeRepository.findByIdAndTenantId(appointment.getAppointmentTypeId(), tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment type not found: " + appointment.getAppointmentTypeId()));
 
-        Invoice invoice = build(tenantId, type.getPriceAmount());
+        Invoice invoice = build(tenantId, type.getPriceAmount(), request);
         invoice.setAppointmentId(appointmentId);
-        return invoiceRepository.save(invoice);
+        invoice = invoiceRepository.save(invoice);
+        paymentRepository.linkUnlinkedPaymentsForAppointment(tenantId, appointmentId, invoice.getId());
+        return invoice;
     }
 
     @Transactional
-    public Invoice generateForLabOrder(UUID labOrderId, UUID tenantId) {
+    public Invoice generateForLabOrder(UUID labOrderId, UUID tenantId, GenerateInvoiceRequest request) {
         if (invoiceRepository.findByLabOrderIdAndTenantId(labOrderId, tenantId).isPresent()) {
             throw new InvoiceAlreadyExistsException("An invoice already exists for lab order " + labOrderId);
         }
         LabOrder order = labOrderRepository.findByIdAndTenantId(labOrderId, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Lab order not found: " + labOrderId));
 
-        Invoice invoice = build(tenantId, order.getTotalCost() != null ? order.getTotalCost() : BigDecimal.ZERO);
+        Invoice invoice = build(tenantId, order.getTotalCost() != null ? order.getTotalCost() : BigDecimal.ZERO, request);
         invoice.setLabOrderId(labOrderId);
-        return invoiceRepository.save(invoice);
+        invoice = invoiceRepository.save(invoice);
+        paymentRepository.linkUnlinkedPaymentsForLabOrder(tenantId, labOrderId, invoice.getId());
+        return invoice;
     }
 
     /**
@@ -103,7 +113,7 @@ public class InvoiceService {
      * Payment, same as every other owner type).
      */
     @Transactional
-    public Invoice generateForDispenseRecord(UUID dispenseRecordId, UUID tenantId) {
+    public Invoice generateForDispenseRecord(UUID dispenseRecordId, UUID tenantId, GenerateInvoiceRequest request) {
         if (invoiceRepository.findByDispenseRecordIdAndTenantId(dispenseRecordId, tenantId).isPresent()) {
             throw new InvoiceAlreadyExistsException("An invoice already exists for dispense record " + dispenseRecordId);
         }
@@ -113,35 +123,67 @@ public class InvoiceService {
                 .orElseThrow(() -> new NoSuchElementException("Medication not found: " + record.getMedicationId()));
 
         BigDecimal subtotal = medication.getUnitPrice().multiply(BigDecimal.valueOf(record.getQuantityDispensed()));
-        Invoice invoice = build(tenantId, subtotal);
+        Invoice invoice = build(tenantId, subtotal, request);
         invoice.setDispenseRecordId(dispenseRecordId);
-        return invoiceRepository.save(invoice);
+        invoice = invoiceRepository.save(invoice);
+        paymentRepository.linkUnlinkedPaymentsForDispenseRecord(tenantId, dispenseRecordId, invoice.getId());
+        return invoice;
     }
 
     @Transactional
-    public Invoice generateForImagingOrder(UUID imagingOrderId, UUID tenantId) {
+    public Invoice generateForImagingOrder(UUID imagingOrderId, UUID tenantId, GenerateInvoiceRequest request) {
         if (invoiceRepository.findByImagingOrderIdAndTenantId(imagingOrderId, tenantId).isPresent()) {
             throw new InvoiceAlreadyExistsException("An invoice already exists for imaging order " + imagingOrderId);
         }
         ImagingOrder order = imagingOrderRepository.findByIdAndTenantId(imagingOrderId, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("Imaging order not found: " + imagingOrderId));
 
-        Invoice invoice = build(tenantId, order.getTotalCost() != null ? order.getTotalCost() : BigDecimal.ZERO);
+        Invoice invoice = build(tenantId, order.getTotalCost() != null ? order.getTotalCost() : BigDecimal.ZERO, request);
         invoice.setImagingOrderId(imagingOrderId);
-        return invoiceRepository.save(invoice);
+        invoice = invoiceRepository.save(invoice);
+        paymentRepository.linkUnlinkedPaymentsForImagingOrder(tenantId, imagingOrderId, invoice.getId());
+        return invoice;
     }
 
-    private Invoice build(UUID tenantId, BigDecimal subtotal) {
+    /**
+     * Phase 46 - discount is applied to the subtotal before tax (tax is
+     * charged on the discounted price, standard retail convention). At
+     * most one of discountPercent/discountAmount may be given - a
+     * validation annotation alone can't express that, same shape
+     * ReferralService's own internal-xor-external check already uses.
+     */
+    private Invoice build(UUID tenantId, BigDecimal subtotal, GenerateInvoiceRequest request) {
+        BigDecimal discountPercent = request != null ? request.discountPercent() : null;
+        BigDecimal requestedDiscountAmount = request != null ? request.discountAmount() : null;
+        if (discountPercent != null && requestedDiscountAmount != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Give at most one of discountPercent or discountAmount");
+        }
+
+        BigDecimal discountAmount = BigDecimal.ZERO;
+        if (discountPercent != null) {
+            discountAmount = subtotal
+                    .multiply(discountPercent)
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        } else if (requestedDiscountAmount != null) {
+            discountAmount = requestedDiscountAmount;
+        }
+        if (discountAmount.compareTo(subtotal) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "discountAmount cannot exceed the subtotal");
+        }
+
         BigDecimal taxRatePercent = clinicSettingsService.resolve(tenantId).taxRatePercent();
-        BigDecimal taxAmount = subtotal
+        BigDecimal discountedSubtotal = subtotal.subtract(discountAmount);
+        BigDecimal taxAmount = discountedSubtotal
                 .multiply(taxRatePercent)
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 
         Invoice invoice = new Invoice();
         invoice.setTenantId(tenantId);
         invoice.setSubtotalAmount(subtotal);
+        invoice.setDiscountAmount(discountAmount);
+        invoice.setDiscountReason(request != null ? request.discountReason() : null);
         invoice.setTaxAmount(taxAmount);
-        invoice.setTotalAmount(subtotal.add(taxAmount));
+        invoice.setTotalAmount(discountedSubtotal.add(taxAmount));
         return invoice;
     }
 }

@@ -181,6 +181,10 @@ public class InvoicePdfService {
             table.setWidthPercentage(60);
             table.setHorizontalAlignment(Element.ALIGN_LEFT);
             addRow(table, "Subtotal", invoice.getSubtotalAmount().toPlainString(), normalFont);
+            if (invoice.getDiscountAmount() != null && invoice.getDiscountAmount().signum() > 0) {
+                String label = invoice.getDiscountReason() != null ? "Discount (" + invoice.getDiscountReason() + ")" : "Discount";
+                addRow(table, label, "-" + invoice.getDiscountAmount().toPlainString(), normalFont);
+            }
             addRow(table, "Tax", invoice.getTaxAmount().toPlainString(), normalFont);
             addRow(table, "Total", invoice.getTotalAmount().toPlainString(), labelFont);
             document.add(table);

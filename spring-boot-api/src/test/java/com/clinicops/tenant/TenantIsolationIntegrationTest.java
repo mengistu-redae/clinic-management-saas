@@ -87,6 +87,70 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    // ---- Phase 45: ClinicGroup / cross-branch sharing - two distinct
+    // invariants to guard now that there's a hierarchy: group membership
+    // alone is never enough (real Keycloak-org membership is still
+    // required), and two clinics outside any shared group stay fully
+    // isolated exactly as before this phase. ----
+
+    @Test
+    void aPatientIsReadableFromASiblingBranchWhenTheCallerIsAMemberOfBoth() throws Exception {
+        Clinic a = clinicA("group-shared");
+        Clinic b = clinicB("group-shared");
+        createClinicGroupWith(a, b);
+        Patient patient = createPatient(a.getId(), "Group", "Shared", "+15550000101");
+
+        mockMvc.perform(get("/api/patients/" + patient.getId())
+                        .header(TenantContextFilter.ACTIVE_CLINIC_HEADER, b.getId().toString())
+                        .with(asFrontDeskOfClinics("fd-multi", List.of(a.getKeycloakOrgId(), b.getKeycloakOrgId()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(patient.getId().toString()));
+
+        com.clinicops.allergy.Allergy allergy = new com.clinicops.allergy.Allergy();
+        allergy.setTenantId(a.getId());
+        allergy.setPatientId(patient.getId());
+        allergy.setAllergen("Penicillin");
+        allergy.setSeverity("moderate");
+        allergyRepository.save(allergy);
+
+        mockMvc.perform(get("/api/patients/" + patient.getId() + "/allergies")
+                        .header(TenantContextFilter.ACTIVE_CLINIC_HEADER, b.getId().toString())
+                        .with(asFrontDeskOfClinics("fd-multi", List.of(a.getKeycloakOrgId(), b.getKeycloakOrgId()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].allergen").value("Penicillin"));
+    }
+
+    @Test
+    void sharedGroupMembershipAloneIsNotEnoughWithoutRealOrgMembershipInTheOtherBranch() throws Exception {
+        Clinic a = clinicA("group-not-member");
+        Clinic b = clinicB("group-not-member");
+        createClinicGroupWith(a, b);
+        Patient patient = createPatient(a.getId(), "Group", "NotMember", "+15550000102");
+
+        // This caller is only a member of clinic A's own org - naming clinic
+        // B via the header should fail closed (403), not silently fall back
+        // or grant access through the shared group.
+        mockMvc.perform(get("/api/patients/" + patient.getId())
+                        .header(TenantContextFilter.ACTIVE_CLINIC_HEADER, b.getId().toString())
+                        .with(asFrontDesk("fd-a-only", a.getKeycloakOrgId())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void twoClinicsOutsideAnySharedGroupStayFullyIsolated() throws Exception {
+        Clinic a = clinicA("no-group");
+        Clinic b = clinicB("no-group");
+        Patient patient = createPatient(a.getId(), "No", "Group", "+15550000103");
+
+        // Same multi-branch membership shape as the sharing test above, but
+        // neither clinic was ever linked into a ClinicGroup - membership
+        // alone must not leak a patient across unrelated clinics.
+        mockMvc.perform(get("/api/patients/" + patient.getId())
+                        .header(TenantContextFilter.ACTIVE_CLINIC_HEADER, b.getId().toString())
+                        .with(asFrontDeskOfClinics("fd-multi-nogroup", List.of(a.getKeycloakOrgId(), b.getKeycloakOrgId()))))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     void providerIsNotReadableFromAnotherTenant() throws Exception {
         Clinic a = clinicA("provider");

@@ -93,4 +93,10 @@ public class ImagingOrderPaymentController {
     public String handleGatewayError(PaymentGatewayException e) {
         return e.getMessage();
     }
+
+    @ExceptionHandler(PaymentExceedsInvoiceBalanceException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public String handleExceedsBalance(PaymentExceedsInvoiceBalanceException e) {
+        return e.getMessage();
+    }
 }

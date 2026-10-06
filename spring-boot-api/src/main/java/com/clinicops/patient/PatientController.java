@@ -38,7 +38,7 @@ public class PatientController {
     @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK')")
     public Patient createPatient(@Valid @RequestBody CreatePatientRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
-        Patient patient = patientWriter.register(tenantId, request);
+        Patient patient = patientWriter.register(tenantId, TenantContext.clinicGroupId(), request);
         phiAccessAuditService.logWrite(tenantId, jwt, "patient", patient.getId(), patient.getId(), "/api/patients");
         return patient;
     }
@@ -48,17 +48,18 @@ public class PatientController {
     @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'PROVIDER')")
     public List<Patient> patients(@RequestParam(required = false) String query, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
+        UUID clinicGroupId = TenantContext.clinicGroupId();
         phiAccessAuditService.logRead(tenantId, jwt, "patient_search", null, null, "/api/patients");
         return (query == null || query.isBlank())
-                ? patientRepository.findAllByTenantId(tenantId)
-                : patientRepository.search(tenantId, query);
+                ? patientRepository.findAllAccessible(tenantId, clinicGroupId)
+                : patientRepository.searchAccessible(tenantId, clinicGroupId, query);
     }
 
     @GetMapping("/api/patients/{id}")
     @PreAuthorize("hasAnyRole('CLINIC_ADMIN', 'FRONT_DESK', 'PROVIDER')")
     public Patient patient(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
-        Patient patient = patientRepository.findByIdAndTenantId(id, tenantId)
+        Patient patient = patientRepository.findAccessible(id, tenantId, TenantContext.clinicGroupId())
                 .orElseThrow(() -> new NoSuchElementException("Patient not found: " + id));
         phiAccessAuditService.logRead(tenantId, jwt, "patient", id, id, "/api/patients/{id}");
         return patient;

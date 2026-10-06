@@ -57,7 +57,7 @@ public class ConsentController {
         UUID tenantId = TenantContext.require();
         requireOwnedPatient(patientId, tenantId);
         phiAccessAuditService.logRead(tenantId, jwt, "consent_record_list", null, patientId, "/api/patients/{patientId}/consent-records");
-        return consentRecordRepository.findAllByPatientIdAndTenantId(patientId, tenantId);
+        return consentRecordRepository.findAllByPatientId(patientId);
     }
 
     @PostMapping("/api/patients/{patientId}/consent-records")
@@ -87,7 +87,7 @@ public class ConsentController {
     }
 
     private void requireOwnedPatient(UUID patientId, UUID tenantId) {
-        patientRepository.findByIdAndTenantId(patientId, tenantId)
+        patientRepository.findAccessible(patientId, tenantId, TenantContext.clinicGroupId())
                 .orElseThrow(() -> new NoSuchElementException("Patient not found: " + patientId));
     }
 

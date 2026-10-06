@@ -1,5 +1,7 @@
 package com.clinicops.patient;
 
+import com.clinicops.clinic.Clinic;
+import com.clinicops.clinic.ClinicRepository;
 import com.clinicops.user.AppUser;
 import com.clinicops.user.CurrentUserService;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -22,17 +24,30 @@ public class PatientProvisioningService {
     private final PatientRepository patientRepository;
     private final PatientWriter patientWriter;
     private final CurrentUserService currentUserService;
+    private final ClinicRepository clinicRepository;
 
     public PatientProvisioningService(
-            PatientRepository patientRepository, PatientWriter patientWriter, CurrentUserService currentUserService) {
+            PatientRepository patientRepository,
+            PatientWriter patientWriter,
+            CurrentUserService currentUserService,
+            ClinicRepository clinicRepository) {
         this.patientRepository = patientRepository;
         this.patientWriter = patientWriter;
         this.currentUserService = currentUserService;
+        this.clinicRepository = clinicRepository;
     }
 
+    /**
+     * A patient token carries no organization claim (see TenantContext's
+     * javadoc), so there's no ambient TenantContext.clinicGroupId() to read
+     * here - this clinic's own group, if any, is looked up directly instead.
+     * When it has one, a group-aware lookup is tried first: a patient first
+     * seen at a sibling branch is found and reused, not recreated (phase 45).
+     */
     public Patient resolveForPortalUser(UUID tenantId, Jwt jwt) {
         AppUser appUser = currentUserService.resolveAppUser(jwt);
-        return patientRepository.findByTenantIdAndAppUserId(tenantId, appUser.getId())
+        UUID clinicGroupId = clinicRepository.findById(tenantId).map(Clinic::getClinicGroupId).orElse(null);
+        return patientRepository.findAccessibleByAppUserId(tenantId, clinicGroupId, appUser.getId())
                 .orElseGet(() -> {
                     String name = jwt.getClaimAsString("name");
                     String givenName = jwt.getClaimAsString("given_name");
@@ -40,7 +55,7 @@ public class PatientProvisioningService {
                     String firstName = givenName != null ? givenName : firstWord(name, "Patient");
                     String lastName = familyName != null ? familyName : lastWord(name, "");
                     return patientWriter.autoProvision(
-                            tenantId, appUser.getId(), firstName, lastName, jwt.getClaimAsString("email"));
+                            tenantId, clinicGroupId, appUser.getId(), firstName, lastName, jwt.getClaimAsString("email"));
                 });
     }
 

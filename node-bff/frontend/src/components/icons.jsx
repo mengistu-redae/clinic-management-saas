@@ -283,3 +283,12 @@ export function ScanIcon(props) {
     </svg>
   );
 }
+
+/** Added for the 2026-10-04 sidebar arrangement review, to resolve a real Journal/Budgets ClipboardIcon collision in the accountant nav group - a simple bar chart, fitting "Budgets" better than ClipboardIcon ever did anyway. */
+export function ChartIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+    </svg>
+  );
+}

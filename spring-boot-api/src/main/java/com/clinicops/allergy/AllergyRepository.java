@@ -11,4 +11,7 @@ public interface AllergyRepository extends JpaRepository<Allergy, UUID> {
     List<Allergy> findAllByPatientIdAndTenantId(UUID patientId, UUID tenantId);
 
     Optional<Allergy> findByIdAndTenantId(UUID id, UUID tenantId);
+
+    /** Phase 45: group-aware read, used once patient ownership is already proven (own clinic or same clinic group). */
+    List<Allergy> findAllByPatientId(UUID patientId);
 }

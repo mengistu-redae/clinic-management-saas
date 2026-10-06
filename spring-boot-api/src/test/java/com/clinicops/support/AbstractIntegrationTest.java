@@ -175,6 +175,9 @@ public abstract class AbstractIntegrationTest {
     protected ClinicRepository clinicRepository;
 
     @Autowired
+    protected com.clinicops.clinicgroup.ClinicGroupRepository clinicGroupRepository;
+
+    @Autowired
     protected ProviderRepository providerRepository;
 
     @Autowired
@@ -318,6 +321,18 @@ public abstract class AbstractIntegrationTest {
         clinic.setKeycloakOrgId(keycloakOrgAlias);
         clinic.setName(name);
         return clinicRepository.save(clinic);
+    }
+
+    /** Phase 45: links an already-created clinic into a (freshly created) chain, returning the new ClinicGroup. */
+    protected com.clinicops.clinicgroup.ClinicGroup createClinicGroupWith(Clinic... clinics) {
+        com.clinicops.clinicgroup.ClinicGroup group = new com.clinicops.clinicgroup.ClinicGroup();
+        group.setName("Isolation Test Group " + UUID.randomUUID());
+        group = clinicGroupRepository.save(group);
+        for (Clinic clinic : clinics) {
+            clinic.setClinicGroupId(group.getId());
+            clinicRepository.save(clinic);
+        }
+        return group;
     }
 
     protected Provider createProvider(UUID tenantId, String fullName) {
@@ -738,6 +753,11 @@ public abstract class AbstractIntegrationTest {
         return jwtRequest(subject, "front_desk", orgAlias);
     }
 
+    /** Phase 45: a staff member who is a Keycloak-org member of more than one clinic - the real multi-branch shape Keycloak already supports natively. */
+    protected RequestPostProcessor asFrontDeskOfClinics(String subject, List<String> orgAliases) {
+        return jwtRequestMulti(subject, "front_desk", orgAliases);
+    }
+
     protected RequestPostProcessor asProvider(String subject, String orgAlias) {
         return jwtRequest(subject, "provider", orgAlias);
     }
@@ -771,6 +791,11 @@ public abstract class AbstractIntegrationTest {
     }
 
     private RequestPostProcessor jwtRequest(String subject, String realmRole, String orgAlias) {
+        return jwtRequestMulti(subject, realmRole, orgAlias != null ? List.of(orgAlias) : List.of());
+    }
+
+    /** Phase 45: the general case - a caller can be a Keycloak-org member of zero, one, or several clinics. */
+    private RequestPostProcessor jwtRequestMulti(String subject, String realmRole, List<String> orgAliases) {
         Jwt jwt = Jwt.withTokenValue("test-token")
                 .header("alg", "none")
                 .subject(subject)
@@ -779,9 +804,9 @@ public abstract class AbstractIntegrationTest {
                 .claim("name", subject)
                 // Present as an empty array rather than omitted when there's
                 // no org - that's the real "no organization" shape
-                // extractOrgId sees (see TenantContextFilter), not a missing
-                // claim.
-                .claim("organization", orgAlias != null ? List.of(orgAlias) : List.of())
+                // extractOrgAliases sees (see TenantContextFilter), not a
+                // missing claim.
+                .claim("organization", orgAliases)
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(300))
                 .build();

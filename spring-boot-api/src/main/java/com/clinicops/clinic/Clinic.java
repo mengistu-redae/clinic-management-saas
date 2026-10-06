@@ -33,6 +33,16 @@ public class Clinic {
     @Column(nullable = false)
     private String status = "active";
 
+    /**
+     * Nullable - opt-in. Set only when a platform_admin links this clinic
+     * into a chain/group for cross-branch patient-record sharing (phase 45).
+     * Null (the default for every clinic provisioned before this phase) means
+     * exactly today's behavior: fully standalone, no sharing with any other
+     * clinic.
+     */
+    @Column(name = "clinic_group_id")
+    private UUID clinicGroupId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 }

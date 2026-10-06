@@ -33,6 +33,13 @@ public class Invoice extends BaseTenantEntity {
     @Column(name = "subtotal_amount", nullable = false)
     private BigDecimal subtotalAmount;
 
+    /** Phase 46 - applied to the subtotal before tax. Zero for every invoice generated with no discount (the default). */
+    @Column(name = "discount_amount", nullable = false)
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+
+    @Column(name = "discount_reason")
+    private String discountReason;
+
     @Column(name = "tax_amount", nullable = false)
     private BigDecimal taxAmount;
 

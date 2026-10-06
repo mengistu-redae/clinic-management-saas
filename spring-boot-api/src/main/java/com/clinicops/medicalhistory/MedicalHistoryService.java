@@ -1,6 +1,7 @@
 package com.clinicops.medicalhistory;
 
 import com.clinicops.patient.PatientRepository;
+import com.clinicops.tenant.TenantContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +29,12 @@ public class MedicalHistoryService {
     @Transactional
     public MedicalHistory upsert(UUID patientId, UUID tenantId, UUID recordedByUserId, UpsertMedicalHistoryRequest request) {
         requireOwnedPatient(patientId, tenantId);
-        MedicalHistory history = medicalHistoryRepository.findByPatientIdAndTenantId(patientId, tenantId)
+        // Not ...AndTenantId - ownership is already proven via patientId
+        // above (phase 45: the history may have first been recorded at a
+        // sibling branch in the same clinic group); patientId is this
+        // entity's own primary key, so findById IS the patient-scoped
+        // lookup.
+        MedicalHistory history = medicalHistoryRepository.findById(patientId)
                 .orElseGet(() -> {
                     MedicalHistory fresh = new MedicalHistory();
                     fresh.setPatientId(patientId);
@@ -48,12 +54,12 @@ public class MedicalHistoryService {
     @Transactional(readOnly = true)
     public MedicalHistory get(UUID patientId, UUID tenantId) {
         requireOwnedPatient(patientId, tenantId);
-        return medicalHistoryRepository.findByPatientIdAndTenantId(patientId, tenantId)
+        return medicalHistoryRepository.findById(patientId)
                 .orElseThrow(() -> new NoSuchElementException("No medical history recorded yet for patient: " + patientId));
     }
 
     private void requireOwnedPatient(UUID patientId, UUID tenantId) {
-        patientRepository.findByIdAndTenantId(patientId, tenantId)
+        patientRepository.findAccessible(patientId, tenantId, TenantContext.clinicGroupId())
                 .orElseThrow(() -> new NoSuchElementException("Patient not found: " + patientId));
     }
 }

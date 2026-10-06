@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useActiveClinic } from '../auth/ActiveClinicContext.jsx';
 import { useBranding } from '../theme/BrandingProvider.jsx';
 import {
   DashboardIcon,
@@ -20,6 +21,7 @@ import {
   ShieldIcon,
   RefreshIcon,
   ScanIcon,
+  ChartIcon,
   ChevronDownIcon,
   ChevronRightIcon,
 } from '../components/icons.jsx';
@@ -68,7 +70,7 @@ function navGroups(t, hasRole) {
       id: 'inventory',
       heading: t('sidebar.groupInventory'),
       items: [
-        { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: BoxIcon },
+        { to: '/inventory', end: true, label: t('inventoryPage.dashboardTitle'), icon: DashboardIcon },
         { to: '/inventory/items', label: t('nav.inventory.items'), icon: BoxIcon },
         { to: '/inventory/suppliers', label: t('nav.inventory.suppliers'), icon: BuildingIcon },
         { to: '/inventory/purchase-orders', label: t('nav.inventory.purchaseOrders'), icon: ReceiptIcon },
@@ -82,7 +84,7 @@ function navGroups(t, hasRole) {
         { to: '/provider', end: true, label: t('nav.dashboard'), icon: DashboardIcon },
         { to: '/lab-orders', label: t('nav.provider.labOrders'), icon: FlaskIcon },
         { to: '/imaging-orders', label: t('nav.provider.imagingOrders'), icon: ScanIcon },
-        { to: '/referrals', label: t('nav.provider.referrals'), icon: ClipboardIcon },
+        { to: '/referrals', label: t('nav.provider.referrals'), icon: UsersIcon },
       ],
     });
   }
@@ -94,10 +96,23 @@ function navGroups(t, hasRole) {
         { to: '/clinic-admin/providers', label: t('nav.clinicAdmin.providers'), icon: UsersIcon },
         { to: '/clinic-admin/rooms', label: t('nav.clinicAdmin.rooms'), icon: BuildingIcon },
         { to: '/clinic-admin/appointment-types', label: t('nav.clinicAdmin.appointmentTypes'), icon: ClipboardIcon },
+      ],
+    });
+    groups.push({
+      // Split out of the core group (2026-10-04 sidebar arrangement review) -
+      // these four are curated access into other roles' own clinical modules
+      // (lab_technician/imaging_technologist/provider-clinical-judgment), the
+      // same shape Pharmacy/Finance/Inventory already get their own heading
+      // for, not plain clinic_admin config. Also resolves a real 3-way
+      // ClipboardIcon collision the old flat 9-item group had (appointment
+      // -types/qc-log/referrals all identical in the collapsed rail).
+      id: 'clinical',
+      heading: t('sidebar.groupClinical'),
+      items: [
         { to: '/lab-orders', label: t('nav.clinicAdmin.labOrders'), icon: FlaskIcon },
         { to: '/lab/qc-runs', label: t('nav.lab.qcLog'), icon: ClipboardIcon },
         { to: '/imaging-orders', label: t('nav.clinicAdmin.imagingOrders'), icon: ScanIcon },
-        { to: '/referrals', label: t('nav.clinicAdmin.referrals'), icon: ClipboardIcon },
+        { to: '/referrals', label: t('nav.clinicAdmin.referrals'), icon: UsersIcon },
       ],
     });
     groups.push({
@@ -122,7 +137,7 @@ function navGroups(t, hasRole) {
         { to: '/accountant/journal', label: t('nav.accountant.journal'), icon: ClipboardIcon },
         { to: '/accountant/employees', label: t('nav.accountant.employees'), icon: UsersIcon },
         { to: '/accountant/payroll', label: t('nav.accountant.payroll'), icon: ReceiptIcon },
-        { to: '/accountant/budgets', label: t('nav.accountant.budgets'), icon: ClipboardIcon },
+        { to: '/accountant/budgets', label: t('nav.accountant.budgets'), icon: ChartIcon },
       ],
     });
     groups.push({
@@ -161,7 +176,7 @@ function navGroups(t, hasRole) {
         { to: '/accountant/journal', label: t('nav.accountant.journal'), icon: ClipboardIcon },
         { to: '/accountant/employees', label: t('nav.accountant.employees'), icon: UsersIcon },
         { to: '/accountant/payroll', label: t('nav.accountant.payroll'), icon: ReceiptIcon },
-        { to: '/accountant/budgets', label: t('nav.accountant.budgets'), icon: ClipboardIcon },
+        { to: '/accountant/budgets', label: t('nav.accountant.budgets'), icon: ChartIcon },
       ],
     });
   }
@@ -272,6 +287,7 @@ function SidebarContent({ collapsed, onNavigate }) {
 export default function Sidebar({ collapsed, mobileOpen, onCloseMobile }) {
   const { t } = useTranslation();
   const branding = useBranding();
+  const { clinics, hasMultipleClinics, activeClinicId, setActiveClinicId } = useActiveClinic();
 
   return (
     <>
@@ -281,7 +297,14 @@ export default function Sidebar({ collapsed, mobileOpen, onCloseMobile }) {
           collapsed ? 'lg:w-16' : 'lg:w-60'
         }`}
       >
-        <BrandRow branding={branding} collapsed={collapsed} />
+        <BrandRow
+          branding={branding}
+          collapsed={collapsed}
+          clinics={clinics}
+          hasMultipleClinics={hasMultipleClinics}
+          activeClinicId={activeClinicId}
+          onSwitchClinic={setActiveClinicId}
+        />
         <SidebarContent collapsed={collapsed} />
       </aside>
 
@@ -291,7 +314,15 @@ export default function Sidebar({ collapsed, mobileOpen, onCloseMobile }) {
           <div className="fixed inset-0 bg-black/40" onClick={onCloseMobile} aria-hidden="true" />
           <aside className="relative flex w-72 max-w-[85vw] flex-col bg-surface shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <BrandRow branding={branding} collapsed={false} bare />
+              <BrandRow
+                branding={branding}
+                collapsed={false}
+                bare
+                clinics={clinics}
+                hasMultipleClinics={hasMultipleClinics}
+                activeClinicId={activeClinicId}
+                onSwitchClinic={setActiveClinicId}
+              />
               <button
                 type="button"
                 onClick={onCloseMobile}
@@ -309,12 +340,34 @@ export default function Sidebar({ collapsed, mobileOpen, onCloseMobile }) {
   );
 }
 
-function BrandRow({ branding, collapsed, bare = false }) {
+function BrandRow({ branding, collapsed, bare = false, clinics = [], hasMultipleClinics = false, activeClinicId = null, onSwitchClinic }) {
   const { t } = useTranslation();
+  const nameNode = (
+    <span className="truncate text-lg font-bold text-brand-text">{branding?.displayName || t('app.brandFallback')}</span>
+  );
   return (
     <div className={`flex items-center gap-2 ${bare ? '' : 'border-b border-slate-200 px-4 py-4'} ${collapsed ? 'justify-center px-2' : ''}`}>
       {branding?.logoUrl && <img src={branding.logoUrl} alt="" className="h-7 w-auto max-w-[8rem] object-contain" />}
-      {!collapsed && <span className="truncate text-lg font-bold text-brand-text">{branding?.displayName || t('app.brandFallback')}</span>}
+      {!collapsed && hasMultipleClinics ? (
+        <label className="relative flex min-w-0 flex-1 items-center gap-1">
+          <span className="sr-only">{t('sidebar.switchClinic')}</span>
+          <select
+            aria-label={t('sidebar.switchClinic')}
+            value={activeClinicId ?? ''}
+            onChange={(e) => onSwitchClinic?.(e.target.value)}
+            className="w-full truncate appearance-none bg-transparent text-lg font-bold text-brand-text focus:outline-none"
+          >
+            {clinics.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDownIcon className="pointer-events-none h-4 w-4 shrink-0 text-ink-muted" />
+        </label>
+      ) : (
+        !collapsed && nameNode
+      )}
     </div>
   );
 }

@@ -2,9 +2,11 @@ package com.clinicops.payment;
 
 import com.clinicops.analytics.DailyRevenue;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -39,4 +41,33 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
             ORDER BY day
             """, nativeQuery = true)
     List<DailyRevenue> findDailyRevenue(@Param("tenantId") UUID tenantId, @Param("since") Instant since);
+
+    // ---- Phase 46: billing realism ----
+
+    /** Amount already paid toward one invoice - the one query the new balance/overpayment-block logic hinges on. */
+    @Query(value = "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE invoice_id = :invoiceId AND tenant_id = :tenantId",
+            nativeQuery = true)
+    BigDecimal sumAmountByInvoiceIdAndTenantId(@Param("invoiceId") UUID invoiceId, @Param("tenantId") UUID tenantId);
+
+    /**
+     * Retroactively links a deposit (or any other payment recorded before
+     * an invoice existed) to the invoice once it's generated, so it's
+     * immediately picked up by the balance calculation above - one method
+     * per owner type, mirroring Payment's own exactly-one-owner shape.
+     */
+    @Modifying
+    @Query("UPDATE Payment p SET p.invoiceId = :invoiceId WHERE p.tenantId = :tenantId AND p.appointmentId = :appointmentId AND p.invoiceId IS NULL")
+    int linkUnlinkedPaymentsForAppointment(@Param("tenantId") UUID tenantId, @Param("appointmentId") UUID appointmentId, @Param("invoiceId") UUID invoiceId);
+
+    @Modifying
+    @Query("UPDATE Payment p SET p.invoiceId = :invoiceId WHERE p.tenantId = :tenantId AND p.labOrderId = :labOrderId AND p.invoiceId IS NULL")
+    int linkUnlinkedPaymentsForLabOrder(@Param("tenantId") UUID tenantId, @Param("labOrderId") UUID labOrderId, @Param("invoiceId") UUID invoiceId);
+
+    @Modifying
+    @Query("UPDATE Payment p SET p.invoiceId = :invoiceId WHERE p.tenantId = :tenantId AND p.dispenseRecordId = :dispenseRecordId AND p.invoiceId IS NULL")
+    int linkUnlinkedPaymentsForDispenseRecord(@Param("tenantId") UUID tenantId, @Param("dispenseRecordId") UUID dispenseRecordId, @Param("invoiceId") UUID invoiceId);
+
+    @Modifying
+    @Query("UPDATE Payment p SET p.invoiceId = :invoiceId WHERE p.tenantId = :tenantId AND p.imagingOrderId = :imagingOrderId AND p.invoiceId IS NULL")
+    int linkUnlinkedPaymentsForImagingOrder(@Param("tenantId") UUID tenantId, @Param("imagingOrderId") UUID imagingOrderId, @Param("invoiceId") UUID invoiceId);
 }

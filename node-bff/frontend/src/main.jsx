@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext.jsx';
+import { ActiveClinicProvider } from './auth/ActiveClinicContext.jsx';
 import { ThemeProvider } from './theme/ThemeProvider.jsx';
 import { LanguageProvider } from './theme/LanguageProvider.jsx';
 import { TimezoneProvider } from './theme/TimezoneProvider.jsx';
@@ -28,9 +29,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <LanguageProvider>
             <TimezoneProvider>
               <AuthProvider>
-                <BrandingProvider>
-                  <App />
-                </BrandingProvider>
+                <ActiveClinicProvider>
+                  <BrandingProvider>
+                    <App />
+                  </BrandingProvider>
+                </ActiveClinicProvider>
               </AuthProvider>
             </TimezoneProvider>
           </LanguageProvider>

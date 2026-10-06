@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useMyAppointment, useClinicsDirectory, useClinicProviders, useClinicAppointmentTypes, useCancelMyAppointment } from '../api/queries.js';
+import {
+  useMyAppointment,
+  useClinicsDirectory,
+  useClinicProviders,
+  useClinicAppointmentTypes,
+  useCancelMyAppointment,
+  useMyInvoice,
+  usePayMyInvoice,
+} from '../api/queries.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { ApiError } from '../api/client.js';
 import StatusPill from '../components/StatusPill.jsx';
@@ -11,7 +19,7 @@ import PageContainer from '../components/PageContainer.jsx';
 import Card from '../components/Card.jsx';
 import Button from '../components/Button.jsx';
 import VisitSummaryLink from '../components/VisitSummaryLink.jsx';
-import { formatDateTime } from '../lib/format.js';
+import { formatDateTime, formatCurrency } from '../lib/format.js';
 import { useActiveClinicZone } from '../theme/TimezoneProvider.jsx';
 
 /**
@@ -121,6 +129,9 @@ export default function AppointmentDetail() {
         </div>
       )}
 
+      {/* Phase 46 - a patient pays their own balance directly, no staff involvement. Renders nothing until an invoice actually exists (same 404-means-not-generated convention InvoicePanel.jsx already uses). */}
+      {authenticated && hasRole('patient') && <PatientInvoicePayPanel id={id} />}
+
       {!authenticated && (
         <div className="mt-4 rounded-lg border border-slate-200 bg-surface p-3 text-sm text-ink-muted">
           {t('appointmentDetail.bookedWithoutAccountPrefix')}{' '}
@@ -171,5 +182,69 @@ export default function AppointmentDetail() {
         </div>
       )}
     </PageContainer>
+  );
+}
+
+/**
+ * Phase 46 - shows the balance due on this appointment's invoice and a
+ * one-click "pay now" action for the full amount (no partial self-pay, no
+ * amount field - matches PatientInvoicePaymentController's own
+ * full-balance-only scope). Small enough to inline here rather than a
+ * separate shared component, unlike InvoicePanel.jsx which is genuinely
+ * shared across two staff-facing pages.
+ */
+function PatientInvoicePayPanel({ id }) {
+  const { t } = useTranslation();
+  const invoiceQuery = useMyInvoice(id);
+  const payInvoice = usePayMyInvoice(id);
+  const [method, setMethod] = useState('card');
+
+  const notGenerated = invoiceQuery.isError && invoiceQuery.error instanceof ApiError && invoiceQuery.error.status === 404;
+  if (invoiceQuery.isLoading || notGenerated) {
+    return null;
+  }
+  if (invoiceQuery.isError) {
+    return (
+      <div className="mt-4 rounded-xl border border-slate-200 bg-surface p-4">
+        <ErrorBanner message={invoiceQuery.error?.message} onRetry={invoiceQuery.refetch} />
+      </div>
+    );
+  }
+
+  const invoice = invoiceQuery.data;
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-surface p-4">
+      <h2 className="mb-2 text-sm font-semibold text-ink">{t('patientInvoicePay.title')}</h2>
+      {invoice.balanceDue > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs text-ink-muted">{t('patientInvoicePay.balanceDue')}</p>
+            <p className="font-mono text-lg font-semibold text-ink">{formatCurrency(invoice.balanceDue)}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+              aria-label={t('patientInvoicePay.methodLabel')}
+              className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+            >
+              <option value="card">{t('patientInvoicePay.methodCard')}</option>
+              <option value="mobile_money">{t('patientInvoicePay.methodMobileMoney')}</option>
+            </select>
+            <Button disabled={payInvoice.isPending} onClick={() => payInvoice.mutate({ method })}>
+              {payInvoice.isPending ? t('patientInvoicePay.paying') : t('patientInvoicePay.payNow')}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-ink-muted">{t('patientInvoicePay.paidInFull')}</p>
+      )}
+      {payInvoice.isError && (
+        <div className="mt-3">
+          <ErrorBanner message={payInvoice.error?.message} />
+        </div>
+      )}
+    </div>
   );
 }

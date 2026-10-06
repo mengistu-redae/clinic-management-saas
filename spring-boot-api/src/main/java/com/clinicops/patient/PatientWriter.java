@@ -22,9 +22,10 @@ public class PatientWriter {
     }
 
     @Transactional
-    public Patient register(UUID tenantId, CreatePatientRequest request) {
+    public Patient register(UUID tenantId, UUID clinicGroupId, CreatePatientRequest request) {
         Patient patient = new Patient();
         patient.setTenantId(tenantId);
+        patient.setClinicGroupId(clinicGroupId);
         patient.setFirstName(request.firstName());
         patient.setLastName(request.lastName());
         patient.setDateOfBirth(request.dateOfBirth());
@@ -42,9 +43,11 @@ public class PatientWriter {
      * for staff (or a future patient profile page) to fill in later.
      */
     @Transactional
-    public Patient autoProvision(UUID tenantId, UUID appUserId, String firstName, String lastName, String email) {
+    public Patient autoProvision(
+            UUID tenantId, UUID clinicGroupId, UUID appUserId, String firstName, String lastName, String email) {
         Patient patient = new Patient();
         patient.setTenantId(tenantId);
+        patient.setClinicGroupId(clinicGroupId);
         patient.setAppUserId(appUserId);
         patient.setFirstName(firstName);
         patient.setLastName(lastName);

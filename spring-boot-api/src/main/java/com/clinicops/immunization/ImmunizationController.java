@@ -60,7 +60,7 @@ public class ImmunizationController {
         UUID tenantId = TenantContext.require();
         requireOwnedPatient(patientId, tenantId);
         phiAccessAuditService.logRead(tenantId, jwt, "immunization_list", null, patientId, "/api/patients/{patientId}/immunizations");
-        return immunizationRepository.findAllByPatientIdAndTenantId(patientId, tenantId);
+        return immunizationRepository.findAllByPatientId(patientId);
     }
 
     @PostMapping("/api/patients/{patientId}/immunizations")
@@ -96,7 +96,11 @@ public class ImmunizationController {
     public Immunization updateImmunization(
             @PathVariable UUID patientId, @PathVariable UUID id, @RequestBody UpdateImmunizationRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
-        Immunization immunization = immunizationRepository.findByIdAndTenantId(id, tenantId)
+        requireOwnedPatient(patientId, tenantId);
+        // Not ...AndTenantId - ownership is already proven via patientId
+        // above (phase 45: the immunization may have been recorded at a
+        // sibling branch in the same clinic group).
+        Immunization immunization = immunizationRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Immunization not found: " + id));
         if (!immunization.getPatientId().equals(patientId)) {
             throw new NoSuchElementException("Immunization not found: " + id);
@@ -119,7 +123,7 @@ public class ImmunizationController {
     }
 
     private void requireOwnedPatient(UUID patientId, UUID tenantId) {
-        patientRepository.findByIdAndTenantId(patientId, tenantId)
+        patientRepository.findAccessible(patientId, tenantId, TenantContext.clinicGroupId())
                 .orElseThrow(() -> new NoSuchElementException("Patient not found: " + patientId));
     }
 

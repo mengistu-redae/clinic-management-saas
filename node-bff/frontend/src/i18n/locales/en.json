@@ -71,9 +71,11 @@
     "closeMenu": "Close menu",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
+    "groupClinical": "Clinical",
     "groupPharmacy": "Pharmacy",
     "groupFinance": "Finance",
-    "groupInventory": "Inventory"
+    "groupInventory": "Inventory",
+    "switchClinic": "Switch clinic"
   },
   "userMenu": {
     "account": "Account"
@@ -641,9 +643,30 @@
     "generate": "Generate invoice",
     "downloadPdf": "Download PDF",
     "subtotal": "Subtotal",
+    "discount": "Discount",
     "tax": "Tax",
     "total": "Total",
-    "notGenerated": "No invoice generated yet."
+    "amountPaid": "Paid",
+    "balanceDue": "Balance due",
+    "statusLabel": "Status",
+    "notGenerated": "No invoice generated yet.",
+    "discountPercentPlaceholder": "Discount %",
+    "discountReasonPlaceholder": "Discount reason (optional)",
+    "status": {
+      "unpaid": "Unpaid",
+      "partially_paid": "Partially paid",
+      "paid": "Paid"
+    }
+  },
+  "patientInvoicePay": {
+    "title": "Invoice",
+    "balanceDue": "Balance due",
+    "payNow": "Pay now",
+    "paying": "Paying…",
+    "paidInFull": "Paid in full",
+    "methodLabel": "Payment method",
+    "methodCard": "Card",
+    "methodMobileMoney": "Mobile money"
   },
   "paymentsPanel": {
     "refund": "Refund",

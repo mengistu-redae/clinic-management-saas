@@ -35,11 +35,21 @@ export function useMyClinic(enabled) {
   });
 }
 
-/** Staff branding - see clinicsettings.ClinicBrandingController. Consumed by theme/BrandingProvider.jsx. */
-export function useClinicBranding(enabled) {
+/** Staff branding - see clinicsettings.ClinicBrandingController. Consumed by theme/BrandingProvider.jsx. activeClinicId (phase 45) is part of the query key purely so switching branches triggers a refetch - the actual clinic selection happens server-side via the X-Active-Clinic-Id header, see api/client.js. */
+export function useClinicBranding(enabled, activeClinicId) {
   return useQuery({
-    queryKey: ['clinic', 'branding'],
+    queryKey: ['clinic', 'branding', activeClinicId ?? null],
     queryFn: () => apiGet('/api/clinic/branding'),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Phase 45: every clinic the caller is a Keycloak-org member of - see tenant.MyClinicsController. Powers the branch switcher; a one-element list for every staff login that hasn't been granted a second branch. */
+export function useMyClinics(enabled) {
+  return useQuery({
+    queryKey: ['me', 'clinics'],
+    queryFn: () => apiGet('/api/me/clinics'),
     enabled,
     staleTime: 5 * 60 * 1000,
   });
@@ -61,6 +71,25 @@ export function useMyAppointment(id) {
     queryKey: ['my-appointment', id],
     queryFn: () => apiGet(`/api/my-appointments/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+/** Phase 46 - a patient's own appointment invoice (see payment.PatientInvoicePaymentController). A 404 means "not generated yet", same convention InvoicePanel.jsx already uses. */
+export function useMyInvoice(id) {
+  return useQuery({
+    queryKey: ['my-invoice', id],
+    queryFn: () => apiGet(`/api/my-appointments/${id}/invoice`),
+    enabled: Boolean(id),
+    retry: false,
+  });
+}
+
+/** body: { method, transactionId }. Always pays the full balance due - no amount field, matching the backend's own full-balance-only scope. */
+export function usePayMyInvoice(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/my-appointments/${id}/invoice/pay`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['my-invoice', id] }),
   });
 }
 
@@ -390,10 +419,11 @@ export function useAppointmentInvoice(id) {
   });
 }
 
+/** body (phase 46): optional { discountPercent, discountAmount, discountReason } - omitted entirely keeps today's undiscounted-invoice behavior. */
 export function useGenerateAppointmentInvoice(id) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => apiPost(`/api/appointments/${id}/invoice`),
+    mutationFn: (body) => apiPost(`/api/appointments/${id}/invoice`, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['appointment-invoice', id] }),
   });
 }
@@ -907,7 +937,7 @@ export function useLabOrderInvoice(id) {
 export function useGenerateLabOrderInvoice(id) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => apiPost(`/api/lab-orders/${id}/invoice`),
+    mutationFn: (body) => apiPost(`/api/lab-orders/${id}/invoice`, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lab-order-invoice', id] }),
   });
 }
@@ -1001,7 +1031,7 @@ export function useImagingOrderInvoice(id) {
 export function useGenerateImagingOrderInvoice(id) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => apiPost(`/api/imaging-orders/${id}/invoice`),
+    mutationFn: (body) => apiPost(`/api/imaging-orders/${id}/invoice`, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['imaging-order-invoice', id] }),
   });
 }
@@ -1285,7 +1315,7 @@ export function useDispenseInvoice(dispenseRecordId) {
 export function useGenerateDispenseInvoice(dispenseRecordId) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => apiPost(`/api/dispense-records/${dispenseRecordId}/invoice`),
+    mutationFn: (body) => apiPost(`/api/dispense-records/${dispenseRecordId}/invoice`, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dispense-invoice', dispenseRecordId] }),
   });
 }

@@ -1,5 +1,6 @@
 package com.clinicops.invoice;
 
+import com.clinicops.payment.PaymentRepository;
 import com.clinicops.pharmacy.DispenseRecordRepository;
 import com.clinicops.tenant.TenantContext;
 import org.springframework.http.HttpStatus;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -30,33 +32,42 @@ public class DispenseInvoiceController {
     private final InvoiceRepository invoiceRepository;
     private final InvoiceService invoiceService;
     private final InvoicePdfService invoicePdfService;
+    private final PaymentRepository paymentRepository;
 
     public DispenseInvoiceController(
             DispenseRecordRepository dispenseRecordRepository,
             InvoiceRepository invoiceRepository,
             InvoiceService invoiceService,
-            InvoicePdfService invoicePdfService) {
+            InvoicePdfService invoicePdfService,
+            PaymentRepository paymentRepository) {
         this.dispenseRecordRepository = dispenseRecordRepository;
         this.invoiceRepository = invoiceRepository;
         this.invoiceService = invoiceService;
         this.invoicePdfService = invoicePdfService;
+        this.paymentRepository = paymentRepository;
     }
 
     @GetMapping("/api/dispense-records/{id}/invoice")
     @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PHARMACIST')")
-    public Invoice invoice(@PathVariable UUID id) {
+    public InvoiceWithBalance invoice(@PathVariable UUID id) {
         UUID tenantId = TenantContext.require();
         requireOwnedDispenseRecord(id, tenantId);
-        return invoiceRepository.findByDispenseRecordIdAndTenantId(id, tenantId)
+        Invoice invoice = invoiceRepository.findByDispenseRecordIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new NoSuchElementException("No invoice generated yet for dispense record " + id));
+        return withBalance(invoice, tenantId);
     }
 
     @PostMapping("/api/dispense-records/{id}/invoice")
     @PreAuthorize("hasAnyRole('FRONT_DESK', 'CLINIC_ADMIN', 'PHARMACIST')")
-    public Invoice generateInvoice(@PathVariable UUID id) {
+    public InvoiceWithBalance generateInvoice(@PathVariable UUID id, @RequestBody(required = false) GenerateInvoiceRequest request) {
         UUID tenantId = TenantContext.require();
         requireOwnedDispenseRecord(id, tenantId);
-        return invoiceService.generateForDispenseRecord(id, tenantId);
+        Invoice invoice = invoiceService.generateForDispenseRecord(id, tenantId, request);
+        return withBalance(invoice, tenantId);
+    }
+
+    private InvoiceWithBalance withBalance(Invoice invoice, UUID tenantId) {
+        return InvoiceWithBalance.of(invoice, paymentRepository.sumAmountByInvoiceIdAndTenantId(invoice.getId(), tenantId));
     }
 
     @GetMapping("/api/dispense-records/{id}/invoice/pdf")

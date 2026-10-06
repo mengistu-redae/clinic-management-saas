@@ -8378,3 +8378,582 @@ integration this pass, was declined). New migrations
   debit-Cash/credit-Revenue lines. Confirmed the full billing role gate
   live - `demo-provider` read-only (200 on read, 403 on generate),
   `demo-imaging-technologist` fully locked out (403).
+
+## Phase 45: shared patient records across branches (ClinicGroup)
+
+Built 2026-10-06. The user asked directly for shared patient records across
+branches of the same clinic chain - a genuine reversal of the phase-1
+decision that patients are strictly per-clinic with no cross-clinic
+linking. Scoped with direct questions before writing any code, per this
+project's own "ask before building" convention for every significant
+architecture change:
+
+- **Shared scope**: identity + full clinical history (demographics,
+  allergies, medical history, immunizations, consent, past visit history)
+  shared across branches of the same chain; scheduling/inventory/finance
+  stay branch-specific - the user's own answer, broader than the
+  recommended "identity only" option.
+- **Tenancy shape - a real mid-course correction**: the user first chose
+  "Organization becomes the primary tenant everywhere" (threading a new
+  dimension through all ~30 tenant-scoped repositories). Research into the
+  actual TenantContext/TenantContextFilter mechanism before writing any
+  code surfaced a decisive fact: Keycloak Organizations already support a
+  user belonging to multiple organizations natively, and the JWT's
+  organization claim already arrives as a list -
+  TenantContextFilter.extractOrgId (its old name) just deliberately took
+  only list.get(0), under a "one org per user" assumption that was never
+  actually forced by Keycloak, only by this app's own code. Flagged this
+  back to the user with the smaller alternative it implied (Clinic stays
+  the tenant for everything operational; a new lightweight ClinicGroup
+  concept carries only the named shared resources) - the user agreed to
+  the minimal-surface design once the trade-off was made concrete. This is
+  the project's largest-ever example of research-before-code materially
+  changing an already-decided architecture rather than just implementing
+  what was first asked.
+- **Naming**: the new grouping entity is ClinicGroup, not "Organization" -
+  that word already means something else load-bearing in this codebase
+  (one Keycloak Organization per individual Clinic, used for login/
+  membership since phase 6). Confirmed with the user before building.
+
+### Architecture
+
+- **New com.clinicops.clinicgroup package** - ClinicGroup (id/name/status/
+  createdAt, no FK of its own), ClinicGroupRepository, ClinicGroupController
+  (platform_admin only - create a group, assign/remove a clinic to/from
+  it, mirrors PlatformController's own shape). New migration
+  V41__clinic_groups.sql - clinics.clinic_group_id and
+  patients.clinic_group_id are both nullable FKs, purely opt-in; every
+  existing clinic/patient keeps exactly today's behavior until a
+  platform_admin explicitly links a clinic into a group.
+  patients.clinic_group_id is a denormalized copy taken at creation time
+  from the creating clinic's own group - same "copy, don't join" precedent
+  Encounter already set for providerId/tenantId - not kept live-in-sync if
+  a clinic's group assignment changes later.
+- **Multi-branch staff access, by un-discarding what Keycloak already
+  sends**: TenantContextFilter.extractOrgId (renamed extractOrgAliases)
+  now resolves every alias in the organization claim list to its Clinic
+  row - the caller's full "accessible clinics" set, not just the first
+  one. A new request header, X-Active-Clinic-Id, names which accessible
+  clinic is active for a given request; TenantContextFilter validates the
+  header's clinic id is actually in the resolved set (fail closed, 403, if
+  not - the header is fully client-controlled) and defaults to the
+  first/only accessible clinic when absent, so every existing
+  single-branch login and every API caller that doesn't know about the
+  header keeps working identically to before this phase. TenantContext
+  grew from a bare ThreadLocal<UUID> into a ThreadLocal<Holder> record
+  carrying tenantId (unchanged contract - require() still throws/returns
+  exactly as before), clinicGroupId() (new, nullable), and
+  accessibleClinicIds() (new) - every one of the ~30 pre-existing
+  tenant-scoped repositories and all 25 TenantIsolationIntegrationTest
+  cases needed zero changes. GET /api/me/clinics (MyClinicsController,
+  any staff role) lists the caller's accessible clinics for the frontend
+  switcher.
+- **Granting cross-branch membership reuses, not reinvents, Keycloak
+  capability**: ClinicStaffMembershipController
+  (POST /api/clinics/{clinicId}/staff-memberships, platform_admin/
+  clinic_admin) looks an already-logged-in-once account up by email
+  (AppUserRepository.findFirstByEmail - the exact same precedent
+  ProviderController.linkLogin set in phase 13) and calls the
+  already-existing KeycloakOrganizationClient.addMember. The one new
+  piece of plumbing: KeycloakOrganizationClient.findOrganizationIdByAlias
+  (alias -> Keycloak-internal org id, since addMember is keyed by the
+  internal id while clinics.keycloak_org_id stores only the alias) -
+  mirrors create-demo-clinic.sh's own idempotent lookup-by-alias fallback
+  (list every org, filter client-side; ?search= on this endpoint was
+  already flagged unreliable). A clinic_admin may only grant membership in
+  a clinic they're themselves already a member of; platform_admin has no
+  such restriction.
+- **Cross-branch Patient identity**: PatientRepository gained group-aware
+  accessors (findAccessible, findAllAccessible, searchAccessible,
+  findAccessibleByAppUserId) alongside (never replacing) the existing
+  tenant-only ones - each matches tenantId = :tenantId OR (clinicGroupId
+  IS NOT NULL AND clinicGroupId = :clinicGroupId), so a clinic with no
+  group simply never matches the second half and behaves exactly as
+  before. PatientController and PatientWriter.register/autoProvision were
+  updated to pass TenantContext.clinicGroupId() through.
+  PatientProvisioningService.resolveForPortalUser (patient tokens carry no
+  organization claim, so there's no ambient TenantContext to read here)
+  looks the active clinic's own group up directly via ClinicRepository and
+  tries the group-aware lookup before falling back to auto-provisioning -
+  a patient first seen at a sibling branch is found and reused, not
+  recreated.
+- **The real leverage point - one-line fixes across four controllers**:
+  AllergyController, ConsentController, ImmunizationController, and
+  MedicalHistoryService each already centralized patient-ownership
+  checking in one requireOwnedPatient(patientId, tenantId) helper
+  (confirmed identical across all four before writing anything). None of
+  their own tables needed a schema change - they already join via
+  patient_id, which becomes the correct group-wide key the moment Patient
+  resolution itself is group-aware. Two further corrections made while
+  implementing, beyond the plan's own original sketch: the actual
+  LIST/GET repository calls in each controller (not just the ownership
+  gate) were also still filtering by the viewing branch's own tenantId
+  (e.g. findAllByPatientIdAndTenantId), which would have silently
+  returned an empty list for a record created at a sibling branch even
+  after the ownership check passed - fixed by adding a patient-id-only
+  accessor to each repository (findAllByPatientId) and switching the read
+  path to it once ownership is already proven. The by-id update paths
+  (AllergyController.updateAllergy, ImmunizationController.updateImmunization)
+  had the identical bug (findByIdAndTenantId before the patient-id match
+  check) - fixed the same way, dropping the tenant filter since the
+  subsequent patientId.equals(...) check (already present in both) is the
+  real ownership proof once the patient itself is group-resolved.
+  MedicalHistory's own PK is patientId itself, so no new repository
+  method was even needed - findById(patientId) already is the
+  patient-scoped lookup; only the call sites changed.
+- **Explicitly out of scope, named not dropped**: cross-branch visibility
+  into past encounters/vitals/prescriptions/visit-summary history.
+  Encounter/Vitals have no patient_id column at all (only appointment_id),
+  and Appointment itself stays clinic-scoped (scheduling wasn't named as
+  shared) - making visit history cross-branch needs the join in
+  VisitSummaryController/wherever a patient's encounter list is read
+  widened from Appointment.tenantId to Appointment.patientId
+  (group-resolved), a distinct piece of work deliberately sequenced as its
+  own later phase, matching this project's own precedent for splitting a
+  big arc (pharmacy/accounting/finance; the 8-phase lab module).
+  InsurancePolicyController/PatientMessagingService also have their own
+  requireOwnedPatient-style helper but were not named in the shared-scope
+  answer - left clinic-scoped as-is, deliberately.
+- **Frontend - branch switcher**: useMyClinics() (new hook,
+  api/queries.js) wraps GET /api/me/clinics. A new ActiveClinicProvider
+  (auth/ActiveClinicContext.jsx, sits inside AuthProvider and outside
+  BrandingProvider in main.jsx's provider tree) holds activeClinicId in
+  localStorage (clinicops.activeClinicId, same defensive try/catch shape
+  ThemeProvider already uses) and resolves to null - no header sent at
+  all - for every caller with zero or one accessible clinic, matching
+  today's exact default. api/client.js's apiFetch (the one existing
+  chokepoint every API call already passes through) gained a single new
+  line attaching X-Active-Clinic-Id when a value is set via the new
+  module-level setActiveClinicId - confirmed node-bff's forwardToApi
+  spreads and forwards all incoming headers unchanged except host/cookie/
+  content-length, so this needed zero node-bff changes to reach
+  spring-boot-api. Sidebar.jsx's BrandRow (used identically at the desktop
+  rail and the mobile drawer) renders a plain row exactly as before for
+  every single-branch login, and becomes a native <select> branch switcher
+  only when useMyClinics() returns more than one clinic - matching this
+  codebase's own established <select>-based dropdown convention rather
+  than introducing a new popover component. useClinicBranding gained
+  activeClinicId in its query key purely so switching branches triggers a
+  refetch, closing BrandingProvider.jsx's own "a signed-in staff member
+  only ever has one clinic" comment.
+
+### Tests
+
+- TenantContextFilterTest rewritten for the renamed extractOrgAliases (now
+  returns every alias, not just the first) plus new cases for the
+  header-validation branch: no header defaults to the first accessible
+  clinic, a header naming a real member clinic other than the first is
+  honored, a header naming a non-member clinic fails closed with 403.
+  10/10 passing locally.
+- PatientProvisioningServiceTest (new, pure Mockito, 3/3 passing) - a
+  standalone clinic with no group auto-provisions exactly as before this
+  phase; a grouped clinic finds a patient first seen at a sibling branch
+  instead of recreating one; a grouped clinic with no existing patient
+  anywhere in the group auto-provisions with the group id set.
+- TenantIsolationIntegrationTest gained 3 new cases (Testcontainers,
+  CI-only per this project's standing Windows-npipe limitation): a patient
+  (and an allergy on them) created at branch A is readable from branch B
+  when both share a ClinicGroup and the caller is a genuine Keycloak-org
+  member of both; the same patient is not readable from branch B when the
+  caller is only a member of branch A (proves shared-group membership
+  alone isn't enough - real org membership is still required, the
+  fail-closed header check holds even inside a shared group); two clinics
+  outside any shared group stay fully isolated even when the caller is a
+  genuine member of both (proves ClinicGroup linkage, not mere membership,
+  gates the sharing). AbstractIntegrationTest gained
+  asFrontDeskOfClinics(subject, List<String> orgAliases) (the general
+  multi-org JWT case jwtRequest now delegates to) and
+  createClinicGroupWith(Clinic...).
+- Confirmed via a clean mvn clean test-compile and a full mvn test run
+  showing Tests run: 583, Failures: 0, Errors: 416 - the 416 errors are
+  every one of them the identical pre-existing "Could not find a valid
+  Docker environment" / NoClassDefFound: AbstractIntegrationTest wall this
+  project has hit on every Windows dev session since phase 1, not a new
+  failure mode; confirmed via grep that zero non-Testcontainers failures
+  exist. Frontend: npm run build clean, npm test 40/40 passing, unchanged
+  count - no existing frontend test exercises Sidebar/BrandingProvider
+  directly, so none needed updating for the new ActiveClinicProvider
+  dependency.
+- **Live verification against the real running stack - not done this
+  session.** The dev stack (docker compose ps) was confirmed fully stopped
+  at the time this phase was built, and spinning it up fresh (Keycloak
+  realm import, the two-org + cross-membership demo setup
+  create-demo-clinic.sh was extended with) was deliberately not attempted
+  without checking with the user first, given this machine's own
+  documented history of slow first-boot/port-conflict friction with this
+  exact stack. Flagged here rather than claimed - a real scripted-curl
+  walkthrough (branch switcher header, cross-branch allergy visibility,
+  the 403 fail-closed case) is still owed the next time the stack is
+  actually brought up.
+
+## Phase 46: billing realism (discounts, balance tracking, deposits, patient self-pay)
+
+Built 2026-10-06, same session as phase 45. Closed the top-priority gap
+from the user's earlier "complete clinic management system" checklist
+review: no discount concept anywhere, no patient self-pay (every
+`Payment` write was staff-role-gated), and - the decisive finding from
+this round's research - no balance/paid-status concept existed at all.
+`Payment` already allowed multiple rows per invoice with zero
+reconciliation (`PaymentService.recordPayment` just inserted a fresh row
+every call, no check against any prior payment or invoice total), and
+`Invoice` had no status column. Four forks were confirmed with the user
+before any code was written, matching this project's own "ask before
+building" convention - all four answered with the recommended option.
+
+- **Confirmed directly in code before planning, not assumed**:
+  `AppointmentPaymentController.resolveInvoiceId` already treated a null
+  `invoiceId` as valid - a staff member could already record a payment
+  against an appointment with no invoice yet. So the "deposit" half of
+  this phase turned out almost free: the only real gap was that such a
+  payment's `invoiceId` never got linked once the invoice was later
+  generated, making it invisible to any future balance calculation.
+- **New migration `V42__invoice_discounts.sql`** - `invoices` gained
+  `discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0` and
+  `discount_reason VARCHAR(255)`, both additive (every existing invoice
+  keeps its exact current `totalAmount`). Discount is applied to the
+  subtotal **before** tax (standard retail convention - tax is charged
+  on the discounted price): `taxAmount = (subtotal - discountAmount) *
+  taxRatePercent / 100`, `totalAmount = subtotal - discountAmount +
+  taxAmount`.
+- **`GenerateInvoiceRequest(discountPercent, discountAmount,
+  discountReason)`** - all nullable, every existing caller posting no
+  body keeps generating an undiscounted invoice exactly as before. At
+  most one of `discountPercent`/`discountAmount` may be given - enforced
+  in `InvoiceService.build` (a `ResponseStatusException` 400, since a
+  validation annotation alone can't express "at most one of these two"),
+  the same shape `ReferralService`'s own internal-xor-external check
+  already uses. The original percent, when given, is resolved to a
+  concrete currency amount and not separately persisted - matches this
+  project's "keep minimal" bias (nothing else here persists both a rate
+  and its resolved amount). A `discountAmount` larger than the subtotal
+  is rejected (400) rather than producing a negative total.
+- **Balance tracking - the real new piece**: `PaymentRepository` gained
+  `sumAmountByInvoiceIdAndTenantId` (native `COALESCE(SUM(amount),0)`,
+  mirrors `findDailyRevenue`'s own native-query style) - the one query
+  this whole phase hinges on. A new `InvoiceWithBalance` record (flat,
+  mirrors the existing `AppointmentWithSlotView`/`LabOrderWithTests`
+  projection convention rather than a nested wrapper, so
+  `InvoicePanel.jsx`'s existing `invoice.totalAmount`-style field access
+  keeps working unchanged) adds `amountPaid`/`balanceDue`/`status`
+  (`"unpaid"`/`"partially_paid"`/`"paid"`, derived - never a persisted,
+  synchronizable column). Every `*InvoiceController` GET-by-owner
+  endpoint, and the POST generate endpoint's own response, now return
+  `InvoiceWithBalance` instead of bare `Invoice` - the one response-shape
+  change this phase makes, confirmed additive by reading `InvoicePanel.jsx`
+  first (only `subtotalAmount`/`taxAmount`/`totalAmount` were read there).
+- **Overpayment is a hard block**: `PaymentService.recordPayment` gained
+  an `InvoiceRepository` dependency; when `invoiceId != null` it sums
+  existing payments and rejects (new `PaymentExceedsInvoiceBalanceException`,
+  mapped to 400 in every `*PaymentController` exactly like the existing
+  `RefundExceedsPaymentException` already is in `PaymentController.java`)
+  if the new total would exceed the invoice's own `totalAmount`. A
+  deposit (`invoiceId == null`) has nothing to check against yet and is
+  unaffected.
+- **Deposits: link on generate, not a new entity** - `PaymentRepository`
+  gained four `@Modifying @Query` methods (one per owner type -
+  appointment/labOrder/dispenseRecord/imagingOrder), each retroactively
+  setting `invoiceId` on any payment for that owner still carrying a null
+  one. Every `InvoiceService.generateFor*` method calls its own one right
+  after `invoiceRepository.save(invoice)` - a deposit (or any payment
+  recorded before an invoice existed) is immediately picked up by the
+  new balance calculation the moment the invoice is generated.
+- **`com.clinicops.payment.PatientInvoicePaymentController`** (new,
+  `hasRole('PATIENT')` only) - `GET`/`POST /api/my-appointments/{id}/invoice`
+  (+ `/pay`). Ownership resolved via the already-existing
+  `AppointmentRepository.findByIdAndCustomerUserIdWithSlot`, the exact
+  method `VisitSummaryController.myVisitSummaryPdf` already uses for this
+  identical shape - never `TenantContext`, a patient JWT carries none.
+  The pay endpoint takes no `amount` field at all
+  (`PatientPayInvoiceRequest(method, transactionId)`) since the chosen
+  scope is full-balance-only - the service computes `amount = balanceDue`
+  itself and calls `PaymentService.recordPayment` directly, rejecting
+  with a plain 409 ("Nothing due on this invoice") when there's nothing
+  left to pay, reusing the `ResponseStatusException` convention already
+  used elsewhere (`DispenseService`/`PurchaseOrderController`) rather
+  than a new exception type for a one-off check.
+- **`InvoicePdfService`** gained a discount line (only rendered when
+  `discountAmount > 0`, with the reason in parentheses when given) -
+  not explicitly planned but a natural completion of making the discount
+  real, not just an API-level number nobody ever sees on the actual bill.
+- **Frontend**: `InvoicePanel.jsx` (the shared component already mounted
+  on `front-desk/AppointmentDetail.jsx` and `lab-orders/LabOrderDetail.jsx`)
+  gained a small inline discount-entry form (percent + reason, shown only
+  to `canGenerate` roles before an invoice exists) and renders the new
+  discount/amountPaid/balanceDue/status fields once one exists - all four
+  `useGenerate*Invoice` mutation hooks in `api/queries.js` now accept an
+  optional body, passed straight through to `apiPost`, with every
+  existing no-args call site unaffected. A new inline
+  `PatientInvoicePayPanel` on the patient-facing `pages/AppointmentDetail.jsx`
+  (small enough to inline rather than a new shared component, unlike
+  `InvoicePanel.jsx` which is genuinely shared across two staff pages)
+  shows the balance due and a "Pay now" action when one exists, renders
+  nothing when no invoice has been generated yet (same 404-means-not
+  -generated convention `InvoicePanel.jsx` already established), and
+  flips to "paid in full" automatically once the pay mutation's own query
+  invalidation refetches a zero balance - no manual success-state
+  bookkeeping needed.
+
+### Tests
+
+- Extended the already-existing `PaymentServiceTest` (had to add
+  `InvoiceRepository` stubbing to its two pre-existing non-null-invoiceId
+  cases, since the new overpayment check now runs on every payment with
+  an invoiceId) with 2 new cases: a payment that would exceed the
+  invoice's own total is rejected before ever reaching the gateway
+  (`verify(gatewayClient, never()).charge(...)`), and a payment that
+  exactly clears the remaining balance succeeds. **5/5 passing.**
+- New `InvoiceServiceTest` (pure Mockito, **6/6 passing**): no-discount
+  behavior matches exactly what `generateForAppointment` produced before
+  this phase; a percent discount is applied to the subtotal before tax
+  (asserts the tax is computed on the discounted amount, not the
+  original); a flat discount amount is honored directly; giving both
+  `discountPercent` and `discountAmount` is rejected; a discount larger
+  than the subtotal is rejected; generating an invoice calls the new
+  owner-specific link method with the newly-created invoice's own id.
+- Deliberately **no new `TenantIsolationIntegrationTest` case** for
+  `PatientInvoicePaymentController` - its own `GET`/`POST
+  /api/my-appointments/{id}/invoice` endpoints resolve entirely from the
+  caller's own token via `findByIdAndCustomerUserIdWithSlot`, the exact
+  "my-appointments family" shape that file's own doc comment already
+  lists as deliberately excluded (no `{id}`-naming-another-tenant's-row
+  vector exists for this class of endpoint).
+- Confirmed via a clean `mvn clean test-compile` and a full `mvn test`
+  run showing `Tests run: 591, Failures: 0, Errors: 416` (up from
+  583/416 in phase 45 - exactly the 8 new test methods: 2 + 6, no change
+  to the Testcontainers-blocked count), 175 pure-unit tests now passing
+  project-wide (up from 167). Frontend: `npm run build` clean, `npm test`
+  **40/40** passing, unchanged count - no existing frontend test
+  exercises `InvoicePanel.jsx`/`AppointmentDetail.jsx` directly, so none
+  needed updating.
+- **Live verification against the real running stack - not done this
+  session**, same reason as phase 45 immediately above (the dev stack was
+  confirmed down, and booting it fresh was deliberately not attempted
+  without checking with the user first). A real scripted-curl walkthrough
+  (generate a discounted invoice, record a deposit before generating an
+  invoice and confirm it's linked afterward, attempt an overpayment and
+  confirm the 400, pay off a balance as a real `demo-patient` login) is
+  still owed the next time the stack is actually brought up.
+
+## Phase 43: secure patient-provider messaging
+
+Built 2026-10-04, same session as phases 41/42 - the second of the three
+sequential patient-engagement phases (SMS reminders done, satisfaction
+surveys still open). Four scoping questions were put to the user before
+writing any code; three took the recommended option (a shared clinic
+inbox rather than per-provider inboxes; `provider`+`clinic_admin` staff
+access, no `front_desk`; text-only for v1, no attachments) and one did
+not - the user explicitly chose **one ongoing thread per patient**
+over the recommended per-topic-thread model. New migration
+`V39__patient_messaging.sql`.
+
+- **`com.clinicops.messaging`** (new package) - `PatientMessage`
+  (`patientId`/`senderType` ("patient"/"staff")/`senderUserId`/`body`/
+  `readAt`) is the entire thread for one patient at one clinic - the
+  pinned "one ongoing thread" decision means there's no separate thread
+  entity at all, just a flat, time-ordered list of messages scoped to
+  `(tenantId, patientId)`. `readAt` is set on the *opposite* party's own
+  messages whenever a side opens the thread - `PatientMessageRepository`
+  has two dedicated `@Modifying` bulk-update queries
+  (`markStaffMessagesReadByPatient`/`markPatientMessagesReadByStaff`)
+  rather than a per-row toggle, since "opening the thread" is the one
+  real read-marking event this app needs.
+- **A shared inbox, not per-provider** - the pinned decision means
+  `GET /api/clinic/message-inbox` (a new native-query projection,
+  `MessageInboxEntry`) lists every patient with a thread, each with its
+  own `lastMessageAt`/`unreadCount` (patient-sent, unread by staff) -
+  **any** `provider`/`clinic_admin` at the clinic can open and reply to
+  **any** patient's thread, with no ownership check at all, the direct
+  consequence of "shared inbox" over "per-provider inbox." Matches
+  `DispenseController`'s own "no ownership check within a role" shape,
+  just applied to clinical messaging instead of pharmacy.
+- **Patient-side tenant resolution follows the established
+  patient-portal pattern, not `TenantContext`** - a patient JWT carries
+  no `organization` claim, so every patient-facing endpoint
+  (`PatientMessagingController`) takes an explicit `clinicId` and
+  resolves the caller's own `Patient` row via
+  `PatientProvisioningService.resolveForPortalUser(clinicId, jwt)` (the
+  same lookup-or-auto-provision call `PatientPrescriptionService`/
+  `PatientLabRequestController` already use) - never `TenantContext
+  .require()`, which would throw for a patient token. Sending a first
+  message at a clinic silently auto-provisions a `Patient` row exactly
+  like a first booking does; no separate "register" step.
+- **`StaffMessagingController`** (`provider`+`clinic_admin` only,
+  deliberately no `front_desk`) - the user's own pinned answer,
+  reasoned the same way `Encounter`'s clinical-content exclusion of
+  `front_desk` already is: message content can carry clinical
+  substance, not pure logistics. PHI-audited (`patient_message_inbox`/
+  `patient_message_list`/`patient_message` resource types) exactly like
+  every other clinically-sensitive resource in this app.
+- **No attachments, text-only** - `SendStaffMessageRequest`/
+  `CreatePatientMessageRequest` are both a single `@NotBlank body`
+  string, nothing else; a richer message shape (attachments, read
+  receipts beyond the one bulk timestamp) is a later call if ever
+  needed, not built speculatively now.
+- **Tests**: `PatientMessagingServiceTest` (new, pure Mockito,
+  genuinely runs locally - **7/7 passing**) - send-as-patient resolves
+  the portal patient and saves correctly; listing marks staff messages
+  read as a side effect; reply-as-staff rejects an unowned patient and
+  saves correctly when owned; staff thread view marks patient messages
+  read as a side effect and rejects an unowned patient; inbox delegates
+  straight to the repository. `PatientMessagingControllerIntegrationTest`
+  (3 cases: send+list round trip with auto-provisioning, the same
+  portal login's messages at two different clinics staying fully
+  separate, a non-patient token 403s), `StaffMessagingControllerIntegrationTest`
+  (3 cases: the full inbox->thread-read->reply->patient-sees-it
+  round trip, `front_desk` 403s while `clinic_admin` succeeds,
+  cross-tenant reply/read 404), one new `TenantIsolationIntegrationTest`
+  case. Confirmed via a clean `mvn clean test-compile` and a full `mvn
+  test` run showing `Tests run: 562, Errors: 406, Failures: 0` (up from
+  548/399 - exactly the 14 new test methods: 7 pure-unit + 7
+  Testcontainers-blocked), 156 pure-unit tests now passing project-wide
+  (up from 149); confirmed via the surefire reports that every new
+  Testcontainers-blocked case hits the identical pre-existing `Could not
+  find a valid Docker environment` wall, not a new failure mode.
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`), via the same scripted Authorization Code + PKCE
+  login technique phases 40-42 established** - as a real `demo-patient`
+  login, sent a genuine message to the Demo Clinic (auto-provisioning a
+  real `Patient` row); as `demo-provider`, confirmed the real shared
+  inbox showed "Demo Patient" with `unreadCount: 1`, opened the thread
+  (confirmed the inbox's own `unreadCount` genuinely dropped to `0` on
+  the very next fetch) and sent a real reply; back as `demo-patient`,
+  confirmed the reply appeared in the thread, and that a second read
+  correctly marked the staff reply's own `readAt` too. Confirmed
+  `demo-front-desk` gets a genuine `403` on `GET /api/clinic/
+  message-inbox` - the one non-recommended role-gate decision this
+  phase made, holding live.
+- **No frontend yet** - backend only, same "backend first" scope
+  boundary phase 42 just used. A patient-facing message thread view and
+  a staff shared-inbox page are natural next frontend items, not built
+  here.
+
+## Phase 44: patient satisfaction surveys
+
+Built 2026-10-04, same session as phases 41-43 - third and last of the
+three sequential patient-engagement phases, closing that whole set.
+Four scoping questions were put to the user before writing any code, all
+answered with the recommended option: auto-create on checkout, a simple
+1-5 rating + optional comment, in-portal only (no email), and a
+clinic_admin-only aggregate view. New migration
+`V40__satisfaction_surveys.sql`.
+
+- **`com.clinicops.survey`** (new package) - `SatisfactionSurvey`
+  (`appointmentId` unique, same "exactly one per visit" shape as
+  `Vitals.appointmentId`) is auto-created, pending (`rating`/`comment`/
+  `submittedAt` all null), directly from **`CheckInService.checkOut`**
+  the moment that transition is reached - not a scheduled poller like
+  phase 41's reminders, since this is tied to a single real event with
+  an obvious call site, not a time-window sweep. `createPendingForAppointment`
+  is itself a no-op when a row already exists, so it stays safe to call
+  on `checkOut`'s own pre-existing idempotent re-call too - confirmed
+  live and by a dedicated `CheckInIntegrationTest` case.
+- **Submission is genuinely one-shot** - a design call made without an
+  explicit question to the user (flagged as revisitable, same treatment
+  Allergy's own gate got in phase 8): once `submittedAt` is set, a second
+  `POST` 409s ("This survey has already been submitted") rather than
+  silently overwriting feedback already on record, reusing the plain
+  `ResponseStatusException(HttpStatus.CONFLICT, ...)` convention
+  `DispenseService`/`PurchaseOrderController` already use rather than a
+  new exception type.
+- **`PatientSatisfactionSurveyController`** (`GET`/`POST /api/my
+  -appointments/{id}/survey`, `hasRole('PATIENT')`) - ownership resolved
+  via `AppointmentRepository.findByIdAndCustomerUserIdWithSlot`, the
+  identical pattern `VisitSummaryController`'s own patient endpoint
+  already established (never `TenantContext`, patient JWTs carry no org
+  claim). Not PHI-audited - feedback data isn't clinical PHI, matching
+  `PhiAccessAuditService`'s own staff-initiated-access-only scope.
+- **`ClinicSatisfactionSurveyController`** (`GET /api/clinic/
+  satisfaction-surveys/summary`, `hasRole('CLINIC_ADMIN')` only - the
+  user's own pinned scope, deliberately not `provider` too) - a plain
+  average + count over submitted-only rows plus a newest-first recent
+  -feedback feed (20 most recent), the patient's display name resolved
+  directly in the native query's own `COALESCE(first+last, contactName,
+  'Guest')` expression, the same "embed what the caller needs" pattern
+  `AppointmentReminderScheduler`/`InvoicePdfService` already use for the
+  identical lookup - no per-provider breakdown anywhere, by design.
+- **Tests**: `SatisfactionSurveyServiceTest` (new, pure Mockito,
+  genuinely runs locally - **5/5 passing**) - create-pending both the
+  fresh-row and already-exists-no-op paths, `get` 404s when nothing
+  exists yet, submit fills in all three fields when pending, submit
+  409s on a second call. `PatientSatisfactionSurveyControllerIntegrationTest`
+  (3 cases: fetch+submit+reject-a-second-submit round trip, a non-owned
+  appointment 404s, an out-of-range rating 400s),
+  `ClinicSatisfactionSurveyControllerIntegrationTest` (2 cases: the
+  average/count/recent-feedback shape correctly excludes a still-pending
+  survey from the average, the role gate holds for both `front_desk` and
+  `provider`), one new `CheckInIntegrationTest` case (checkout
+  auto-creates exactly one pending row, a re-call doesn't duplicate it),
+  one new `TenantIsolationIntegrationTest` case (the list/aggregate-only
+  shape `qcRunsAreNotReadableFromAnotherTenant` already established -
+  clinic B's own summary never reflects clinic A's survey). Confirmed
+  via a clean `mvn clean test-compile` and a full `mvn test` run showing
+  `Tests run: 574, Errors: 413, Failures: 0` (up from 562/406 - exactly
+  the 12 new test methods: 5 pure-unit + 7 Testcontainers-blocked), 161
+  pure-unit tests now passing project-wide (up from 156); confirmed via
+  the surefire reports that every new Testcontainers-blocked case hits
+  the identical pre-existing `Could not find a valid Docker environment`
+  wall, not a new failure mode.
+- **Live-verified against the real running stack, through `node-bff`
+  directly (`:3000`), via the same scripted Authorization Code + PKCE
+  login technique phases 40-43 established** - seeded a real
+  `with_provider` appointment owned by `demo-patient`'s own portal login
+  directly in Postgres (a clean fixture, same precedent phase 25's own
+  write-up already used, rather than re-driving the full booking flow
+  for a fixture this phase didn't need to re-prove), then drove the
+  genuinely real event: as `demo-front-desk`, called the real
+  `POST .../check-out` endpoint and confirmed via a direct Postgres
+  query that a pending survey row was really auto-created. As
+  `demo-patient`: fetched the pending survey, submitted a real 5-star
+  rating with a comment, and confirmed an immediate second submission
+  attempt genuinely `409`'d. As `demo-clinic-admin`: confirmed
+  `GET /api/clinic/satisfaction-surveys/summary` showed
+  `averageRating: 5.00`, `totalSubmitted: 1`, and the recent-feedback
+  entry correctly resolved to "Demo Patient" with the real comment text.
+  Confirmed `demo-front-desk` gets a genuine `403` on that same summary
+  endpoint - the pinned clinic_admin-only scope holding live.
+- **No frontend yet** - backend only, same "backend first" scope
+  boundary phases 42/43 just used. A pending-survey prompt on the
+  patient's own appointment view and a simple summary panel on the
+  clinic-admin dashboard are natural next frontend items, not built
+  here.
+
+This closes the three-phase patient-engagement set (SMS reminders,
+secure messaging, satisfaction surveys) the user asked for alongside
+imaging/radiology orders - all three now built.
+
+## Sidebar nav arrangement review, continued (2026-10-04)
+
+The user asked for the same kind of real arrangement review again, after
+phases 42-44 (imaging, messaging, surveys) added more links on top of the
+2026-10-01 pass. Three more concrete, real problems found and fixed, same
+file:
+
+- **A real 3-way `ClipboardIcon` collision in `clinic_admin`'s own core
+  group** - it had grown back to 9 flat items (appointment-types/qc-log/
+  referrals all sharing the identical icon in the collapsed rail) exactly
+  the failure mode the 2026-10-01 pass already fixed once for pharmacy.
+  Split a new labeled, foldable **"Clinical"** group out of it (Lab
+  Orders/QC Log/Imaging Orders/Referrals - curated access into other
+  roles' own clinical modules, the same shape Pharmacy/Finance/Inventory
+  already get their own heading for), shrinking core back to 5 genuinely
+  -core items.
+- **A real 2-way `ClipboardIcon` collision between Journal and Budgets**
+  in both the standalone `accountant` group and `clinic_admin`'s own
+  Finance sub-group - fixed with a new hand-authored `ChartIcon`
+  (`components/icons.jsx`, same convention as the three icons the
+  2026-10-01 pass added) for Budgets specifically, a better semantic fit
+  than `ClipboardIcon` ever was anyway.
+- **A real inconsistency, not just a collision**: the Inventory group's
+  own dashboard tile used `BoxIcon` (colliding with "Items" right below
+  it) while every other role's own dashboard link in this file uses
+  `DashboardIcon` - fixed by matching that existing convention, which
+  also resolves the collision for free.
+- Referrals' own icon changed to `UsersIcon` everywhere it appears
+  (`provider`'s group and the new `clinic_admin` Clinical group) - not
+  itself a collision fix, but kept consistent across both roles rather
+  than leaving the same logical nav item styled two different ways.
+- **No browser-automation tool was connected this session** (confirmed
+  live) - `npm run build` clean, `npm test` (40/40, unaffected), and
+  every touched route confirmed reachable through `node-bff` directly.
+  A real visual confirmation of the new grouping/icons in both themes is
+  still owed, same standing gap recent frontend phases have flagged.

@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClientException;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Deliberately a plain RestClient rather than the `org.keycloak:keycloak
@@ -85,6 +86,37 @@ public class KeycloakOrganizationClient {
      * RestClient's string message converter would otherwise write it
      * unquoted (invalid JSON) despite the declared content type.
      */
+    /**
+     * Resolves an org's Keycloak-internal id from its alias - needed because
+     * {@link #addMember} is keyed by the internal id, while
+     * {@code clinics.keycloak_org_id} stores only the alias (see this
+     * class's own createOrganization javadoc). Mirrors
+     * create-demo-clinic.sh's own idempotent lookup-by-alias fallback: there
+     * is no reliable exact-alias filter on the list endpoint, so this fetches
+     * every org and filters client-side.
+     */
+    @SuppressWarnings("unchecked")
+    public Optional<String> findOrganizationIdByAlias(String alias) {
+        String token = adminTokenProvider.fetchToken();
+        List<Map<String, Object>> orgs;
+        try {
+            orgs = restClient.get()
+                    .uri("/admin/realms/{realm}/organizations", REALM)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .body(List.class);
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Failed to list Keycloak organizations", e);
+        }
+        if (orgs == null) {
+            return Optional.empty();
+        }
+        return orgs.stream()
+                .filter(org -> alias.equals(org.get("alias")))
+                .map(org -> (String) org.get("id"))
+                .findFirst();
+    }
+
     public void addMember(String keycloakOrgId, String userId) {
         String token = adminTokenProvider.fetchToken();
         String jsonBody = "\"" + userId + "\"";

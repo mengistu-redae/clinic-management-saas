@@ -52,6 +52,23 @@ function redirectToLogin() {
   window.location.href = '/auth/login';
 }
 
+/**
+ * Phase 45: which clinic is "active" for a multi-branch staff member - a
+ * plain module-level value rather than React state, since apiFetch is a
+ * plain function outside any component tree (same "no premature plumbing"
+ * reasoning as redirectToLogin above). ActiveClinicContext is the one
+ * writer - it calls setActiveClinicId whenever the user switches branches
+ * or on initial load from localStorage. null means "no header" - every
+ * single-branch staff login never calls the setter at all, so this stays
+ * null and spring-boot-api falls back to the caller's one accessible
+ * clinic exactly as before this phase.
+ */
+let activeClinicId = null;
+
+export function setActiveClinicId(clinicId) {
+  activeClinicId = clinicId;
+}
+
 export async function apiFetch(path, options = {}) {
   // A FormData body (provider signature upload, phase 13/frontend phase K)
   // must NOT get a manual Content-Type - the browser sets its own
@@ -61,6 +78,7 @@ export async function apiFetch(path, options = {}) {
     ...options,
     headers: {
       ...(options.body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
+      ...(activeClinicId ? { 'X-Active-Clinic-Id': activeClinicId } : {}),
       ...options.headers,
     },
   });

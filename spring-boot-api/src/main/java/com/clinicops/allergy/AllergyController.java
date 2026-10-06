@@ -60,7 +60,11 @@ public class AllergyController {
         UUID tenantId = TenantContext.require();
         requireOwnedPatient(patientId, tenantId);
         phiAccessAuditService.logRead(tenantId, jwt, "allergy_list", null, patientId, "/api/patients/{patientId}/allergies");
-        return allergyRepository.findAllByPatientIdAndTenantId(patientId, tenantId);
+        // Not ...AndTenantId - once requireOwnedPatient has proven the caller
+        // can see this patient (own clinic or same clinic group, phase 45),
+        // every allergy on that patient is visible regardless of which
+        // branch recorded it.
+        return allergyRepository.findAllByPatientId(patientId);
     }
 
     @PostMapping("/api/patients/{patientId}/allergies")
@@ -95,7 +99,11 @@ public class AllergyController {
     public Allergy updateAllergy(
             @PathVariable UUID patientId, @PathVariable UUID id, @RequestBody UpdateAllergyRequest request, @AuthenticationPrincipal Jwt jwt) {
         UUID tenantId = TenantContext.require();
-        Allergy allergy = allergyRepository.findByIdAndTenantId(id, tenantId)
+        requireOwnedPatient(patientId, tenantId);
+        // Not ...AndTenantId - ownership is already proven via patientId
+        // above (phase 45: the allergy may have been recorded at a sibling
+        // branch in the same clinic group).
+        Allergy allergy = allergyRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Allergy not found: " + id));
         if (!allergy.getPatientId().equals(patientId)) {
             throw new NoSuchElementException("Allergy not found: " + id);
@@ -124,7 +132,7 @@ public class AllergyController {
     }
 
     private void requireOwnedPatient(UUID patientId, UUID tenantId) {
-        patientRepository.findByIdAndTenantId(patientId, tenantId)
+        patientRepository.findAccessible(patientId, tenantId, TenantContext.clinicGroupId())
                 .orElseThrow(() -> new NoSuchElementException("Patient not found: " + patientId));
     }
 

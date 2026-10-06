@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -29,12 +30,22 @@ import ErrorBanner from './ErrorBanner.jsx';
  * `extraRoles` (phase 37/dispense billing) - same opt-in extra-role list
  * `PaymentsPanel`'s own `extraRoles` prop documents; defaults to `[]` so
  * neither existing caller's behavior changes.
+ *
+ * Phase 46 - `generateInvoice.mutate({ discountPercent, discountReason })`
+ * now optionally carries a discount, entered via the small inline form
+ * shown only to `canGenerate` roles before an invoice exists; once one
+ * exists, a discount line (only when actually non-zero) and the new
+ * amountPaid/balanceDue/status fields render alongside the existing
+ * subtotal/tax/total - all additive, every field this already read keeps
+ * working unchanged.
  */
 export default function InvoicePanel({ invoiceQuery, generateInvoice, pdfUrl, extraRoles = [] }) {
   const { t } = useTranslation();
   const { hasRole } = useAuth();
   const canGenerate = hasRole('front_desk') || hasRole('clinic_admin') || extraRoles.some((r) => hasRole(r));
   const notGenerated = invoiceQuery.isError && invoiceQuery.error instanceof ApiError && invoiceQuery.error.status === 404;
+  const [discountPercent, setDiscountPercent] = useState('');
+  const [discountReason, setDiscountReason] = useState('');
 
   if (invoiceQuery.isLoading) {
     return null;
@@ -50,6 +61,16 @@ export default function InvoicePanel({ invoiceQuery, generateInvoice, pdfUrl, ex
 
   const invoice = invoiceQuery.data;
 
+  function handleGenerate() {
+    const trimmedPercent = discountPercent.trim();
+    const trimmedReason = discountReason.trim();
+    const body =
+      trimmedPercent || trimmedReason
+        ? { discountPercent: trimmedPercent ? Number(trimmedPercent) : undefined, discountReason: trimmedReason || undefined }
+        : undefined;
+    generateInvoice.mutate(body);
+  }
+
   return (
     <div className="mt-5 rounded-xl border border-slate-200 bg-surface p-5">
       <div className="mb-3 flex items-center justify-between">
@@ -64,14 +85,33 @@ export default function InvoicePanel({ invoiceQuery, generateInvoice, pdfUrl, ex
             {t('invoicePanel.downloadPdf')}
           </a>
         ) : !invoice && canGenerate ? (
-          <button
-            type="button"
-            disabled={generateInvoice.isPending}
-            onClick={() => generateInvoice.mutate()}
-            className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {generateInvoice.isPending ? t('invoicePanel.generating') : t('invoicePanel.generate')}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={discountPercent}
+              onChange={(e) => setDiscountPercent(e.target.value)}
+              placeholder={t('invoicePanel.discountPercentPlaceholder')}
+              className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+            />
+            <input
+              type="text"
+              value={discountReason}
+              onChange={(e) => setDiscountReason(e.target.value)}
+              placeholder={t('invoicePanel.discountReasonPlaceholder')}
+              className="w-44 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+            />
+            <button
+              type="button"
+              disabled={generateInvoice.isPending}
+              onClick={handleGenerate}
+              className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {generateInvoice.isPending ? t('invoicePanel.generating') : t('invoicePanel.generate')}
+            </button>
+          </div>
         ) : null}
       </div>
       {invoice ? (
@@ -80,6 +120,15 @@ export default function InvoicePanel({ invoiceQuery, generateInvoice, pdfUrl, ex
             <dt className="text-ink-muted">{t('invoicePanel.subtotal')}</dt>
             <dd className="font-mono text-ink">{formatCurrency(invoice.subtotalAmount)}</dd>
           </div>
+          {invoice.discountAmount > 0 && (
+            <div>
+              <dt className="text-ink-muted">
+                {t('invoicePanel.discount')}
+                {invoice.discountReason ? ` (${invoice.discountReason})` : ''}
+              </dt>
+              <dd className="font-mono text-ink">-{formatCurrency(invoice.discountAmount)}</dd>
+            </div>
+          )}
           <div>
             <dt className="text-ink-muted">{t('invoicePanel.tax')}</dt>
             <dd className="font-mono text-ink">{formatCurrency(invoice.taxAmount)}</dd>
@@ -87,6 +136,18 @@ export default function InvoicePanel({ invoiceQuery, generateInvoice, pdfUrl, ex
           <div>
             <dt className="text-ink-muted">{t('invoicePanel.total')}</dt>
             <dd className="font-mono font-semibold text-ink">{formatCurrency(invoice.totalAmount)}</dd>
+          </div>
+          <div>
+            <dt className="text-ink-muted">{t('invoicePanel.amountPaid')}</dt>
+            <dd className="font-mono text-ink">{formatCurrency(invoice.amountPaid)}</dd>
+          </div>
+          <div>
+            <dt className="text-ink-muted">{t('invoicePanel.balanceDue')}</dt>
+            <dd className="font-mono font-semibold text-ink">{formatCurrency(invoice.balanceDue)}</dd>
+          </div>
+          <div>
+            <dt className="text-ink-muted">{t('invoicePanel.statusLabel')}</dt>
+            <dd className="text-ink">{t(`invoicePanel.status.${invoice.status}`, { defaultValue: invoice.status })}</dd>
           </div>
         </dl>
       ) : (

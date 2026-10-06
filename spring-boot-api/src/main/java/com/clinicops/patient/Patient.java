@@ -43,4 +43,15 @@ public class Patient extends BaseTenantEntity {
      */
     @Column(name = "app_user_id")
     private UUID appUserId;
+
+    /**
+     * Nullable - denormalized copy of the creating clinic's own
+     * clinicGroupId at creation time (phase 45), never a live join. Null for
+     * every patient created at a standalone clinic (today's default). When
+     * set, this is the key that lets a sibling branch in the same group find
+     * and reuse this same Patient row instead of creating a duplicate - see
+     * PatientRepository's group-aware lookups and PatientProvisioningService.
+     */
+    @Column(name = "clinic_group_id")
+    private UUID clinicGroupId;
 }
