@@ -22,6 +22,7 @@ import {
   RefreshIcon,
   ScanIcon,
   ChartIcon,
+  ClockIcon,
   ChevronDownIcon,
   ChevronRightIcon,
 } from '../components/icons.jsx';
@@ -149,6 +150,13 @@ function navGroups(t, hasRole) {
         { to: '/inventory/suppliers', label: t('nav.inventory.suppliers'), icon: BuildingIcon },
         { to: '/inventory/purchase-orders', label: t('nav.inventory.purchaseOrders'), icon: ReceiptIcon },
         { to: '/inventory/assets', label: t('nav.inventory.assets'), icon: WrenchIcon },
+      ],
+    });
+    groups.push({
+      id: 'staff',
+      heading: t('sidebar.groupStaff'),
+      items: [
+        { to: '/clinic-admin/staff', label: t('nav.clinicAdmin.staff'), icon: ClockIcon },
       ],
     });
     groups.push({

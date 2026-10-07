@@ -21,6 +21,7 @@ import FrontDeskAppointments from './pages/front-desk/Appointments.jsx';
 import FrontDeskAppointmentDetail from './pages/front-desk/AppointmentDetail.jsx';
 import FrontDeskReschedule from './pages/front-desk/Reschedule.jsx';
 import ClinicAdminProviders from './pages/clinic-admin/Providers.jsx';
+import ClinicAdminStaff from './pages/clinic-admin/Staff.jsx';
 import ClinicAdminRooms from './pages/clinic-admin/Rooms.jsx';
 import ClinicAdminAppointmentTypes from './pages/clinic-admin/AppointmentTypes.jsx';
 import ClinicAdminSettingsLayout from './pages/clinic-admin/SettingsLayout.jsx';
@@ -334,6 +335,14 @@ export default function App() {
           element={
             <RequireRole role="clinic_admin">
               <ClinicAdminProviders />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/clinic-admin/staff"
+          element={
+            <RequireRole role="clinic_admin">
+              <ClinicAdminStaff />
             </RequireRole>
           }
         />

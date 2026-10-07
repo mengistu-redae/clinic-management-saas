@@ -27,6 +27,7 @@
       "labOrders": "Lab Orders",
       "imagingOrders": "Imaging Orders",
       "referrals": "Referrals",
+      "staff": "Staff",
       "settings": "Settings"
     },
     "platformAdmin": {
@@ -75,6 +76,7 @@
     "groupPharmacy": "Pharmacy",
     "groupFinance": "Finance",
     "groupInventory": "Inventory",
+    "groupStaff": "Staff",
     "switchClinic": "Switch clinic"
   },
   "userMenu": {
@@ -279,6 +281,58 @@
     "addWindow": "Add window",
     "errorAddWindow": "Could not add this window.",
     "errorRemoveWindow": "Could not remove this window."
+  },
+  "roleLabel": {
+    "clinic_admin": "Clinic admin",
+    "provider": "Provider",
+    "front_desk": "Front desk",
+    "pharmacist": "Pharmacist",
+    "accountant": "Accountant",
+    "lab_technician": "Lab technician",
+    "imaging_technologist": "Imaging technologist"
+  },
+  "attendanceStatus": {
+    "present": "Present",
+    "absent": "Absent",
+    "leave": "Leave"
+  },
+  "staffPage": {
+    "firstName": "First name",
+    "lastName": "Last name",
+    "role": "Role",
+    "selectRole": "Select a role",
+    "addStaff": "Add staff member",
+    "errorNameRequired": "Enter a first and last name.",
+    "errorRoleRequired": "Select a role.",
+    "errorCreate": "Could not add this staff member.",
+    "emptyTitle": "No staff yet",
+    "emptyDescription": "Add your first staff member above.",
+    "hasLogin": "Has a login",
+    "accountEmail": "Account email",
+    "accountEmailHint": "The email they've logged in with at least once.",
+    "linkLogin": "Link login",
+    "linkedNote": "Linked to a login.",
+    "unlink": "Unlink",
+    "errorEmailRequired": "Enter the email they logged in with.",
+    "errorLink": "Could not link this login.",
+    "errorUnlink": "Could not unlink this login.",
+    "shifts": "Shifts",
+    "hideShifts": "Hide shifts",
+    "shiftsLink": "Shifts",
+    "noShifts": "No shifts scheduled.",
+    "date": "Date",
+    "start": "Start",
+    "end": "End",
+    "notesOptional": "Notes (optional)",
+    "addShift": "Add shift",
+    "errorAddShift": "Could not add this shift.",
+    "errorUpdateShift": "Could not update this shift.",
+    "attendance": "Attendance",
+    "noAttendance": "Not marked yet.",
+    "markPresent": "Present",
+    "markAbsent": "Absent",
+    "markLeave": "Leave",
+    "errorMarkAttendance": "Could not record attendance."
   },
   "patientChart": {
     "title": "Patient chart",

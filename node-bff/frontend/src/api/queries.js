@@ -1896,3 +1896,88 @@ export function useAppealClaim(invoiceId) {
 export function useCloseClaim(invoiceId) {
   return useClaimAction(invoiceId, 'close');
 }
+
+// ---- staff / HR (phase 47 - roster, ad-hoc shifts, attendance) ----
+
+export function useStaff(enabled, status) {
+  return useQuery({
+    queryKey: ['staff', status ?? 'all'],
+    queryFn: () => apiGet(`/api/staff${status ? `?status=${status}` : ''}`),
+    enabled,
+  });
+}
+
+export function useCreateStaff() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/staff', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff'] }),
+  });
+}
+
+/** Partial update, per StaffController's own /update shape - only non-null fields are applied server-side. */
+export function useUpdateStaff(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/staff/${id}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff'] }),
+  });
+}
+
+export function useLinkStaffLogin(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (email) => apiPost(`/api/staff/${id}/link-login`, { email }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff'] }),
+  });
+}
+
+export function useUnlinkStaffLogin(id) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/api/staff/${id}/unlink-login`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff'] }),
+  });
+}
+
+export function useStaffShifts(staffId) {
+  return useQuery({
+    queryKey: ['staff-shifts', staffId],
+    queryFn: () => apiGet(`/api/staff/${staffId}/shifts`),
+    enabled: Boolean(staffId),
+  });
+}
+
+export function useCreateShift(staffId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/staff/${staffId}/shifts`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff-shifts', staffId] }),
+  });
+}
+
+export function useUpdateShift(staffId, shiftId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/staff/${staffId}/shifts/${shiftId}/update`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff-shifts', staffId] }),
+  });
+}
+
+/** 404s (AttendanceController's own NoSuchElementException) until a shift's first mark-attendance call - retry:false and the caller checks error?.status === 404 to render "nothing recorded yet" rather than a real error, same shape useAppointmentInvoice/useLabOrderInvoice etc. already use for an ungenerated invoice. */
+export function useShiftAttendance(shiftId) {
+  return useQuery({
+    queryKey: ['shift-attendance', shiftId],
+    queryFn: () => apiGet(`/api/shifts/${shiftId}/attendance`),
+    enabled: Boolean(shiftId),
+    retry: false,
+  });
+}
+
+export function useMarkAttendance(shiftId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost(`/api/shifts/${shiftId}/attendance`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['shift-attendance', shiftId] }),
+  });
+}

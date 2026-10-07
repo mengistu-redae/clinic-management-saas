@@ -2077,6 +2077,37 @@ changes - every endpoint this drives was already live-verified in phase
   not re-chased here), so even the no-browser reachability check above
   ran through `node-bff` on `:3000` directly, not nginx on `:80`.
 
+**Frontend phase X: staff/HR roster UI** (built 2026-10-07) - closes
+phase 47's own "no frontend yet" gap, the user's direct instruction right
+after that phase's live-verification pass. New `pages/clinic-admin/
+Staff.jsx`, ported directly from `clinic-admin/Providers.jsx`'s own
+shape (create-form-above-a-searchable-`DataTable`, inline expand for
+edit/login-link, same `link-login`/`unlink-login` pattern verbatim) -
+the closest existing precedent, since `Staff`/`Shift` is structurally
+identical to `Provider`/`ProviderWorkingHours` (a parent roster row with
+a nested per-row collection). A new "Staff" sidebar group (own heading,
+matching how Pharmacy/Finance/Inventory each got one for a brand-new
+module) with a single roster link - shifts and attendance are reached
+by expanding a staff row, not separate routes, since neither is a
+first-class list a clinic_admin browses on its own. A new `ClockIcon`
+nav icon (none of the existing icons fit a roster/shift concept without
+colliding with an already-established meaning). New `roleLabel`/
+`attendanceStatus` i18n maps (English + Amharic) for the 7 realm-role
+names and 3 attendance values, mirroring `employmentStatus`'s own
+code-level-allow-list-to-translation-key convention.
+
+- **A real mismatched token caught before it shipped**: the first draft
+  used `bg-surface-muted`/`bg-brand-text`, neither a real token anywhere
+  in this app (confirmed by grepping before assuming) - fixed to
+  `bg-slate-50`/`bg-accent`, the actual established tokens for a subtle
+  panel background and a selected/primary action.
+- **No browser-automation tool was connected this session** (same
+  standing gap phase W/L8 flagged) - build-only verification: `npm run
+  build`/`npm test` (40/40) clean, and a real scripted (no-browser)
+  login confirms the new route resolves through `node-bff` and
+  `GET /api/staff` returns real persisted data post-redeploy. A real
+  click-through is still owed, flagged here rather than claimed.
+
 ## Post-phase-7 backend additions
 
 Built 2026-09-19/20, later extended the same session. Two "Known gaps"
@@ -2146,6 +2177,11 @@ append new ones there too, not here.
   2026-09-28/2026-10-03 passes already recorded in the Testing section
   below (phase 42 and the first sidebar review were already condensed).
   Back under budget (142.6K).
+- **This file has crept back over its own 150K budget again (151.9K)** -
+  phases 45-47 and frontend phase X are all still full-length. Owed: the
+  same condense-and-pointer treatment phases 1-39/40-44 already got,
+  not done this session since the overage is small (~1.2%) and the work
+  itself took priority. Do it next time this file is touched.
 - ~~Phase 46 (billing realism) has no live verification yet~~ **closed
   2026-10-07** - live-verified against the real running stack via the
   scripted curl OIDC login (no browser extension connected this session).

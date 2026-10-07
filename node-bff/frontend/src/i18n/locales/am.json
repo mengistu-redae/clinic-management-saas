@@ -27,6 +27,7 @@
       "labOrders": "የላብራቶሪ ትዕዛዞች",
       "imagingOrders": "የምስል ትዕዛዞች",
       "referrals": "ሪፈራሎች",
+      "staff": "ሰራተኞች",
       "settings": "ቅንብሮች"
     },
     "platformAdmin": {
@@ -75,6 +76,7 @@
     "groupPharmacy": "ፋርማሲ",
     "groupFinance": "ፋይናንስ",
     "groupInventory": "ክምችት",
+    "groupStaff": "ሰራተኞች",
     "switchClinic": "ክሊኒክ ቀይር"
   },
   "userMenu": {
@@ -279,6 +281,58 @@
     "addWindow": "መስኮት ጨምር",
     "errorAddWindow": "ይህን የጊዜ መስኮት መጨመር አልተቻለም።",
     "errorRemoveWindow": "ይህን የጊዜ መስኮት ማስወገድ አልተቻለም።"
+  },
+  "roleLabel": {
+    "clinic_admin": "ክሊኒክ አስተዳዳሪ",
+    "provider": "የሕክምና ባለሙያ",
+    "front_desk": "አቀባባይ",
+    "pharmacist": "ፋርማሲስት",
+    "accountant": "የሂሳብ ሹም",
+    "lab_technician": "የላብራቶሪ ቴክኒሺያን",
+    "imaging_technologist": "የምስል ቴክኒሺያን"
+  },
+  "attendanceStatus": {
+    "present": "ተገኝቷል",
+    "absent": "ቀርቷል",
+    "leave": "ፈቃድ"
+  },
+  "staffPage": {
+    "firstName": "መጠሪያ ስም",
+    "lastName": "የአባት ስም",
+    "role": "ሚና",
+    "selectRole": "ሚና ይምረጡ",
+    "addStaff": "ሰራተኛ ጨምር",
+    "errorNameRequired": "መጠሪያ እና የአባት ስም ያስገቡ።",
+    "errorRoleRequired": "ሚና ይምረጡ።",
+    "errorCreate": "ይህን ሰራተኛ መጨመር አልተቻለም።",
+    "emptyTitle": "እስካሁን ምንም ሰራተኛ የለም",
+    "emptyDescription": "የመጀመሪያ ሰራተኛዎን ከላይ ይጨምሩ።",
+    "hasLogin": "መግቢያ አለው",
+    "accountEmail": "የመለያ ኢሜይል",
+    "accountEmailHint": "ቀደም ሲል ቢያንስ አንድ ጊዜ የገቡበት ኢሜይል።",
+    "linkLogin": "መግቢያ አገናኝ",
+    "linkedNote": "ከመግቢያ ጋር ተገናኝቷል።",
+    "unlink": "አላቅ",
+    "errorEmailRequired": "የገቡበትን ኢሜይል ያስገቡ።",
+    "errorLink": "ይህን መግቢያ ማገናኘት አልተቻለም።",
+    "errorUnlink": "ይህን መግቢያ ማላቀቅ አልተቻለም።",
+    "shifts": "ፈረቃዎች",
+    "hideShifts": "ፈረቃዎችን ደብቅ",
+    "shiftsLink": "ፈረቃዎች",
+    "noShifts": "ምንም ፈረቃ አልተያዘም።",
+    "date": "ቀን",
+    "start": "መጀመሪያ",
+    "end": "መጨረሻ",
+    "notesOptional": "ማስታወሻ (አማራጭ)",
+    "addShift": "ፈረቃ ጨምር",
+    "errorAddShift": "ይህን ፈረቃ መጨመር አልተቻለም።",
+    "errorUpdateShift": "ይህን ፈረቃ ማዘመን አልተቻለም።",
+    "attendance": "አገኝነት",
+    "noAttendance": "እስካሁን አልተመዘገበም።",
+    "markPresent": "ተገኝቷል",
+    "markAbsent": "ቀርቷል",
+    "markLeave": "ፈቃድ",
+    "errorMarkAttendance": "አገኝነትን መመዝገብ አልተቻለም።"
   },
   "patientChart": {
     "title": "የታካሚ ካርድ",
