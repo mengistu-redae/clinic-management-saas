@@ -54,20 +54,25 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
      * an invoice existed) to the invoice once it's generated, so it's
      * immediately picked up by the balance calculation above - one method
      * per owner type, mirroring Payment's own exactly-one-owner shape.
+     * flushAutomatically=true: InvoiceService.generateFor* calls
+     * invoiceRepository.save(invoice) immediately before this - without a
+     * forced flush, the pending Invoice insert is still unflushed when this
+     * native-level UPDATE runs, and Postgres rejects it against
+     * payments_invoice_id_fkey (found live, phase 46 verification).
      */
-    @Modifying
+    @Modifying(flushAutomatically = true)
     @Query("UPDATE Payment p SET p.invoiceId = :invoiceId WHERE p.tenantId = :tenantId AND p.appointmentId = :appointmentId AND p.invoiceId IS NULL")
     int linkUnlinkedPaymentsForAppointment(@Param("tenantId") UUID tenantId, @Param("appointmentId") UUID appointmentId, @Param("invoiceId") UUID invoiceId);
 
-    @Modifying
+    @Modifying(flushAutomatically = true)
     @Query("UPDATE Payment p SET p.invoiceId = :invoiceId WHERE p.tenantId = :tenantId AND p.labOrderId = :labOrderId AND p.invoiceId IS NULL")
     int linkUnlinkedPaymentsForLabOrder(@Param("tenantId") UUID tenantId, @Param("labOrderId") UUID labOrderId, @Param("invoiceId") UUID invoiceId);
 
-    @Modifying
+    @Modifying(flushAutomatically = true)
     @Query("UPDATE Payment p SET p.invoiceId = :invoiceId WHERE p.tenantId = :tenantId AND p.dispenseRecordId = :dispenseRecordId AND p.invoiceId IS NULL")
     int linkUnlinkedPaymentsForDispenseRecord(@Param("tenantId") UUID tenantId, @Param("dispenseRecordId") UUID dispenseRecordId, @Param("invoiceId") UUID invoiceId);
 
-    @Modifying
+    @Modifying(flushAutomatically = true)
     @Query("UPDATE Payment p SET p.invoiceId = :invoiceId WHERE p.tenantId = :tenantId AND p.imagingOrderId = :imagingOrderId AND p.invoiceId IS NULL")
     int linkUnlinkedPaymentsForImagingOrder(@Param("tenantId") UUID tenantId, @Param("imagingOrderId") UUID imagingOrderId, @Param("invoiceId") UUID invoiceId);
 }

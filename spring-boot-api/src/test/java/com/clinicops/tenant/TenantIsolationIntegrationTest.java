@@ -16,12 +16,15 @@ import com.clinicops.provider.Provider;
 import com.clinicops.referral.Referral;
 import com.clinicops.room.Room;
 import com.clinicops.scheduling.Slot;
+import com.clinicops.staff.Shift;
+import com.clinicops.staff.Staff;
 import com.clinicops.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
@@ -182,6 +185,25 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
 
         Clinic b = clinicB("room");
         mockMvc.perform(get("/api/rooms/" + room.getId()).with(asClinicAdmin("admin", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void staffShiftsAndAttendanceAreNotReadableOrWritableFromAnotherTenant() throws Exception {
+        Clinic a = clinicA("staff");
+        Staff staff = createStaff(a.getId(), "Alem", "Tesfaye", "provider");
+        Shift shift = createShift(a.getId(), staff.getId(), LocalDate.of(2026, 11, 2), LocalTime.of(9, 0), LocalTime.of(17, 0));
+
+        Clinic b = clinicB("staff");
+        mockMvc.perform(get("/api/staff/" + staff.getId()).with(asClinicAdmin("admin", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/staff/" + staff.getId() + "/shifts").with(asClinicAdmin("admin", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/shifts/" + shift.getId() + "/attendance").with(asClinicAdmin("admin", b.getKeycloakOrgId())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/shifts/" + shift.getId() + "/attendance").with(asClinicAdmin("admin", b.getKeycloakOrgId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.clinicops.staff.MarkAttendanceRequest("present", null))))
                 .andExpect(status().isNotFound());
     }
 

@@ -1674,6 +1674,61 @@ discount-entry form and the new balance fields; a new inline
 shows balance due and a "Pay now" action. *Full design write-up and test
 detail: see `CLAUDE-history.md`.*
 
+## Phase 47: staff/HR roster + attendance (foundation)
+
+Built 2026-10-07, same session as the phase 45/46 live-verification pass
+above. First phase of the Staff/HR module the user asked for as its own
+sequential set (roster/shift/attendance), matching how pharmacy/
+accounting/finance was sequenced. Four scoping questions were put to the
+user before writing any code, all answered with the recommended option:
+a new standalone `com.clinicops.staff` package (`Staff`/`Shift`/
+`Attendance`), kept deliberately separate from Finance's own `Employee`
+(phase 22, payroll-only scope) rather than extending it; ad-hoc per-date
+shift assignments, not recurring weekly templates; attendance is a
+correctable present/absent/leave outcome marked against a shift
+(upsert-in-place, one row per shift via `shift_id UNIQUE`), not a real
+clock-in/out punch; `clinic_admin`-only throughout, including reads - no
+other role touches this module yet. New migration `V43__staff_hr.sql`.
+
+`Staff` is role-neutral by design - a display/filter label
+(`clinic_admin`/`provider`/`front_desk`/`pharmacist`/`accountant`/
+`lab_technician`/`imaging_technologist`, allow-listed in
+`StaffController`, not DB-constrained) rather than an authorization
+source; `@PreAuthorize` still only ever checks the JWT's real realm
+roles. `appUserId` links optionally via a `link-login`/`unlink-login`
+pair that mirrors `ProviderController`'s own exactly (lookup an
+already-provisioned `AppUser` by email, no Keycloak call needed).
+`ShiftController` (nested under `/api/staff/{staffId}/shifts`) rejects an
+overlapping window for the same staff member and day, checked in-memory
+- the identical shape `ProviderWorkingHoursController`'s own overlap
+check already uses, right down to the half-open interval comparison.
+`AttendanceController` (nested under `/api/shifts/{shiftId}/attendance`)
+upserts rather than inserting a new row on every call, and resolves
+`recordedBy` from the caller's own JWT subject via `AppUserRepository
+.findByKeycloakUserId` - no request field for it, so it can't be spoofed.
+
+**Live-verified against the real running stack** (scripted curl OIDC
+login, no browser extension connected this session): staff creation +
+role-allow-list rejection (`role must be one of [...]`), shift creation +
+the overlap 409 (two windows on the same day/staff) + a non-overlapping
+shift on a different day succeeding, attendance upsert (marking
+`present` then correcting to `absent` returns the *same* row id, not a
+new one, with `recordedBy` correctly resolved to the real `AppUser`),
+attendance status-allow-list rejection, a clean 404 for an unmarked
+shift's attendance, and the `front_desk` role correctly 403ing on the
+clinic_admin-only `/api/staff` endpoint. `mvn test` stays at 0 real
+failures post-build (the only errors are the pre-existing Windows
+Testcontainers-npipe class of failures every `*IntegrationTest` already
+has on this machine - this phase's own new
+`TenantIsolationIntegrationTest` case is written and compiles but, like
+every other case in that file, can't actually execute here).
+
+**Not built this phase**: no frontend yet (backend/API only, matching
+every other brand-new module's first phase in this project); no roster/
+shift reporting or payroll integration (deliberately out of scope per
+the "foundation" framing); no `Staff` row auto-created for existing demo
+users, so a first live click-through would start from an empty roster.
+
 ## Sidebar nav arrangement review (2026-10-01)
 
 The user asked for an evaluation of the menu arrangement for every
@@ -2091,24 +2146,71 @@ append new ones there too, not here.
   2026-09-28/2026-10-03 passes already recorded in the Testing section
   below (phase 42 and the first sidebar review were already condensed).
   Back under budget (142.6K).
-- **Phase 46 (billing realism) has no live verification yet**, same reason
-  as phase 45 below - the dev stack was down this session. `mvn test`
-  (591 run, 0 failures) and `npm run build`/`npm test` (40/40) are clean,
-  including new `InvoiceServiceTest` (discount math + validation) and
-  extended `PaymentServiceTest` (overpayment block) coverage, but the
-  actual discount-on-a-real-invoice, deposit-then-generate-invoice
-  linking, and patient self-pay flows have only been exercised by mocked
-  unit tests, not against the real running stack.
-- **Phase 45 (ClinicGroup) has no live verification yet** - the dev stack
-  was down when this phase was built; compile + full pure-unit suite
-  (583 run, 0 failures) and `npm run build`/`npm test` (40/40) are clean,
-  but the actual branch-switcher header flow, cross-branch allergy
-  visibility, and the 403 fail-closed case have only been exercised by
-  the new `TenantIsolationIntegrationTest` cases, which are themselves
-  Testcontainers-blocked on this Windows machine (CI-only, same standing
-  limitation every phase here has had since phase 1). Also still open:
-  cross-branch visibility into past encounters/vitals/prescriptions -
-  deliberately deferred, see "Phase 45" above.
+- ~~Phase 46 (billing realism) has no live verification yet~~ **closed
+  2026-10-07** - live-verified against the real running stack via the
+  scripted curl OIDC login (no browser extension connected this session).
+  Confirmed: discount math on a real invoice (10% off $50 -> $45),
+  patient self-pay through `PatientInvoicePaymentController` (real mock
+  -gateway charge, invoice flips to `paid`, a second pay attempt
+  correctly 409s "Nothing due on this invoice"), the overpayment block
+  (a $25 payment against a $10 balance correctly 400s), and paying the
+  exact remaining balance to `paid`. **A real bug was found and fixed
+  live in the deposit-linking path**: `InvoiceService.generateFor*`
+  calls `invoiceRepository.save(invoice)` then immediately
+  `PaymentRepository.linkUnlinkedPaymentsFor*` (a `@Modifying` bulk
+  `UPDATE payments ... SET invoice_id = ...`) in the same transaction -
+  without `flushAutomatically = true`, Spring Data never flushed the
+  pending `Invoice` insert before that native-level UPDATE ran, so
+  Postgres rejected it against `payments_invoice_id_fkey` (the invoice
+  row didn't exist in the table yet) - a 500 on *every* invoice
+  generation call that had an unlinked deposit waiting to attach, for
+  all four owner types (appointment/lab-order/dispense-record/imaging
+  -order), confirmed broken live and reproduced before fixing. Fixed by
+  adding `flushAutomatically = true` to all four `@Modifying` queries in
+  `PaymentRepository`; re-verified live post-fix (two $20 deposits
+  correctly auto-linked into a `partially_paid` $50 invoice with a $10
+  balance) and `mvn test` still green.
+- ~~Phase 45 (ClinicGroup) has no live verification yet~~ **closed
+  2026-10-07** - a prior session had already linked `demo-clinic` and
+  `demo-clinic-westside` into "Demo Clinic Group" in the live DB, with
+  `demo-front-desk` a member of both Keycloak orgs - used that directly
+  rather than re-provisioning. **Core cross-branch sharing is confirmed
+  correct**: a patient registered at Clinic A (via `demo-clinic-admin`)
+  picks up the group's `clinicGroupId` automatically; a `demo-front-desk`
+  session scoped to Clinic B (a separate single-org login - see below)
+  can `GET` that same patient and its allergies by id (200), while a
+  pre-existing Clinic-A patient with no `clinicGroupId` correctly 404s
+  from Clinic B - the sharing is opt-in per patient, not "any sibling
+  -branch patient." The `X-Active-Clinic-Id` fail-closed 403 (a header
+  naming a clinic the caller isn't a member of) is also confirmed live.
+  **A real, more significant gap surfaced along the way**: the design's
+  own premise - "the JWT's organization claim already arrives as a list"
+  for a staff member in multiple orgs, letting one logged-in session
+  switch branches purely via the `X-Active-Clinic-Id` header - does
+  **not** hold for the actual browser Authorization Code login flow.
+  Logging in as `demo-front-desk` (a real multi-org user) hits a genuine
+  Keycloak "Select an organization to proceed" step *before* the
+  password form, and the resulting token's `organization` claim then
+  contains only the **one** org picked there (confirmed via both
+  `/auth/me` and a real `GET /api/me/clinics` call, which returned only
+  the single chosen clinic each time) - not the full membership list
+  `TenantContextFilter.extractOrgAliases`/`ActiveClinicProvider.jsx` were
+  both written to expect. Net effect: `TenantContextFilter`'s own
+  multi-alias parsing and the frontend's `X-Active-Clinic-Id`
+  branch-switcher are both correctly *implemented*, but currently
+  **unreachable in the real login flow** on this Keycloak
+  version/config - a multi-org staff member can only switch branches by
+  logging out and back in (picking the other org at the chooser), not by
+  flipping a header mid-session as the whole feature was designed to
+  allow. Not fixed this session - the real fix depends on a Keycloak
+  -Organizations-feature decision (a different protocol-mapper
+  configuration that lists every membership regardless of the
+  login-time org choice, if that's even exposed in this version) that
+  wasn't explored yet; flagged here rather than silently patched. Also
+  still open: cross-branch visibility into past encounters/vitals/
+  prescriptions - deliberately deferred, see "Phase 45" above. The
+  Testcontainers-backed `TenantIsolationIntegrationTest` cases remain
+  Windows-npipe-blocked on this machine as always (CI-only).
 - ~~No initial `clinic_admin` user provisioning as part of clinic
   onboarding~~ **closed 2026-09-19** - see "Post-phase-7 backend
   additions". `POST /api/platform/clinics` now optionally creates a real

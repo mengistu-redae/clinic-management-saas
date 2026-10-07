@@ -72,6 +72,10 @@ import com.clinicops.room.Room;
 import com.clinicops.room.RoomRepository;
 import com.clinicops.scheduling.Slot;
 import com.clinicops.scheduling.SlotRepository;
+import com.clinicops.staff.Staff;
+import com.clinicops.staff.StaffRepository;
+import com.clinicops.staff.Shift;
+import com.clinicops.staff.ShiftRepository;
 import com.clinicops.user.AppUser;
 import com.clinicops.user.AppUserRepository;
 import com.clinicops.vitals.Vitals;
@@ -97,6 +101,7 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
@@ -206,6 +211,12 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected RoomRepository roomRepository;
+
+    @Autowired
+    protected StaffRepository staffRepository;
+
+    @Autowired
+    protected ShiftRepository shiftRepository;
 
     @Autowired
     protected ClinicSettingsRepository clinicSettingsRepository;
@@ -380,6 +391,25 @@ public abstract class AbstractIntegrationTest {
         room.setTenantId(tenantId);
         room.setName(name);
         return roomRepository.save(room);
+    }
+
+    protected Staff createStaff(UUID tenantId, String firstName, String lastName, String role) {
+        Staff staff = new Staff();
+        staff.setTenantId(tenantId);
+        staff.setFirstName(firstName);
+        staff.setLastName(lastName);
+        staff.setRole(role);
+        return staffRepository.save(staff);
+    }
+
+    protected Shift createShift(UUID tenantId, UUID staffId, LocalDate shiftDate, LocalTime start, LocalTime end) {
+        Shift shift = new Shift();
+        shift.setTenantId(tenantId);
+        shift.setStaffId(staffId);
+        shift.setShiftDate(shiftDate);
+        shift.setStartTime(start);
+        shift.setEndTime(end);
+        return shiftRepository.save(shift);
     }
 
     protected AppointmentType createAppointmentType(UUID tenantId, String name, int durationMinutes, String price) {
